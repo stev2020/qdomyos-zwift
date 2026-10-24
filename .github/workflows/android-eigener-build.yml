@@ -39,6 +39,15 @@ jobs:
 #          path: '${{ github.workspace }}/output/android/'
 #          key: ${{ runner.os }}-QtCache-Android
 
+      - name: Check signing secret
+        env:
+          QZ_KEYSTORE_PASSWORD: ${{ secrets.QZ_KEYSTORE_PASSWORD }}
+        run: |
+          if [ -z "$QZ_KEYSTORE_PASSWORD" ]; then
+            echo "::error::Secret QZ_KEYSTORE_PASSWORD is missing (Settings > Secrets and variables > Actions)."
+            exit 1
+          fi
+
       - name: Xvfb install and run
         run: |
           sudo apt-get install -y xvfb
@@ -184,35 +193,6 @@ jobs:
           echo "#define INTERVALSICU_CLIENT_SECRET ${{ secrets.intervalsicu_client_secret }}" >> secret.h
           echo "${{ secrets.cesiumkey }}" >> inner_templates/googlemaps/cesium-key.js
 
-      - name: Prepare Android signing key
-        env:
-          SIGNING_KEY: ${{ secrets.SIGNING_KEY }}
-          SIGNING_ALIAS: ${{ secrets.ALIAS }}
-          KEY_STORE_PASSWORD: ${{ secrets.KEY_STORE_PASSWORD }}
-          KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
-        run: |
-          if [ -z "$SIGNING_KEY" ] || [ -z "$SIGNING_ALIAS" ] || [ -z "$KEY_STORE_PASSWORD" ] || [ -z "$KEY_PASSWORD" ]; then
-            echo "Android signing secrets are not available; APK re-signing will be skipped."
-            echo "CI_ANDROID_RESIGN_APK=false" >> "$GITHUB_ENV"
-            exit 0
-          fi
-
-          KEYSTORE="${{ github.workspace }}/src/android/ci-signing-key.jks"
-          if ! printf '%s' "$SIGNING_KEY" | base64 --decode > "$KEYSTORE"; then
-            echo "Failed to decode Android signing key."
-            rm -f "$KEYSTORE"
-            exit 1
-          fi
-
-          if [ ! -s "$KEYSTORE" ]; then
-            echo "Decoded Android signing key is empty."
-            rm -f "$KEYSTORE"
-            exit 1
-          fi
-
-          echo "CI_ANDROID_SIGNING_KEYSTORE=$KEYSTORE" >> "$GITHUB_ENV"
-          echo "CI_ANDROID_RESIGN_APK=true" >> "$GITHUB_ENV"
-
       - name: Build qthttpserver for Android
         run: |
           cd src/qthttpserver
@@ -277,29 +257,31 @@ jobs:
           fi
           "$GRADLE_DIST_DIR/bin/gradle" -g "$GRADLE_USER_HOME" --no-daemon -p ${{ github.workspace }}/output/android assembleDebug bundleDebug
 
-      - name: Re-sign APK for stable App Links fingerprint
+      - name: Slim APK (arm64-v8a only, stripped) and sign with own key
+        env:
+          QZ_KEYSTORE_PASSWORD: ${{ secrets.QZ_KEYSTORE_PASSWORD }}
         run: |
-          if [ "$CI_ANDROID_RESIGN_APK" != "true" ]; then
-            echo "Skipping APK re-signing because Android signing secrets are not available."
-            exit 0
-          fi
-
-          APK_PATH="${{ github.workspace }}/output/android/build/outputs/apk/debug/android-debug.apk"
-          SIGNED_APK_PATH="${{ github.workspace }}/output/android/build/outputs/apk/debug/android-debug-signed.apk"
-          trap 'rm -f "$CI_ANDROID_SIGNING_KEYSTORE" "$SIGNED_APK_PATH"' EXIT
-          APKSIGNER=$(find /usr/local/lib/android/sdk/build-tools -name apksigner | sort | tail -n 1)
-          if [ -z "$APKSIGNER" ]; then
-            echo "apksigner not found"
-            exit 1
-          fi
-          "$APKSIGNER" sign \
-            --ks "$CI_ANDROID_SIGNING_KEYSTORE" \
-            --ks-key-alias "${{ secrets.ALIAS }}" \
-            --ks-pass "pass:${{ secrets.KEY_STORE_PASSWORD }}" \
-            --key-pass "pass:${{ secrets.KEY_PASSWORD }}" \
-            --out "$SIGNED_APK_PATH" \
-            "$APK_PATH"
-          mv "$SIGNED_APK_PATH" "$APK_PATH"
+          set -euo pipefail
+          WORK="$RUNNER_TEMP/slim"
+          rm -rf "$WORK" && mkdir -p "$WORK" && cd "$WORK"
+          cp "${{ github.workspace }}/output/android/build/outputs/apk/debug/android-debug.apk" full.apk
+          # keep only the native libraries for 64-bit ARM phones
+          for abi in armeabi-v7a x86 x86_64; do zip -q -d full.apk "lib/$abi/*" || true; done
+          # remove debug information from the remaining native libraries
+          NDK_BIN=/usr/local/lib/android/sdk/ndk/21.1.6352462/toolchains/llvm/prebuilt/linux-x86_64/bin
+          STRIP="$NDK_BIN/llvm-strip"
+          if [ ! -x "$STRIP" ]; then STRIP="$NDK_BIN/aarch64-linux-android-strip"; fi
+          unzip -q full.apk 'lib/arm64-v8a/*' -d libs
+          find libs -name '*.so' -exec "$STRIP" --strip-unneeded {} \;
+          (cd libs && zip -q -r -D "$WORK/full.apk" lib)
+          # align and sign with the fixed key, so updates install over the previous version
+          BT=$(ls -d /usr/local/lib/android/sdk/build-tools/* | sort -V | tail -n 1)
+          "$BT/zipalign" -p -f 4 full.apk aligned.apk
+          "$BT/apksigner" sign --ks "${{ github.workspace }}/.github/signing/qz-own.p12" --ks-type PKCS12 \
+            --ks-key-alias qz-own --ks-pass env:QZ_KEYSTORE_PASSWORD --key-pass env:QZ_KEYSTORE_PASSWORD \
+            --out "${{ github.workspace }}/qz-skandika.apk" aligned.apk
+          "$BT/apksigner" verify --print-certs "${{ github.workspace }}/qz-skandika.apk"
+          ls -la "${{ github.workspace }}/qz-skandika.apk"
 
       - name: Show ccache stats
         if: always()
@@ -309,15 +291,14 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: qz-android-eigener-build
-          path: ${{ github.workspace }}/output/android/build/outputs/apk/debug/android-debug.apk
+          path: ${{ github.workspace }}/qz-skandika.apk
 
       - name: Publish APK as release "eigener-build"
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          cp "${{ github.workspace }}/output/android/build/outputs/apk/debug/android-debug.apk" qz-skandika.apk
           gh release delete eigener-build --yes --cleanup-tag -R "${{ github.repository }}" || true
-          gh release create eigener-build qz-skandika.apk -R "${{ github.repository }}" \
+          gh release create eigener-build "${{ github.workspace }}/qz-skandika.apk" -R "${{ github.repository }}" \
             --target "${{ github.sha }}" \
             --title "QZ eigener Build (Skandika Cykling P12-H)" \
             --notes "Built from branch ${{ github.ref_name }} at ${{ github.sha }}. No trial limit (built without #define LICENSE)."
