@@ -408,7 +408,7 @@ void ftmsbike::forceResistance(resistance_t requestResistance) {
             Resistance = requestResistance;
         
         if(JFBK5_0 || DIRETO_XR || YPBM || FIT_BK || ZIPRO_RAVE || SPEEDRACEX || MRK_S28 || USDC_D700 || FS_YK || TUNTURI_E50_168 || VIFHTR ||
-           INCONDI_S150I || FS_SB_RCR) {
+           INCONDI_S150I || FS_SB_RCR || SKANDIKA_CYKLING_P12H) {
             uint8_t write[] = {FTMS_SET_TARGET_RESISTANCE_LEVEL, 0x00, 0x00};
             write[1] = ((uint16_t)requestResistance * 10) & 0xFF;
             write[2] = ((uint16_t)requestResistance * 10) >> 8;
@@ -2270,6 +2270,15 @@ void ftmsbike::deviceDiscovered(const QBluetoothDeviceInfo &device) {
             MRK_S36C = true;
             resistance_lvl_mode = true;
             ergModeSupported = false; // this bike doesn't have ERG mode natively, target power must be converted to resistance
+        } else if (device.name().toUpper().startsWith("CYKLING-P12-H")) {
+            // Skandika Cykling P12-H: FTMS feature bits advertise only "Resistance Target Setting" (levels 1-32).
+            // Set Target Resistance Level expects a 16-bit value in 0.1 units (04 2C 01 -> level 30);
+            // a raw level byte is read as tenths (level 11 -> 1.1 -> level 1). No native ERG.
+            qDebug() << QStringLiteral("Skandika Cykling P12-H found");
+            SKANDIKA_CYKLING_P12H = true;
+            resistance_lvl_mode = true;
+            ergModeSupported = false;
+            max_resistance = 32;
         } else if (device.name().toUpper().startsWith("HS-5000L")) {
             qDebug() << QStringLiteral("HS-5000L found");
             HS_5000L = true;

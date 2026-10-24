@@ -619,6 +619,7 @@ void DeviceTestDataIndex::Initialize() {
         "MRK-S26C-",
         "MRK-S28-",
         "MRK-S38-",
+        "CYKLING-P12-H",
         "SMB1",
         "UBIKE FTMS",
         "TX-500MB IRON",
