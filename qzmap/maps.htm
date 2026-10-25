@@ -247,8 +247,9 @@ function parseGpx(text) {
     const ele = e ? parseFloat(e.textContent) : NaN;
     pts.push({ lat, lon, ele });
   }
-  const nm = doc.getElementsByTagName('name');
-  return { pts, name: nm.length ? (nm[0].textContent || '').trim() : '' };
+  const nm = [...doc.getElementsByTagName('name')];
+  const pick = nm.find(e => e.parentNode && /^(trk|rte)$/.test(e.parentNode.localName)) || nm[0];
+  return { pts, name: pick ? (pick.textContent || '').trim().replace(/\.gpx$/i, '') : '' };
 }
 
 // Douglas-Peucker on local metric coordinates (iterative)
@@ -508,7 +509,7 @@ const LAYOUT = { W: 1, H: 1, freeTop: 0, freeBot: 1 };
 // Zoom parameter t in [0,1]: t = 0 first person, t = 1 about 5 km away. Distance grows exponentially.
 const dist = t => 1.97 * (Math.exp(7.84 * t) - 1);
 const tForDist = d => Math.log(d / 1.97 + 1) / 7.84;
-const PRESETS = { ich: 0, verfolger: tForDist(12), ueberblick: tForDist(1800) };
+const PRESETS = { ich: 0, verfolger: tForDist(35), ueberblick: tForDist(1800) };
 const EPS_TAB = [[0, 8], [0.5, 8.5], [1.08, 10], [1.78, 15], [2.48, 23], [3.18, 33], [3.7, 44]]; // camera elevation angle (deg) by log10(distance)
 const FREE_TAB = [[0, 0.86], [1.08, 0.84], [2, 0.76], [3, 0.66], [3.7, 0.6]]; // rider position inside the free map area (0 top .. 1 bottom)
 const cam = { t: 1, tTarget: clamp(+store.get('zoom', PRESETS.verfolger) || 0, 0, 1), tau: 0.5, psi: 0, lastTouch: -1e9, head: null, lift: 0, grad: 0, active: false, d: 0 };
@@ -594,6 +595,11 @@ function updateCamera(dt, now) {
   const pitchFp = cam.grad + Math.atan((2 * freeFrac(0.38) - 1) * tanH);
   const pitch = clamp(lerp(pitchFp, pitchChase, smoothstep(0.4, 3.0, d)), -89 * DEG, 30 * DEG);
   camera.setView({ destination: dest, orientation: { heading: yaw, pitch, roll: 0 } });
+  // sun behind and to the right of the camera
+  const sa = yaw + 2.35, se = 40 * DEG, ld = _v3.l || (_v3.l = new Cesium.Cartesian3());
+  ld.x = -Math.sin(sa) * Math.cos(se); ld.y = -Math.cos(sa) * Math.cos(se); ld.z = -Math.sin(se);
+  const lw = Cesium.Matrix4.multiplyByPointAsVector(enu, ld, _v3.lw || (_v3.lw = new Cesium.Cartesian3()));
+  Cesium.Cartesian3.normalize(lw, scene.light.direction);
 }
 
 // ------------------------------------------------------------------ input (rig only)
@@ -903,6 +909,11 @@ function initMap() {
   });
   if (baseLayer.errorEvent) baseLayer.errorEvent.addEventListener(e => { console.error(e); status('Das Satellitenbild konnte nicht geladen werden (Cesium-ion-Schlüssel prüfen).', true); });
   globe.enableLighting = true;
+  // light from behind the camera (sun 40 degrees high), so the view is never backlit; updated in updateCamera()
+  scene.light = new Cesium.DirectionalLight({ direction: new Cesium.Cartesian3(0, 0, -1), intensity: 2.0 });
+  globe.dynamicAtmosphereLighting = true;
+  globe.dynamicAtmosphereLightingFromSun = false;
+  if (scene.atmosphere && Cesium.DynamicAtmosphereLightingType) scene.atmosphere.dynamicLighting = Cesium.DynamicAtmosphereLightingType.SCENE_LIGHT;
   globe.depthTestAgainstTerrain = true;
   globe.tileCacheSize = 400;
   scene.fog.enabled = true;
@@ -987,7 +998,7 @@ function buildRoute() {
     },
   });
   routePrim = scene.groundPrimitives.add(new Cesium.GroundPolylinePrimitive({
-    geometryInstances: new Cesium.GeometryInstance({ geometry: new Cesium.GroundPolylineGeometry({ positions: route.cart, width: 9.0 }) }),
+    geometryInstances: new Cesium.GeometryInstance({ geometry: new Cesium.GroundPolylineGeometry({ positions: route.cart, width: 10.0 }) }),
     appearance: new Cesium.PolylineMaterialAppearance({ material: routeMat }),
     classificationType: Cesium.ClassificationType.BOTH,
     allowPicking: false,
