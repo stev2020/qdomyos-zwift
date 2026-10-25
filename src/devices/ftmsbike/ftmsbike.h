@@ -88,7 +88,9 @@ class ftmsbike : public bike {
     // should stay on direct resistance control because it doesn't send the current resistance value and it conflicts
     // with the PID HR method
     bool ergModeSupportedAvailableBySoftware() override { return !FS_YK; }
-    bool inclinationAvailableBySoftware() override { return !resistance_lvl_mode; }
+    // The P12-H turns grades into resistance levels itself (updateP12hGradeResistance), so the training
+    // program must not convert grades into resistance on top of that.
+    bool inclinationAvailableBySoftware() override { return !resistance_lvl_mode || SKANDIKA_CYKLING_P12H; }
 
   private:
     struct WriteRequest {

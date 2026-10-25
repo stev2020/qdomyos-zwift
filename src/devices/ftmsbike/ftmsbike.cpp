@@ -591,7 +591,9 @@ void ftmsbike::update() {
         auto virtualBike = this->VirtualBike();        
         bool gears_zwift_ratio = settings.value(QZSettings::gears_zwift_ratio, QZSettings::default_gears_zwift_ratio).toBool();
 
-        if (requestResistance != -1 || lastGearValue != gears()) {
+        // while the P12-H follows a route, updateP12hGradeResistance() applies the gears itself
+        const bool p12hOwnsGears = SKANDIKA_CYKLING_P12H && p12hGradeActive;
+        if (requestResistance != -1 || (lastGearValue != gears() && !p12hOwnsGears)) {
             bool deferResistanceRequest = false;
             if (requestResistance > 100) {
                 requestResistance = 100;
