@@ -857,14 +857,33 @@ function groundCart(s, slot, key) {
   return Cesium.Cartesian3.fromDegrees(pt.lon, pt.lat, h, undefined, _ovc[key + 'c'] || (_ovc[key + 'c'] = new Cesium.Cartesian3()));
 }
 let lastFlagText = '';
+// Flags are HTML on top of the map, so check (a few times per second) whether terrain hides them and dim them then.
+const _occ = {};
+function occluded(key, cart) {
+  const o = _occ[key] || (_occ[key] = { t: 0, v: false }), now = performance.now();
+  if (now - o.t < 300) return o.v;
+  o.t = now; o.v = false;
+  const cp = camera.positionWC, p = _occ.p || (_occ.p = new Cesium.Cartesian3()), c = _occ.c || (_occ.c = new Cesium.Cartographic());
+  for (let i = 1; i < 12; i++) {
+    Cesium.Cartesian3.lerp(cp, cart, i / 12, p);
+    if (!Cesium.Cartographic.fromCartesian(p, undefined, c)) continue;
+    const h = tilesOn ? undefined : globe.getHeight(c);
+    if (h !== undefined && h > c.height + 3) { o.v = true; break; }
+  }
+  return o.v;
+}
+function placeFlag(el, key, cart) {
+  if (place(el, cart)) el.style.opacity = occluded(key, cart) ? '0.35' : '1';
+}
 function updateOverlays() {
   if (!route) return;
-  place($('flagStart'), groundCart(0, 'fs', 'start'));
-  place($('flagFinish'), groundCart(route.total, 'ff', 'finish'));
-  const sm = route.nextSummit(rider.s == null ? 0 : rider.s);
+  const sNow = rider.s == null ? 0 : rider.s;
+  if (sNow < 300) placeFlag($('flagStart'), 'start', groundCart(0, 'fs', 'start')); else $('flagStart').style.display = 'none';
+  placeFlag($('flagFinish'), 'finish', groundCart(route.total, 'ff', 'finish'));
+  const sm = route.nextSummit(sNow);
   const fsEl = $('flagSummit');
   if (sm != null && route.total - sm > 30) {
-    place(fsEl, groundCart(sm, 'fk', 'summit'));
+    placeFlag(fsEl, 'summit', groundCart(sm, 'fk', 'summit'));
     const t = rider.s == null ? 'Kuppe' : 'Kuppe · ' + num((sm - rider.s) / 1000, 1) + ' km';
     if (t !== lastFlagText) { fsEl.querySelector('span').textContent = t; lastFlagText = t; }
   } else fsEl.style.display = 'none';
