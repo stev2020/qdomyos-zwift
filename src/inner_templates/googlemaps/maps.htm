@@ -19,7 +19,7 @@
 -->
 <style>
 :root{--gap:10px;--panel:rgba(16,22,30,.86);--line:rgba(255,255,255,.09);--text:#f3f5f7;--muted:#9ba7b4;--accent:#ff7a1a;
-  --c1:#66bb6a;--c2:#a5d16b;--c3:#ffca28;--c4:#ff8f00;--c5:#e53935}
+  --c1:#76421e;--c2:#a0531f;--c3:#cc6620;--c4:#ff7a1a;--c5:#ffb067;--wind:#6fd3ff}
 *{box-sizing:border-box}
 html,body{margin:0;padding:0;width:100%;height:100%;overflow:hidden;background:#0b0f14;color:var(--text);
   font-family:Roboto,"Segoe UI",system-ui,-apple-system,"Helvetica Neue",Arial,sans-serif;
@@ -93,6 +93,13 @@ button{font:inherit;color:inherit}
 .flag .fl i{display:inline-block;width:12px;height:12px;background:repeating-conic-gradient(#14181d 0 25%,#fff 0 50%) 0 0/6px 6px;border:1px solid #14181d}
 .flag .fl svg{width:14px;height:14px}
 
+#badges{position:absolute;left:var(--gap);bottom:320px;display:flex;flex-wrap:wrap;gap:8px;max-width:calc(100% - 100px)}
+.badge{display:flex;align-items:center;gap:10px;padding:7px 16px 7px 8px;border-color:rgba(111,211,255,.5)}
+.badge svg{width:40px;height:40px;flex:none;display:block}
+.badge .blab{font-size:12px;color:var(--muted);font-weight:600;white-space:nowrap}
+.badge .bval{font-size:24px;font-weight:700;line-height:1.1;white-space:nowrap;font-variant-numeric:tabular-nums}
+.badge .bval small{font-size:13px;font-weight:600;color:var(--muted);margin-left:6px}
+body.bare #badges{display:none}
 #credits{position:absolute;left:calc(var(--gap) + 4px);bottom:300px;max-width:62%;font-size:10px;line-height:1.25;color:rgba(255,255,255,.88);
   text-shadow:0 1px 2px rgba(0,0,0,.9)}
 #credits img{max-height:16px;width:auto;vertical-align:middle}
@@ -125,6 +132,8 @@ body.bare #metrics,body.bare #camBar,body.bare #zoomCol{display:none}
 .range input{flex:1;height:34px;margin:0;accent-color:var(--accent)}
 .range span{min-width:80px;text-align:right;font-weight:700;font-variant-numeric:tabular-nums}
 .hint{margin:14px 0 0;font-size:13px;line-height:1.45;color:var(--muted)}
+#windSeg{width:max-content;background:rgba(255,255,255,.06)}
+#windSeg button{min-width:52px}
 </style>
 </head>
 <body>
@@ -175,6 +184,15 @@ body.bare #metrics,body.bare #camBar,body.bare #zoomCol{display:none}
   <div class="poi flag" id="flagSummit"><div class="pole"></div><div class="fl"><svg viewBox="0 0 24 24"><path d="M2.5 19.5 L9.5 7.5 L13.2 13.6 L15.6 10.2 L21.5 19.5 Z" fill="#ff8f00"/></svg><span>Kuppe</span></div></div>
   <div class="poi" id="rider"><div class="halo"></div><div class="dot"><svg viewBox="0 0 24 24" id="riderArrow"><path d="M12 2.5 L19.6 20.6 L12 16.3 L4.4 20.6 Z" fill="#ff7a1a"/></svg></div></div>
 
+  <div id="badges">
+    <div id="windBadge" class="panel badge hidden">
+      <svg viewBox="0 0 44 44" aria-hidden="true"><circle cx="22" cy="22" r="19" fill="none" stroke="#6fd3ff" stroke-opacity=".35" stroke-width="1.5"/>
+        <path d="M22 14.5 L27 28 L22 25 L17 28 Z" fill="#f5f7f9"/>
+        <g id="windArrow"><line x1="22" y1="2.5" x2="22" y2="9.5" stroke="#6fd3ff" stroke-width="2.4" stroke-linecap="round"/><path d="M22 13.5 L18.3 7.6 L25.7 7.6 Z" fill="#6fd3ff"/></g></svg>
+      <div><div class="blab" id="windLab">Wind</div><div class="bval"><span id="windVal">±0 %</span><small id="windSub"></small></div></div>
+    </div>
+  </div>
+
   <div id="credits" class="pe"></div>
 
   <div id="profile" class="panel pe">
@@ -199,6 +217,10 @@ body.bare #metrics,body.bare #camBar,body.bare #zoomCol{display:none}
     <div class="opts" id="optCells"></div>
     <h3>Verfolger-Abstand</h3>
     <div class="range"><input type="range" id="followRange" min="10" max="90" step="1"><span id="followLabel"></span></div>
+    <h3>Wind</h3>
+    <div class="seg" id="windSeg"><button data-w="0">Aus</button><button data-w="1">1</button><button data-w="2">2</button><button data-w="3">3</button><button data-w="4">4</button></div>
+    <p class="hint" id="windHint">Stärke 1 bis 4 macht es bei Gegenwind 5, 10, 15 oder 20 % schwerer. Seitenwind zählt halb, Rückenwind gar nicht.
+      Die Richtung wird bei jeder Fahrt neu ausgelost.</p>
     <h3>Knöpfe</h3>
     <div class="opts" id="optButtons"></div>
     <p class="hint">Tippen auf die Karte blendet alle Anzeigen und die obere Leiste aus und wieder ein.
@@ -243,8 +265,17 @@ const store = {
   get(k, d) { try { const v = localStorage.getItem('qzmap.' + k); return v === null ? d : JSON.parse(v); } catch (e) { return d; } },
   set(k, v) { try { localStorage.setItem('qzmap.' + k, JSON.stringify(v)); } catch (e) { /* storage not available */ } },
 };
-const GRADE_COLORS = ['#66bb6a', '#a5d16b', '#ffca28', '#ff8f00', '#e53935'];
+// grade classes in orange steps on the dark panels: the steeper, the brighter
+const GRADE_COLORS = ['#76421e', '#a0531f', '#cc6620', '#ff7a1a', '#ffb067'];
 const gradeClass = g => (g <= 1 ? 0 : g <= 3 ? 1 : g <= 5 ? 2 : g <= 7 ? 3 : 4);
+// heart rate zones as at Orangetheory, by share of the maximum heart rate: grey, blue, green, orange, red
+const HR_ZONES = [[61, '#b9c2cc'], [71, '#3d9bff'], [84, '#3fcf5e'], [92, '#ff8c1a'], [Infinity, '#ff4d4d']];
+const hrZone = pct => { for (let i = 0; i < HR_ZONES.length; i++) if (pct < HR_ZONES[i][0]) return i; return HR_ZONES.length - 1; };
+const COMPASS = ['Norden', 'Nordosten', 'Osten', 'Südosten', 'Süden', 'Südwesten', 'Westen', 'Nordwesten'];
+const compassName = deg => COMPASS[Math.floor(((((deg % 360) + 360) % 360) + 22.5) / 45) % 8];
+// wind of this ride, from QZ (the bike applies it, see ftmsbike): strength 0..4, direction it comes from (degrees),
+// extra resistance right now in percent (-1: this bike does not use the wind)
+const WIND = { strength: 0, from: 0, pct: -1, known: false };
 
 function loadScript(src) {
   return new Promise((resolve, reject) => {
@@ -667,6 +698,7 @@ function openSheet() {
   add($('optButtons'), BUTTON_NAMES, 'buttons');
   $('followRange').value = Math.round(PRESETS.verfolger * 100);
   showFollow();
+  markWind();
   $('sheet').classList.add('open');
 }
 
@@ -824,6 +856,10 @@ function initInput() {
     if (Math.abs(cam.tTarget - old) < 0.03) setZoom(PRESETS.verfolger, 0.3); // follower view on: move along
     layout();
   });
+  document.querySelectorAll('#windSeg button').forEach(b => b.addEventListener('click', () => {
+    WIND.strength = +b.dataset.w; markWind();
+    qz.sendObj({ msg: 'setsettings', content: { funrun_wind_strength: WIND.strength } });
+  }));
   el.addEventListener('wheel', e => {
     if (!cam.active) return;
     e.preventDefault();
@@ -871,6 +907,7 @@ function layout() {
   $('zoomTrack').style.height = th + 'px';
   for (const k of ['ueberblick', 'verfolger']) $('tick-' + k).style.top = (34 + (1 - PRESETS[k]) * (th - 68) - 1) + 'px';
   $('credits').style.bottom = (H - pTop + 6) + 'px';
+  placeBadges();
   if (camera) camera.frustum.fov = (W > H ? 66 : 62) * DEG;
   PROFILE.dirty = true;
 }
@@ -883,7 +920,7 @@ function setVal(id, txt, color) {
 }
 const hud = {
   metrics(m) {
-    if (m.inclination != null) { const g = +m.inclination; setVal('m-grade', num(g, 1), g < -0.5 ? '#81d4fa' : g <= 1 ? '' : GRADE_COLORS[gradeClass(g)]); }
+    if (m.inclination != null) { const g = +m.inclination; setVal('m-grade', num(g, 1), g < -0.5 ? '#81d4fa' : g <= 5 ? '' : GRADE_COLORS[gradeClass(g)]); }
     if (m.resistance != null) setVal('m-level', String(Math.round(+m.resistance)));
     if (m.speed != null) setVal('m-speed', num(+m.speed, 1));
     if (m.watts != null) setVal('m-power', String(Math.round(+m.watts)));
@@ -891,12 +928,26 @@ const hud = {
     const hr = +m.heart || 0;
     const hrCell = $('m-hr');
     if ((hr > 0) === hrCell.classList.contains('off')) { hrCell.classList.toggle('off', !(hr > 0)); updateMetricsPanel(); layout(); }
-    if (hr > 0) setVal('m-hr', String(Math.round(hr)));
+    if (hr > 0) {
+      const max = +m.funrun_hr_max > 0 ? +m.funrun_hr_max : 190, pct = Math.round(hr / max * 100);
+      setVal('m-hr', String(Math.round(hr)), HR_ZONES[hrZone(pct)][1]);
+      const lab = hrCell.querySelector('.lab'), t = 'Puls · ' + pct + ' %';
+      if (lab.textContent !== t) lab.textContent = t;
+    }
+    if (m.funrun_wind_strength != null) {
+      const st = clamp(Math.round(+m.funrun_wind_strength || 0), 0, 4);
+      if (st !== WIND.strength || !WIND.known) { WIND.strength = st; markWind(); }
+      WIND.from = +m.funrun_wind_from || 0;
+      WIND.pct = m.funrun_wind_pct == null ? -1 : +m.funrun_wind_pct;
+      WIND.known = true;
+    }
     if (m.elapsed_h != null) setVal('m-time', (+m.elapsed_h || 0) + ':' + pad2(m.elapsed_m) + ':' + pad2(m.elapsed_s));
   },
   tick() {
+    placeBadges();
     if (!route) return;
     const s = rider.s == null ? 0 : rider.s;
+    updateWindBadge(s);
     setVal('m-dist', num(s / 1000, 1));
     const rem = Math.max(0, route.total - s), up = Math.max(0, route.totalGain - route.climbedAt(s));
     $('premain').textContent = 'Noch ' + num(rem / 1000, 1) + ' km · ↑ ' + Math.round(up) + ' Hm';
@@ -915,6 +966,35 @@ const hud = {
     if ($('pclimb2').textContent !== b) $('pclimb2').textContent = b;
   },
 };
+
+// ------------------------------------------------------------------ HUD: badges (wind)
+function setText(id, txt) { const el = $(id); if (el.textContent !== txt) el.textContent = txt; }
+function placeBadges() {
+  const H = window.innerHeight, pr = $('profile'), pTop = pr.offsetParent !== null ? pr.getBoundingClientRect().top : H;
+  // (Cesium positions its credit lines absolutely inside #credits, so measure those)
+  let ch = 0;
+  for (const k of $('credits').children) ch = Math.max(ch, k.getBoundingClientRect().height);
+  $('badges').style.bottom = (H - pTop + 6 + (ch ? ch + 6 : 0)) + 'px';
+}
+function updateWindBadge(s) {
+  const show = WIND.known && WIND.strength > 0 && WIND.pct >= 0;
+  $('windBadge').classList.toggle('hidden', !show);
+  if (!show) return;
+  // where the wind comes from, seen from the rider: 0 = straight ahead, + = from the right
+  const rel = ((((WIND.from - route.headingAt(s, 20, 20) / DEG) % 360) + 540) % 360) - 180;
+  const f = (1 + Math.cos(rel * DEG)) / 2;
+  const side = rel > 0 ? 'rechts' : 'links';
+  const kind = f >= 0.85 ? 'Gegenwind' : f >= 0.6 ? 'Gegenwind schräg von ' + side : f > 0.4 ? 'Seitenwind von ' + side
+    : f > 0.15 ? 'Rückenwind schräg von ' + side : 'Rückenwind';
+  const pct = Math.round(WIND.pct);
+  setText('windLab', kind + ' · Stärke ' + WIND.strength + ' aus ' + compassName(WIND.from));
+  setText('windVal', pct >= 1 ? '+' + pct + ' %' : '±0 %');
+  setText('windSub', pct >= 1 ? 'schwerer' : 'normal');
+  $('windArrow').setAttribute('transform', 'rotate(' + Math.round(rel) + ' 22 22)');
+}
+function markWind() {
+  document.querySelectorAll('#windSeg button').forEach(b => b.classList.toggle('on', +b.dataset.w === WIND.strength));
+}
 
 // ------------------------------------------------------------------ HUD: elevation profile
 function niceStep(x) {
@@ -1392,7 +1472,8 @@ const qz = {
     ws.onerror = () => { try { ws.close(); } catch (e) { /* ignore */ } };
     ws.onmessage = ev => { let m; try { m = JSON.parse(ev.data); } catch (e) { return; } qz.onMessage(m); };
   },
-  send(msg) { if (qz.ws && qz.ws.readyState === 1) qz.ws.send(JSON.stringify({ msg })); },
+  send(msg) { qz.sendObj({ msg }); },
+  sendObj(o) { if (qz.ws && qz.ws.readyState === 1) qz.ws.send(JSON.stringify(o)); },
   requestGpx() {
     if (route) return;
     qz.send('getgpxbase64');
@@ -1429,6 +1510,8 @@ class Demo {
   constructor(o) {
     this.s = clamp((o.startKm || 0) * 1000, 0, route.total);
     this.speedup = o.speedup || 1; this.tick = 0; this.elapsed = this.s / 4; this.kj = this.elapsed * 0.19;
+    this.windFrom = o.windFrom != null ? o.windFrom : Math.random() * 360; this.windF = -1; this.hr = 120;
+    if (o.wind != null) WIND.strength = o.wind;
   }
   update(dt) {
     const sdt = dt * this.speedup, g = route.gradeAt(this.s);
@@ -1440,10 +1523,15 @@ class Demo {
     this.tick += 1;
     const moving = this.s < route.total, el = Math.floor(this.elapsed);
     rider.measure(this.s + (moving ? (Math.random() - 0.5) * 4 : 0), moving ? v * this.speedup : 0);
+    const fT = (1 + Math.cos((this.windFrom - route.headingAt(this.s, 20, 20) / DEG) * DEG)) / 2;
+    this.windF = this.windF < 0 ? fT : this.windF + (fT - this.windF) * (1 - Math.exp(-this.speedup / 5));
+    this.hr += (clamp(92 + P * 0.36, 85, 185) - this.hr) * 0.08;
     hud.metrics({
+      heart: moving ? Math.round(this.hr + (Math.random() - 0.5) * 2) : 0, funrun_hr_max: 190,
+      funrun_wind_strength: WIND.strength, funrun_wind_from: this.windFrom, funrun_wind_pct: 5 * WIND.strength * this.windF,
       speed: moving ? v * 3.6 : 0, watts: moving ? Math.round(P + (Math.random() - 0.5) * 12) : 0,
       cadence: moving ? Math.round(clamp(84 - g * 1.6, 58, 96) + (Math.random() - 0.5) * 3) : 0,
-      resistance: clamp(Math.round(11.5 + 2 * g), 1, CFG.maxLevel), inclination: g, heart: 0, calories: this.kj,
+      resistance: clamp(Math.round((12 + 1.5 * g) * (1 + 0.05 * WIND.strength * this.windF)), 1, CFG.maxLevel), inclination: g, calories: this.kj,
       elapsed_h: Math.floor(el / 3600), elapsed_m: Math.floor(el / 60) % 60, elapsed_s: el % 60,
     });
   }

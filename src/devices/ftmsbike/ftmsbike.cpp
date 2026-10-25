@@ -490,8 +490,23 @@ void ftmsbike::updateP12hGradeResistance() {
     } else {
         p12hGradeSmoothed += (p12hGradeTarget - p12hGradeSmoothed) * (1.0 - exp(-dt / 5.0));
     }
+    // FunRun wind (map menu): strength 1..4 adds up to 5/10/15/20 % at full headwind, half of it with crosswind,
+    // nothing with tailwind. The wind direction is fixed for the ride, the route direction changes with every bend,
+    // so the effect is smoothed like the grade.
+    QSettings settings;
+    const int windStrength =
+        qBound(0, settings.value(QZSettings::funrun_wind_strength, QZSettings::default_funrun_wind_strength).toInt(), 4);
+    const double windTarget = (1.0 + cos(qDegreesToRadians(funrunWindFrom() - currentAzimuth()))) / 2.0;
+    if (p12hWindSmoothed < 0) {
+        p12hWindSmoothed = windTarget;
+    } else {
+        p12hWindSmoothed += (windTarget - p12hWindSmoothed) * (1.0 - exp(-dt / 5.0));
+    }
+    const double windExtra = 0.05 * windStrength * p12hWindSmoothed;
+    funrunWindPct = windExtra * 100.0;
     const double gears = gearsModifier();
-    const double level = qBound(1.0, p12hResistanceForGrade(p12hGradeSmoothed + gears), (double)max_resistance);
+    const double level =
+        qBound(1.0, p12hResistanceForGrade(p12hGradeSmoothed + gears) * (1.0 + windExtra), (double)max_resistance);
     const int target = qBound(1, (int)lround(level), max_resistance);
     const bool first = p12hLastLevel < 0;
     // a gear change by the rider applies at once
@@ -504,7 +519,7 @@ void ftmsbike::updateP12hGradeResistance() {
     if (first || gearsChanged ||
         (target != p12hLastLevel && fabs(level - p12hLastLevelExact) >= 1.0 && now - p12hLastLevelTime >= 10000)) {
         qDebug() << QStringLiteral("P12-H grade") << p12hGradeSmoothed << QStringLiteral("gears") << gearsModifier()
-                 << QStringLiteral("-> resistance level") << target;
+                 << QStringLiteral("wind %") << funrunWindPct << QStringLiteral("-> resistance level") << target;
         init();
         forceResistance(target);
         p12hLastLevel = target;

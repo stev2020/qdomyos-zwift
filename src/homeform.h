@@ -242,6 +242,8 @@ class homeform : public QObject {
     QQmlApplicationEngine *getEngine() { return engine; }
 
     QByteArray currentPelotonImage();
+    // Maximum heart rate from the age or the override in the settings (bpm)
+    double heartRateMax();
     // Status line of the search for the equipment on the home page, with the last device found;
     // empty once it is connected
     Q_INVOKABLE QString bluetoothSearchStatus();
@@ -1193,7 +1195,6 @@ public:
     void update();
     void ten_hz();
     void checkClipboardForWorkout();
-    double heartRateMax();
     bool adjustTreadmillPidHeartRate(bool increaseLoad, double minSpeed, double maxSpeed,
                                      const QString &reason);
     void backup();

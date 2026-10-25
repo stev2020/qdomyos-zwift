@@ -1,6 +1,7 @@
 #include "devices/bluetoothdevice.h"
 
 #include <QFile>
+#include <QRandomGenerator>
 #include <QSettings>
 #include <QTime>
 #include <cmath>
@@ -12,7 +13,7 @@
 #include "ios/lockscreen.h"
 #endif
 
-bluetoothdevice::bluetoothdevice() {}
+bluetoothdevice::bluetoothdevice() { funrunNewWind(); }
 
 bluetoothdevice::~bluetoothdevice() {
     if(this->virtualDevice) {
@@ -627,10 +628,18 @@ QGeoCoordinate bluetoothdevice::currentCordinate() {
     return coordinate;
 }
 
-void bluetoothdevice::workoutEventStateChanged(bluetoothdevice::WORKOUT_EVENT_STATE state) { lastState = state; }
+void bluetoothdevice::workoutEventStateChanged(bluetoothdevice::WORKOUT_EVENT_STATE state) {
+    lastState = state;
+    // a new start after a stop is a new ride: new wind
+    if (state == STARTED)
+        funrunNewWind();
+}
+void bluetoothdevice::funrunNewWind() { funrunWindFromDeg = QRandomGenerator::global()->bounded(360.0); }
 void bluetoothdevice::setInclination(double inclination) { Inclination = inclination; }
 void bluetoothdevice::setGPXFile(QString filename) {
     gpxFileName = filename;
+    // a new route is a new ride: new wind
+    funrunNewWind();
     QFile input(filename);
     if (input.open(QIODevice::ReadOnly)) {
         QByteArray asSaved = input.readAll();

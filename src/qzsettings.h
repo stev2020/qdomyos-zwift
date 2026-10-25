@@ -3407,6 +3407,11 @@ class QZSettings {
     static const QString ui_text_scale_system;
     static constexpr bool default_ui_text_scale_system = true;
 
+    // FunRun wind for GPX rides (Skandika P12-H), set from the map menu: 0 = off, 1..4 = up to 5/10/15/20 %
+    // more resistance at full headwind (crosswind half, tailwind nothing); the direction changes with every ride
+    static const QString funrun_wind_strength;
+    static constexpr int default_funrun_wind_strength = 0;
+
     /**
      * @brief Write the QSettings values using the constants from this namespace.
      * @param showDefaults Optionally indicates if the default should be shown with the key.

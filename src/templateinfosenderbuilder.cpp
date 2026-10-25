@@ -1853,6 +1853,13 @@ void TemplateInfoSenderBuilder::buildContext(bool forceReinit) {
         obj.setProperty(QStringLiteral("latitude"), device->currentCordinate().latitude());
         obj.setProperty(QStringLiteral("longitude"), device->currentCordinate().longitude());
         obj.setProperty(QStringLiteral("altitude"), device->currentCordinate().altitude());
+        // FunRun: route direction, wind of this ride and the maximum heart rate for the heart rate zones
+        obj.setProperty(QStringLiteral("azimuth"), device->currentAzimuth());
+        obj.setProperty(QStringLiteral("funrun_wind_from"), device->funrunWindFrom());
+        obj.setProperty(QStringLiteral("funrun_wind_pct"), device->funrunWindPercent());
+        obj.setProperty(QStringLiteral("funrun_wind_strength"),
+                        settings.value(QZSettings::funrun_wind_strength, QZSettings::default_funrun_wind_strength).toInt());
+        obj.setProperty(QStringLiteral("funrun_hr_max"), homeform::singleton()->heartRateMax());
         obj.setProperty(QStringLiteral("peloton_offset"), pelotonOffset());
         obj.setProperty(QStringLiteral("peloton_ask_start"), pelotonAskStart());
         obj.setProperty(QStringLiteral("autoresistance"), homeform::singleton()->autoResistance());

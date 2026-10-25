@@ -441,6 +441,18 @@ class bluetoothdevice : public QObject {
      */
     QString currentGPXBase64() { return gpxBase64; }
 
+    /**
+     * @brief funrunWindFrom FunRun wind: the direction the wind comes from during this ride. Units: degrees (0 = north).
+     * A new random direction is drawn for every ride (new GPX route or a new start after a stop).
+     */
+    double funrunWindFrom() const { return funrunWindFromDeg; }
+
+    /**
+     * @brief funrunWindPercent FunRun wind: extra resistance from the wind right now, in percent.
+     * -1 when the bike does not apply the wind.
+     */
+    double funrunWindPercent() const { return funrunWindPct; }
+
     // in the future these 2 should be calculated inside the update_metrics()
 
     /**
@@ -742,6 +754,21 @@ class bluetoothdevice : public QObject {
      * @brief azimuthAvgNext300m The average azimuth for the next 300m. Units: degrees (? = North)
      */
     double azimuthAvgNext300m;
+
+    /**
+     * @brief funrunWindFromDeg FunRun wind direction of this ride. Units: degrees (0 = north)
+     */
+    double funrunWindFromDeg = 0;
+
+    /**
+     * @brief funrunWindPct FunRun extra resistance from the wind right now, in percent (-1 = not used by this bike)
+     */
+    double funrunWindPct = -1;
+
+    /**
+     * @brief funrunNewWind Draws a new random wind direction for the next ride.
+     */
+    void funrunNewWind();
 
     /**
      * @brief coordinateTS ???. Unit: ???
