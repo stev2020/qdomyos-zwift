@@ -191,7 +191,12 @@ jobs:
           echo "#define SMTP_SERVER ${{ secrets.smtp_server }}" >> secret.h
           echo "#define INTERVALSICU_CLIENT_ID ${{ secrets.intervalsicu_client_id }}" >> secret.h
           echo "#define INTERVALSICU_CLIENT_SECRET ${{ secrets.intervalsicu_client_secret }}" >> secret.h
-          echo "${{ secrets.cesiumkey }}" >> inner_templates/googlemaps/cesium-key.js
+          # Cesium ion key for the 3D map (repository secret CESIUM_TOKEN)
+          if [ -n "${{ secrets.CESIUM_TOKEN }}" ]; then
+            printf "Cesium.Ion.defaultAccessToken = '%s';\n" "${{ secrets.CESIUM_TOKEN }}" >> inner_templates/googlemaps/cesium-key.js
+          else
+            echo "::warning::Secret CESIUM_TOKEN is missing, the 3D map will not load."
+          fi
 
       - name: Build qthttpserver for Android
         run: |
