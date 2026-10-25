@@ -118,6 +118,10 @@ class ftmsbike : public bike {
     void forceResistance(resistance_t requestResistance);
     void forcePower(int16_t requestPower);
     void forceInclination(double requestInclination);
+    // Skandika Cykling P12-H: grade requests (GPX rides, inclination buttons) become resistance levels,
+    // because the bike acknowledges FTMS simulation params (0x11) with a beep but keeps its level.
+    void updateP12hGradeResistance();
+    double p12hResistanceForGrade(double grade);
     void sendZwiftPlayInclination(double inclination);
     uint16_t wattsFromResistance(double resistance);
     bool isManualResistanceBike() const;
@@ -212,6 +216,14 @@ class ftmsbike : public bike {
     bool MRK_S28 = false;
     bool MRK_S36C = false;
     bool SKANDIKA_CYKLING_P12H = false;
+    double p12hGradeTarget = 0;
+    double p12hGradeSmoothed = 0;
+    bool p12hGradeActive = false;
+    bool p12hGradeSmoothedValid = false;
+    qint64 p12hLastGradeUpdate = 0;
+    int p12hLastLevel = -1;
+    double p12hLastLevelExact = 0;
+    qint64 p12hLastLevelTime = 0;
     bool HAMMER = false;
     bool HS_5000L = false;
     bool H9115 = false;

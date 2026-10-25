@@ -7,6 +7,7 @@
 #include <QBluetoothLocalDevice>
 #include <QDateTime>
 #include <QFile>
+#include <QMap>
 #include <QMetaEnum>
 #include <QSettings>
 #include <QThread>
@@ -19,6 +20,7 @@
 #include "keepawakehelper.h"
 #endif
 #include <chrono>
+#include <iterator>
 #include "wheelcircumference.h"
 
 #ifdef Q_OS_IOS
@@ -445,6 +447,64 @@ void ftmsbike::forceInclination(double requestInclination) {
                         QStringLiteral("forceInclination ") + QString::number(requestInclination));
 }
 
+double ftmsbike::p12hResistanceForGrade(double grade) {
+    QSettings settings;
+    // Optional user table (Settings -> Custom Inclination to Resistance Table), "grade|level" per line
+    if (settings.value(QStringLiteral("custom_inclination_resistance_table_enabled"), false).toBool()) {
+        QString table = settings.value(QStringLiteral("custom_inclination_resistance_table"), QString()).toString();
+        table.replace(QLatin1Char(';'), QLatin1Char('\n'));
+        QMap<double, double> points;
+        const QStringList rows = table.split(QLatin1Char('\n'), Qt::SkipEmptyParts);
+        for (const QString &row : rows) {
+            const QStringList fields = row.split(QLatin1Char('|'));
+            bool okG = false, okR = false;
+            if (fields.size() < 2)
+                continue;
+            const double g = fields.at(0).trimmed().toDouble(&okG);
+            const double r = fields.at(1).trimmed().toDouble(&okR);
+            if (okG && okR)
+                points.insert(g, r);
+        }
+        if (!points.isEmpty()) {
+            auto upper = points.lowerBound(grade);
+            if (upper == points.constBegin())
+                return upper.value();
+            if (upper == points.constEnd())
+                return std::prev(upper).value();
+            const auto lower = std::prev(upper);
+            return lower.value() + (grade - lower.key()) / (upper.key() - lower.key()) * (upper.value() - lower.value());
+        }
+    }
+    // Default: flat road = level 11, +1.5 levels per percent of grade (levels 1..32)
+    return 11.0 + 1.5 * grade;
+}
+
+void ftmsbike::updateP12hGradeResistance() {
+    const qint64 now = QDateTime::currentMSecsSinceEpoch();
+    const double dt = p12hLastGradeUpdate ? qBound(0.0, (now - p12hLastGradeUpdate) / 1000.0, 2.0) : 0.0;
+    p12hLastGradeUpdate = now;
+    // GPX rows carry raw point-to-point grades: smooth them so the level does not jump around
+    if (!p12hGradeSmoothedValid) {
+        p12hGradeSmoothed = p12hGradeTarget;
+        p12hGradeSmoothedValid = true;
+    } else {
+        p12hGradeSmoothed += (p12hGradeTarget - p12hGradeSmoothed) * (1.0 - exp(-dt / 3.0));
+    }
+    const double level = qBound(1.0, p12hResistanceForGrade(p12hGradeSmoothed + gearsModifier()), (double)max_resistance);
+    const int target = qBound(1, (int)lround(level), max_resistance);
+    const bool first = p12hLastLevel < 0;
+    // only write when the level really changes (every write makes the bike beep)
+    if (first || (target != p12hLastLevel && fabs(level - p12hLastLevelExact) >= 1.0 && now - p12hLastLevelTime >= 4000)) {
+        qDebug() << QStringLiteral("P12-H grade") << p12hGradeSmoothed << QStringLiteral("gears") << gearsModifier()
+                 << QStringLiteral("-> resistance level") << target;
+        init();
+        forceResistance(target);
+        p12hLastLevel = target;
+        p12hLastLevelExact = level;
+        p12hLastLevelTime = now;
+    }
+}
+
 void ftmsbike::sendZwiftPlayInclination(double inclination) {
 #ifdef Q_OS_IOS
 #ifndef IO_UNDER_QT
@@ -580,7 +640,16 @@ void ftmsbike::update() {
         }
         
         // gpx scenario for example
-        if(!virtualBike || !virtualBike->ftmsDeviceConnected()) {
+        if (SKANDIKA_CYKLING_P12H && (!virtualBike || !virtualBike->ftmsDeviceConnected())) {
+            if (requestInclination != -100) {
+                p12hGradeTarget = requestInclination;
+                p12hGradeActive = true;
+                requestInclination = -100;
+            }
+            if (p12hGradeActive) {
+                updateP12hGradeResistance();
+            }
+        } else if(!virtualBike || !virtualBike->ftmsDeviceConnected()) {
             if ((requestInclination != -100 || (lastGearValue != gears() && requestInclination != -100))) {
                 emit debug(QStringLiteral("writing inclination ") + QString::number(requestInclination));
                 forceInclination(requestInclination + gearsModifier()); // since this bike doesn't have the concept of resistance,
