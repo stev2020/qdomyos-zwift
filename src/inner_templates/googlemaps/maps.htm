@@ -1195,8 +1195,13 @@ async function boot() {
   status('3D-Karte wird geladen …');
   window.qzmapDiag.stage = 'cesium-laden';
   try { await loadCesium(); } catch (e) { status('Die 3D-Karte braucht eine Internetverbindung (CesiumJS konnte nicht geladen werden).', true); return; }
+  // cesium-key.js carries the own ion key from the build (secret CESIUM_TOKEN). Without one, CesiumJS keeps its
+  // built-in evaluation key: fine for testing, Cesium then shows a notice in the credits.
+  const builtinToken = Cesium.Ion.defaultAccessToken;
   if (!CFG.offline) { try { await loadScript('cesium-key.js'); } catch (e) { /* not available in previews */ } }
-  if (!CFG.offline && Cesium.Ion.defaultAccessToken === '') status('Im Build fehlt der Cesium-ion-Schlüssel (cesium-key.js), daher kein Gelände/Satellitenbild.', true);
+  if (!Cesium.Ion.defaultAccessToken) Cesium.Ion.defaultAccessToken = builtinToken;
+  window.qzmapDiag.key = Cesium.Ion.defaultAccessToken === builtinToken ? 'cesium-test' : 'eigener';
+  if (!CFG.offline && window.qzmapDiag.key === 'cesium-test') toast('Kein eigener Cesium-Schlüssel im Build – die Karte nutzt vorerst den Testschlüssel von Cesium.', 6000);
   window.qzmapDiag.stage = 'cesium-ok';
   try { initMap(); } catch (e) { console.error(e); status('3D-Darstellung nicht möglich: ' + e.message, true); return; }
   window.qzmapDiag.stage = 'karte-ok';

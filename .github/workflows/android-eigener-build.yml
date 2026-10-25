@@ -182,6 +182,8 @@ jobs:
           chmod +x $NDK_BIN/clang $NDK_BIN/clang++
 
       - name: Generate secrets
+        env:
+          CESIUM_TOKEN: ${{ secrets.CESIUM_TOKEN }}
         run: |
           cd src
           echo "#define STRAVA_SECRET_KEY ${{ secrets.strava_secret_key }}" > secret.h
@@ -191,11 +193,14 @@ jobs:
           echo "#define SMTP_SERVER ${{ secrets.smtp_server }}" >> secret.h
           echo "#define INTERVALSICU_CLIENT_ID ${{ secrets.intervalsicu_client_id }}" >> secret.h
           echo "#define INTERVALSICU_CLIENT_SECRET ${{ secrets.intervalsicu_client_secret }}" >> secret.h
-          # Cesium ion key for the 3D map (repository secret CESIUM_TOKEN)
-          if [ -n "${{ secrets.CESIUM_TOKEN }}" ]; then
-            printf "Cesium.Ion.defaultAccessToken = '%s';\n" "${{ secrets.CESIUM_TOKEN }}" >> inner_templates/googlemaps/cesium-key.js
+          # Cesium ion key for the 3D map (repository secret CESIUM_TOKEN). Spaces, line breaks and quotes
+          # that came along when pasting are dropped, they would break the JavaScript line.
+          cesium_token=$(printf '%s' "$CESIUM_TOKEN" | tr -d " \t\r\n\"'")
+          if [ -n "$cesium_token" ]; then
+            printf "Cesium.Ion.defaultAccessToken = '%s';\n" "$cesium_token" >> inner_templates/googlemaps/cesium-key.js
+            echo "Cesium key added (${#cesium_token} characters)"
           else
-            echo "::warning::Secret CESIUM_TOKEN is missing, the 3D map will not load."
+            echo "::warning::Secret CESIUM_TOKEN is missing or empty, the 3D map uses Cesium's evaluation key."
           fi
 
       - name: Build qthttpserver for Android
