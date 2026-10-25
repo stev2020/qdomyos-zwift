@@ -38,6 +38,7 @@
         <file>inner_templates/funrun/ende.htm</file>
         <file>inner_templates/funrun/funrun.css</file>
         <file>inner_templates/funrun/funrun.js</file>
+        <file>inner_templates/funrun/verlauf.htm</file>
         <file>inner_templates/chartjs/.eslintrc.js</file>
         <file>inner_templates/chartjs/.jshintrc</file>
         <file>inner_templates/chartjs/chart.htm</file>

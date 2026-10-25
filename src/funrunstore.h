@@ -3,6 +3,8 @@
 
 #include "sessionline.h"
 
+#include <QGeoCoordinate>
+
 #include <QHash>
 #include <QJsonArray>
 #include <QJsonObject>
@@ -63,6 +65,42 @@ class FunRunStore {
     static QString folder();
     static bool validId(const QString &id);
     static void writeIndex(const QJsonArray &rides);
+};
+
+/**
+ * FunRun ghost rider: an earlier ride of the same route (best time or last ride) rides along. Every second the
+ * current position on the route is compared with where the ghost was after the same time on the route.
+ */
+class FunRunGhost {
+  public:
+    // follows the current GPX file and the ghost setting ("best", "last", "off"): loads route and ghost on a change
+    void follow(const QString &gpxFile, const QString &mode);
+    // a new ride: the start of the route is looked for again, the ghost is loaded again (there may be a new best)
+    void restart();
+    // one second of the ride: position now and elapsed seconds of the session
+    void measure(const QGeoCoordinate &position, quint32 elapsed);
+
+    bool active() const { return !gT.isEmpty() && myD >= 0; }
+    double routeLength() const { return route.length(); }
+    double myDistance() const { return myD; }
+    double ghostDistance() const { return ghostD; }
+    // seconds ahead of the ghost (negative: behind); NaN where the ghost never got
+    double gapSeconds() const { return gapS; }
+    double gapMeters() const { return myD - ghostD; }
+    // "Bestzeit" or "Letzte Fahrt"
+    QString label() const { return ghostLabel; }
+    // route time of the ghost ride in seconds, -1 when it did not get to the end
+    double ghostTime() const { return ghostTotal; }
+
+  private:
+    void load();
+    FunRunRoute route;
+    QString routeFile, mode, ghostLabel;
+    QVector<double> gT, gD; // ghost: time since the start of the route -> distance along the route
+    double ghostTotal = -1;
+    double myD = -1, ghostD = 0, gapS = 0;
+    double startElapsed = -1;
+    bool dirty = true;
 };
 
 #endif // FUNRUNSTORE_H

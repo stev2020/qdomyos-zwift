@@ -54,6 +54,8 @@
         <span id="noteText">Gespeichert in „Meine Fahrten“</span>
       </p>
       <div class="btns">
+        <button class="btn hidden" id="btnDelete" style="color:var(--bad)">Fahrt löschen</button>
+        <button class="btn hidden" id="btnHistory">Meine Fahrten</button>
         <button class="btn primary" id="btnDone">Fertig</button>
       </div>
     </div>
@@ -65,9 +67,23 @@
 'use strict';
 const $ = FR.$;
 const fromHistory = FR.qs.get('from') === 'history';
-const close = () => FR.close(fromHistory ? 'back' : 'home');
+// opened from the history: back to the list inside this page, otherwise the app closes the page
+const demoQuery = FR.qs.get('demo') ? '&demo=' + encodeURIComponent(FR.qs.get('demo')) : '';
+const close = () => {
+  if (fromHistory && history.length > 1) history.back();
+  else if (fromHistory) location.replace('verlauf.htm?v=' + Date.now() + demoQuery);
+  else FR.close('home');
+};
 $('btnClose').addEventListener('click', close);
 $('btnDone').addEventListener('click', close);
+// right after the ride: on to the history; from the history: delete this ride (a second tap confirms)
+$('btnHistory').addEventListener('click', () => { location.href = 'verlauf.htm?v=' + Date.now() + demoQuery; });
+let deleteArmed = false;
+$('btnDelete').addEventListener('click', async () => {
+  if (!deleteArmed) { deleteArmed = true; $('btnDelete').textContent = 'Wirklich löschen?'; return; }
+  try { await FR.remove(FR.qs.get('id')); } catch (e) { /* the list shows what is left */ }
+  location.replace('verlauf.htm?v=' + Date.now() + demoQuery);
+});
 
 const TROPHY = '<svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M8 4h8v5a4 4 0 0 1-8 0zM8 6H5a3 3 0 0 0 3 4M16 6h3a3 3 0 0 1-3 4M12 13v4M8.5 20h7M10 17h4"/></svg>';
 const FLAG = '<svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 21V4M6 4h11l-2 4 2 4H6"/></svg>';
@@ -215,6 +231,8 @@ function render(sum, smp, best, bestRide) {
   sections(sum, smp, best, bestRide);
   $('noteText').textContent = 'Gespeichert in „Meine Fahrten“' + (FR.routeTime(sum) != null ? ' · fährt nächstes Mal als Geist mit' : '');
   $('note').classList.toggle('hidden', fromHistory);
+  $('btnHistory').classList.toggle('hidden', fromHistory);
+  $('btnDelete').classList.toggle('hidden', !fromHistory || !FR.qs.get('id'));
   $('msg').classList.add('hidden');
   $('content').classList.remove('hidden');
 }

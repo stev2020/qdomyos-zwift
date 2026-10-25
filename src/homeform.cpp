@@ -6040,6 +6040,7 @@ void homeform::Start_inner(bool send_event_to_device) {
             Session.clear();
             funrunWind.clear();
             funrunLastRide.clear();
+            funrunGhost.restart();
             chartImagesFilenames.clear();
             mailSent = false;
 
@@ -8892,6 +8893,10 @@ void homeform::update() {
 
             Session.append(s);
             funrunWind.insert(currentElapsedSeconds, (float)bluetoothManager->device()->funrunWindPercent());
+            // FunRun ghost rider: where am I on the route, where is the ghost after the same time
+            funrunGhost.follow(bluetoothManager->device()->currentGPXFile(),
+                               settings.value(QZSettings::funrun_ghost_mode, QZSettings::default_funrun_ghost_mode).toString());
+            funrunGhost.measure(bluetoothManager->device()->currentCordinate(), currentElapsedSeconds);
 
             if (lapTrigger) {
                 lapTrigger = false;
@@ -9785,6 +9790,8 @@ void homeform::funrunSaveRide() {
     if (id.isEmpty())
         return;
     funrunLastRide = id;
+    // the next ride on this route may race against this one
+    funrunGhost.restart();
     emit funrunRideSaved(id);
 }
 

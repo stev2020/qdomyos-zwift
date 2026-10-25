@@ -482,3 +482,127 @@ bool FunRunStore::deleteRide(const QString &id) {
     writeIndex(kept);
     return removed;
 }
+
+// ------------------------------------------------------------------ ghost rider
+
+namespace {
+// y at x on a polyline with ascending xs (clamped at both ends)
+double interpolate(const QVector<double> &xs, const QVector<double> &ys, double x) {
+    if (xs.isEmpty())
+        return 0;
+    if (x <= xs.first())
+        return ys.first();
+    if (x >= xs.last())
+        return ys.last();
+    int lo = 0, hi = xs.size() - 1;
+    while (hi - lo > 1) {
+        const int mid = (lo + hi) / 2;
+        if (xs[mid] <= x)
+            lo = mid;
+        else
+            hi = mid;
+    }
+    const double u = xs[hi] > xs[lo] ? (x - xs[lo]) / (xs[hi] - xs[lo]) : 0;
+    return ys[lo] + u * (ys[hi] - ys[lo]);
+}
+} // namespace
+
+void FunRunGhost::follow(const QString &gpxFile, const QString &newMode) {
+    if (gpxFile == routeFile && newMode == mode && !dirty)
+        return;
+    const bool newRoute = gpxFile != routeFile;
+    routeFile = gpxFile;
+    mode = newMode;
+    dirty = false;
+    if (newRoute) {
+        route.load(gpxFile);
+        startElapsed = -1;
+        myD = -1;
+    }
+    load();
+}
+
+void FunRunGhost::restart() {
+    startElapsed = -1;
+    myD = -1;
+    dirty = true;
+}
+
+void FunRunGhost::load() {
+    gT.clear();
+    gD.clear();
+    ghostLabel.clear();
+    ghostTotal = -1;
+    if (!route.valid() || mode == QStringLiteral("off"))
+        return;
+    const QString key = FunRunStore::routeKey(routeFile);
+    const bool last = mode == QStringLiteral("last");
+    QJsonObject pick;
+    const QJsonArray rides = FunRunStore::listRides();
+    for (const QJsonValue &v : rides) {
+        const QJsonObject o = v.toObject(), r = o.value(QStringLiteral("route")).toObject();
+        if (r.value(QStringLiteral("key")).toString() != key)
+            continue;
+        if (last) {
+            pick = o; // the list is newest first
+            break;
+        }
+        if (!r.value(QStringLiteral("finished")).toBool())
+            continue;
+        if (pick.isEmpty() || r.value(QStringLiteral("time")).toDouble() <
+                                  pick.value(QStringLiteral("route")).toObject().value(QStringLiteral("time")).toDouble())
+            pick = o;
+    }
+    if (pick.isEmpty())
+        return;
+    const QJsonObject samples =
+        FunRunStore::loadRide(pick.value(QStringLiteral("id")).toString()).value(QStringLiteral("samples")).toObject();
+    const QJsonArray t = samples.value(QStringLiteral("t")).toArray(), d = samples.value(QStringLiteral("d")).toArray();
+    double t0 = -1, dmax = -1;
+    for (int i = 0; i < t.size() && i < d.size(); i++) {
+        const double di = d.at(i).toDouble(-1);
+        if (di < 0)
+            continue;
+        if (t0 < 0)
+            t0 = t.at(i).toDouble();
+        if (di < dmax)
+            continue; // never backwards
+        dmax = di;
+        gT.append(t.at(i).toDouble() - t0);
+        gD.append(di);
+    }
+    if (gT.size() < 2) {
+        gT.clear();
+        gD.clear();
+        return;
+    }
+    // same GPX: lengths match; if the file changed a little, stretch the ghost onto this route
+    const QJsonObject r = pick.value(QStringLiteral("route")).toObject();
+    const double length = r.value(QStringLiteral("length")).toDouble();
+    if (length > 0 && std::fabs(length - route.length()) > 1) {
+        const double k = route.length() / length;
+        for (double &x : gD)
+            x *= k;
+    }
+    ghostLabel = last ? QStringLiteral("Letzte Fahrt") : QStringLiteral("Bestzeit");
+    ghostTotal = r.value(QStringLiteral("finished")).toBool() ? r.value(QStringLiteral("time")).toDouble() : -1;
+    qDebug() << QStringLiteral("FunRun ghost:") << ghostLabel << pick.value(QStringLiteral("id")).toString()
+             << QStringLiteral("time") << ghostTotal;
+}
+
+void FunRunGhost::measure(const QGeoCoordinate &position, quint32 elapsed) {
+    if (!route.valid() || !position.isValid() || (position.latitude() == 0 && position.longitude() == 0))
+        return;
+    double off = 0;
+    const double d = route.project(position.latitude(), position.longitude(), myD, off);
+    if (off > 80)
+        return;
+    if (startElapsed < 0)
+        startElapsed = elapsed; // first second on the route: the clock of the comparison starts
+    myD = d;
+    if (gT.isEmpty())
+        return;
+    const double t = elapsed - startElapsed;
+    ghostD = interpolate(gT, gD, t);
+    gapS = myD <= gD.last() ? interpolate(gD, gT, myD) - t : qQNaN();
+}

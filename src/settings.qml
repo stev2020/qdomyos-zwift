@@ -2265,6 +2265,7 @@ import AndroidStatusBar 1.0
             property int ui_text_scale: 100
             property bool ui_text_scale_system: true
             property int funrun_wind_strength: 0
+            property string funrun_ghost_mode: "best"
         }
 
         // The home page has its own Settings copy, read once when it is created: hand it every new

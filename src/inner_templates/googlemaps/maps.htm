@@ -86,6 +86,10 @@ button{font:inherit;color:inherit}
   box-shadow:0 2px 8px rgba(0,0,0,.5);display:flex;align-items:center;justify-content:center}
 #rider .dot svg{width:22px;height:22px}
 @keyframes pulse{0%{transform:scale(.72);opacity:1}100%{transform:scale(1.25);opacity:0}}
+/* ghost rider: a little ghost floating over the road */
+#ghost .gfig{position:absolute;left:-17px;top:-46px;width:34px;height:42px;filter:drop-shadow(0 0 6px rgba(111,211,255,.85)) drop-shadow(0 2px 3px rgba(0,0,0,.6))}
+#ghost .gfig svg{width:100%;height:100%;display:block}
+#ghost .gpin{position:absolute;left:-4px;top:-4px;width:8px;height:8px;border-radius:50%;background:#6fd3ff;box-shadow:0 0 0 2px #0b0f14}
 .flag .pole{position:absolute;left:-1px;bottom:0;width:2px;height:40px;background:#fff;box-shadow:0 0 2px rgba(0,0,0,.7)}
 .flag .fl{position:absolute;left:0;bottom:24px;padding:4px 9px 4px 8px;font-size:13px;font-weight:700;border-radius:0 7px 7px 0;
   white-space:nowrap;background:#fff;color:#14181d;box-shadow:0 2px 6px rgba(0,0,0,.45);display:flex;align-items:center;gap:6px}
@@ -132,7 +136,7 @@ body.bare #metrics,body.bare #camBar,body.bare #zoomCol{display:none}
 .range input{flex:1;height:34px;margin:0;accent-color:var(--accent)}
 .range span{min-width:80px;text-align:right;font-weight:700;font-variant-numeric:tabular-nums}
 .hint{margin:14px 0 0;font-size:13px;line-height:1.45;color:var(--muted)}
-#windSeg{width:max-content;background:rgba(255,255,255,.06)}
+#windSeg,#ghostSeg{width:max-content;max-width:100%;flex-wrap:wrap;background:rgba(255,255,255,.06)}
 #windSeg button{min-width:52px}
 </style>
 </head>
@@ -182,6 +186,9 @@ body.bare #metrics,body.bare #camBar,body.bare #zoomCol{display:none}
   <div class="poi flag" id="flagStart"><div class="pole"></div><div class="fl start">Start</div></div>
   <div class="poi flag" id="flagFinish"><div class="pole"></div><div class="fl"><i></i><span>Ziel</span></div></div>
   <div class="poi flag" id="flagSummit"><div class="pole"></div><div class="fl"><svg viewBox="0 0 24 24"><path d="M2.5 19.5 L9.5 7.5 L13.2 13.6 L15.6 10.2 L21.5 19.5 Z" fill="#ff8f00"/></svg><span>Kuppe</span></div></div>
+  <div class="poi" id="ghost"><div class="gpin"></div><div class="gfig"><svg viewBox="0 0 34 42" aria-hidden="true">
+    <path d="M4 40V17a13 13 0 0 1 26 0v23l-4.3-3.2-4.4 3.2-4.3-3.2-4.3 3.2-4.4-3.2z" fill="#6fd3ff" fill-opacity=".88" stroke="#0b0f14" stroke-width="1.6" stroke-linejoin="round"/>
+    <circle cx="12.5" cy="17" r="2.6" fill="#0b0f14"/><circle cx="21.5" cy="17" r="2.6" fill="#0b0f14"/></svg></div></div>
   <div class="poi" id="rider"><div class="halo"></div><div class="dot"><svg viewBox="0 0 24 24" id="riderArrow"><path d="M12 2.5 L19.6 20.6 L12 16.3 L4.4 20.6 Z" fill="#ff7a1a"/></svg></div></div>
 
   <div id="badges">
@@ -190,6 +197,11 @@ body.bare #metrics,body.bare #camBar,body.bare #zoomCol{display:none}
         <path d="M22 14.5 L27 28 L22 25 L17 28 Z" fill="#f5f7f9"/>
         <g id="windArrow"><line x1="22" y1="2.5" x2="22" y2="9.5" stroke="#6fd3ff" stroke-width="2.4" stroke-linecap="round"/><path d="M22 13.5 L18.3 7.6 L25.7 7.6 Z" fill="#6fd3ff"/></g></svg>
       <div><div class="blab" id="windLab">Wind</div><div class="bval"><span id="windVal">±0 %</span><small id="windSub"></small></div></div>
+    </div>
+    <div id="ghostBadge" class="panel badge hidden">
+      <svg viewBox="0 0 34 42" aria-hidden="true" style="width:34px;height:40px"><path d="M4 40V17a13 13 0 0 1 26 0v23l-4.3-3.2-4.4 3.2-4.3-3.2-4.3 3.2-4.4-3.2z" fill="none" stroke="#6fd3ff" stroke-width="2.4" stroke-linejoin="round"/>
+        <circle cx="12.5" cy="17" r="2.2" fill="#6fd3ff"/><circle cx="21.5" cy="17" r="2.2" fill="#6fd3ff"/></svg>
+      <div><div class="blab" id="ghostLab">Geisterfahrer</div><div class="bval"><span id="ghostVal">–</span><small id="ghostSub"></small></div></div>
     </div>
   </div>
 
@@ -221,6 +233,9 @@ body.bare #metrics,body.bare #camBar,body.bare #zoomCol{display:none}
     <div class="seg" id="windSeg"><button data-w="0">Aus</button><button data-w="1">1</button><button data-w="2">2</button><button data-w="3">3</button><button data-w="4">4</button></div>
     <p class="hint" id="windHint">Stärke 1 bis 4 macht es bei Gegenwind 5, 10, 15 oder 20 % schwerer. Seitenwind zählt halb, Rückenwind gar nicht.
       Die Richtung wird bei jeder Fahrt neu ausgelost.</p>
+    <h3>Geisterfahrer</h3>
+    <div class="seg" id="ghostSeg"><button data-g="best">Bestzeit</button><button data-g="last">Letzte Fahrt</button><button data-g="off">Aus</button></div>
+    <p class="hint">Eine frühere Fahrt auf dieser Strecke fährt als hellblauer Geist mit. Unten links siehst du, wie weit du vorn oder hinten bist.</p>
     <h3>Knöpfe</h3>
     <div class="opts" id="optButtons"></div>
     <p class="hint">Tippen auf die Karte blendet alle Anzeigen und die obere Leiste aus und wieder ein.
@@ -276,6 +291,8 @@ const compassName = deg => COMPASS[Math.floor(((((deg % 360) + 360) % 360) + 22.
 // wind of this ride, from QZ (the bike applies it, see ftmsbike): strength 0..4, direction it comes from (degrees),
 // extra resistance right now in percent (-1: this bike does not use the wind)
 const WIND = { strength: 0, from: 0, pct: -1, known: false };
+// ghost rider (computed by QZ, see FunRunGhost): an earlier ride of this route, in route metres of the app
+const GHOST = { on: false, mode: 'best', label: '', time: -1, gapS: null, gapM: 0 };
 
 function loadScript(src) {
   return new Promise((resolve, reject) => {
@@ -627,6 +644,21 @@ const rider = {
   },
 };
 
+const ghost = {
+  s: null, target: 0, v: 0, lastT: 0,
+  measure(s) {
+    const now = performance.now();
+    if (this.s != null && this.lastT && now > this.lastT + 200) this.v = clamp((s - this.target) / ((now - this.lastT) / 1000), 0, 25);
+    if (this.s == null || Math.abs(s - this.s) > 150) this.s = s;
+    this.target = s; this.lastT = now;
+  },
+  update(dt) {
+    if (this.s == null || !route) return;
+    const age = Math.min(3, (performance.now() - this.lastT) / 1000);
+    this.s = clamp(follow(this.s, this.target + this.v * age, dt, 0.6), 0, route.total);
+  },
+};
+
 // ------------------------------------------------------------------ globals filled at runtime
 let widget, scene, camera, globe, route = null, routeMat = null, routePrim = null, tileset = null, tilesOn = false, demo = null;
 let terrainReady = null;
@@ -699,6 +731,7 @@ function openSheet() {
   $('followRange').value = Math.round(PRESETS.verfolger * 100);
   showFollow();
   markWind();
+  markGhost();
   $('sheet').classList.add('open');
 }
 
@@ -856,6 +889,10 @@ function initInput() {
     if (Math.abs(cam.tTarget - old) < 0.03) setZoom(PRESETS.verfolger, 0.3); // follower view on: move along
     layout();
   });
+  document.querySelectorAll('#ghostSeg button').forEach(b => b.addEventListener('click', () => {
+    GHOST.mode = b.dataset.g; markGhost();
+    qz.sendObj({ msg: 'setsettings', content: { funrun_ghost_mode: GHOST.mode } });
+  }));
   document.querySelectorAll('#windSeg button').forEach(b => b.addEventListener('click', () => {
     WIND.strength = +b.dataset.w; markWind();
     qz.sendObj({ msg: 'setsettings', content: { funrun_wind_strength: WIND.strength } });
@@ -934,6 +971,18 @@ const hud = {
       const lab = hrCell.querySelector('.lab'), t = 'Puls · ' + pct + ' %';
       if (lab.textContent !== t) lab.textContent = t;
     }
+    if (m.funrun_ghost_mode != null && m.funrun_ghost_mode !== GHOST.mode) { GHOST.mode = String(m.funrun_ghost_mode); markGhost(); }
+    if (m.funrun_ghost_on != null) {
+      GHOST.on = !!m.funrun_ghost_on && !!route;
+      if (GHOST.on) {
+        const k = +m.funrun_route_len > 0 ? route.total / +m.funrun_route_len : 1;
+        ghost.measure((+m.funrun_ghost_d || 0) * k);
+        GHOST.gapS = m.funrun_ghost_gap_s == null ? null : +m.funrun_ghost_gap_s;
+        GHOST.gapM = (+m.funrun_ghost_gap_m || 0) * k;
+        GHOST.label = m.funrun_ghost_label || 'Bestzeit';
+        GHOST.time = m.funrun_ghost_time == null ? -1 : +m.funrun_ghost_time;
+      } else ghost.s = null;
+    }
     if (m.funrun_wind_strength != null) {
       const st = clamp(Math.round(+m.funrun_wind_strength || 0), 0, 4);
       if (st !== WIND.strength || !WIND.known) { WIND.strength = st; markWind(); }
@@ -948,6 +997,7 @@ const hud = {
     if (!route) return;
     const s = rider.s == null ? 0 : rider.s;
     updateWindBadge(s);
+    updateGhostBadge();
     setVal('m-dist', num(s / 1000, 1));
     const rem = Math.max(0, route.total - s), up = Math.max(0, route.totalGain - route.climbedAt(s));
     $('premain').textContent = 'Noch ' + num(rem / 1000, 1) + ' km · ↑ ' + Math.round(up) + ' Hm';
@@ -991,6 +1041,29 @@ function updateWindBadge(s) {
   setText('windVal', pct >= 1 ? '+' + pct + ' %' : '±0 %');
   setText('windSub', pct >= 1 ? 'schwerer' : 'normal');
   $('windArrow').setAttribute('transform', 'rotate(' + Math.round(rel) + ' 22 22)');
+}
+function fmtGap(sec) {
+  sec = Math.round(Math.abs(sec));
+  const h = Math.floor(sec / 3600), mm = Math.floor(sec / 60) % 60, ss = sec % 60;
+  return (h ? h + ':' + pad2(mm) : String(mm)) + ':' + pad2(ss);
+}
+function updateGhostBadge() {
+  const show = GHOST.on && ghost.s != null;
+  $('ghostBadge').classList.toggle('hidden', !show);
+  if (!show) return;
+  setText('ghostLab', 'Geisterfahrer · ' + GHOST.label + (GHOST.time > 0 ? ' ' + fmtGap(GHOST.time) : ''));
+  const m = Math.round(Math.abs(GHOST.gapM));
+  if (GHOST.gapS == null) {
+    setText('ghostVal', 'Weiter als der Geist');
+    setText('ghostSub', '');
+  } else {
+    setText('ghostVal', fmtGap(GHOST.gapS) + (GHOST.gapS >= 0 ? ' Vorsprung' : ' Rückstand'));
+    setText('ghostSub', (m >= 1000 ? num(m / 1000, 1) + ' km' : m + ' m'));
+  }
+  $('ghostVal').style.color = GHOST.gapS == null || GHOST.gapS >= 0 ? '' : '#ffb3a8';
+}
+function markGhost() {
+  document.querySelectorAll('#ghostSeg button').forEach(b => b.classList.toggle('on', b.dataset.g === GHOST.mode));
 }
 function markWind() {
   document.querySelectorAll('#windSeg button').forEach(b => b.classList.toggle('on', +b.dataset.w === WIND.strength));
@@ -1074,6 +1147,14 @@ function drawProfile() {
     const right = x + 14 + tw < W - padR;
     g.textAlign = right ? 'left' : 'right'; g.fillStyle = '#fff'; g.fillText(t, right ? x + 14 : x - 4, y - 18);
   }
+  // ghost rider
+  if (GHOST.on && ghost.s != null && ghost.s >= x0 && ghost.s <= x1) {
+    const x = X(ghost.s), y = Y(route.eleAt(ghost.s));
+    g.setLineDash([3, 3]); g.strokeStyle = 'rgba(111,211,255,.8)'; g.lineWidth = 1.2;
+    g.beginPath(); g.moveTo(x, y + 6); g.lineTo(x, base); g.stroke(); g.setLineDash([]);
+    g.fillStyle = '#6fd3ff'; g.strokeStyle = '#0b0f14'; g.lineWidth = 2;
+    g.beginPath(); g.arc(x, y, 5.5, 0, Math.PI * 2); g.fill(); g.stroke();
+  }
   // rider marker
   if (rider.s != null && s >= x0 && s <= x1) {
     const x = X(s), y = Y(route.eleAt(s));
@@ -1149,6 +1230,12 @@ function updateOverlays() {
     const t = rider.s == null ? 'Kuppe' : 'Kuppe · ' + num((sm - rider.s) / 1000, 1) + ' km';
     if (t !== lastFlagText) { fsEl.querySelector('span').textContent = t; lastFlagText = t; }
   } else fsEl.style.display = 'none';
+  const gEl = $('ghost');
+  if (GHOST.on && ghost.s != null && rider.s != null) {
+    const p = place(gEl, groundCart(ghost.s, 'gh', 'ghost'));
+    // close to the camera (first person) it would cover the road: fade it there
+    if (p) gEl.style.opacity = cam.active ? (0.35 + 0.65 * smoothstep(2, 6, cam.d)).toFixed(2) : '1';
+  } else gEl.style.display = 'none';
   const rEl = $('rider');
   if (rider.s != null && riderCart.pos) {
     const marker = Cesium.Cartesian3.fromDegrees(riderCart.lon, riderCart.lat, riderCart.h, undefined, _ovc.m || (_ovc.m = new Cesium.Cartesian3()));
@@ -1229,6 +1316,7 @@ function frame() {
   if (!route || !route.ready) return;
   if (demo) demo.update(dt);
   rider.update(dt);
+  ghost.update(dt);
   if (rider.s == null) return;
   const p = route.pointAt(rider.s, _ovc.rp || (_ovc.rp = {}));
   const eR = route.eleAt(rider.s);
@@ -1511,12 +1599,14 @@ class Demo {
     this.s = clamp((o.startKm || 0) * 1000, 0, route.total);
     this.speedup = o.speedup || 1; this.tick = 0; this.elapsed = this.s / 4; this.kj = this.elapsed * 0.19;
     this.windFrom = o.windFrom != null ? o.windFrom : Math.random() * 360; this.windF = -1; this.hr = 120;
+    this.gs = Math.max(0, this.s - 150); // demo ghost: starts a bit behind and rides 1.5 % slower
     if (o.wind != null) WIND.strength = o.wind;
   }
   update(dt) {
     const sdt = dt * this.speedup, g = route.gradeAt(this.s);
     const P = clamp(180 + 14 * g, 110, 330), v = Math.min(solveSpeed(P, g), 16.7);
     this.s = Math.min(route.total, this.s + v * sdt);
+    this.gs = Math.min(route.total, this.gs + v / 1.015 * sdt);
     if (this.s < route.total) { this.elapsed += sdt; this.kj += P * sdt / 1000; }
     this.tick -= dt;
     if (this.tick > 0) return;
@@ -1528,6 +1618,8 @@ class Demo {
     this.hr += (clamp(92 + P * 0.36, 85, 185) - this.hr) * 0.08;
     hud.metrics({
       heart: moving ? Math.round(this.hr + (Math.random() - 0.5) * 2) : 0, funrun_hr_max: 190,
+      funrun_ghost_on: GHOST.mode !== 'off', funrun_ghost_d: this.gs, funrun_route_len: route.total, funrun_ghost_label: GHOST.mode === 'last' ? 'Letzte Fahrt' : 'Bestzeit',
+      funrun_ghost_time: 9062, funrun_ghost_gap_m: this.s - this.gs, funrun_ghost_gap_s: v > 0.3 ? (this.s - this.gs) / v : 0,
       funrun_wind_strength: WIND.strength, funrun_wind_from: this.windFrom, funrun_wind_pct: 5 * WIND.strength * this.windF,
       speed: moving ? v * 3.6 : 0, watts: moving ? Math.round(P + (Math.random() - 0.5) * 12) : 0,
       cadence: moving ? Math.round(clamp(84 - g * 1.6, 58, 96) + (Math.random() - 0.5) * 3) : 0,

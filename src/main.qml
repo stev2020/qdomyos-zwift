@@ -1587,6 +1587,15 @@ ApplicationWindow {
                 }
 
             ItemDelegate {
+                text: qsTr("Meine Fahrten")
+                width: parent.width
+                onClicked: {
+                    // FunRun: kept rides, totals and best times (web page of the inner web server)
+                    stackView.push("FunRunPage.qml", { "page": "verlauf.htm", "rideId": "", "from": "" })
+                    drawer.close()
+                }
+            }
+            ItemDelegate {
                 text: qsTr("Workouts History")
                 width: parent.width
                 onClicked: {

@@ -3412,6 +3412,10 @@ class QZSettings {
     static const QString funrun_wind_strength;
     static constexpr int default_funrun_wind_strength = 0;
 
+    // FunRun ghost rider on GPX routes: "best" (best time on the route), "last" (last ride of the route) or "off"
+    static const QString funrun_ghost_mode;
+    static const QString default_funrun_ghost_mode;
+
     /**
      * @brief Write the QSettings values using the constants from this namespace.
      * @param showDefaults Optionally indicates if the default should be shown with the key.

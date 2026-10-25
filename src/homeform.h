@@ -5,6 +5,7 @@
 #include "bluetooth.h"
 #include "fit_profile.hpp"
 #include "fitdatabaseprocessor.h"
+#include "funrunstore.h"
 #include "gpx.h"
 #include "OAuth2.h"
 #include "peloton.h"
@@ -248,6 +249,7 @@ class homeform : public QObject {
     // FunRun: id of the ride kept when the last workout stopped (empty while riding)
     Q_INVOKABLE QString funrunLastRideId() const { return funrunLastRide; }
     void funrunRequestClose(const QString &to) { emit funrunCloseRequested(to); }
+    const FunRunGhost &funrunGhostState() const { return funrunGhost; }
     // Status line of the search for the equipment on the home page, with the last device found;
     // empty once it is connected
     Q_INVOKABLE QString bluetoothSearchStatus();
@@ -1032,6 +1034,8 @@ public:
     // FunRun: id of the ride kept for the current session (empty while riding)
     QString funrunLastRide;
     void funrunSaveRide();
+    // FunRun: ghost rider of the current route
+    FunRunGhost funrunGhost;
     QQmlApplicationEngine *engine;
     trainprogram *trainProgram = nullptr;
     trainprogram *previewTrainProgram = nullptr;

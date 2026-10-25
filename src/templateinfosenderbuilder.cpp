@@ -1910,6 +1910,23 @@ void TemplateInfoSenderBuilder::buildContext(bool forceReinit) {
         obj.setProperty(QStringLiteral("funrun_wind_strength"),
                         settings.value(QZSettings::funrun_wind_strength, QZSettings::default_funrun_wind_strength).toInt());
         obj.setProperty(QStringLiteral("funrun_hr_max"), homeform::singleton()->heartRateMax());
+        // FunRun ghost rider: distances along the route in metres (measured on the GPX like the kept rides)
+        {
+            const FunRunGhost &ghost = homeform::singleton()->funrunGhostState();
+            obj.setProperty(QStringLiteral("funrun_route_len"), ghost.routeLength());
+            obj.setProperty(QStringLiteral("funrun_my_d"), ghost.myDistance());
+            obj.setProperty(QStringLiteral("funrun_ghost_on"), ghost.active());
+            obj.setProperty(QStringLiteral("funrun_ghost_d"), ghost.ghostDistance());
+            if (!qIsNaN(ghost.gapSeconds()))
+                obj.setProperty(QStringLiteral("funrun_ghost_gap_s"), ghost.gapSeconds());
+            else
+                obj.deleteProperty(QStringLiteral("funrun_ghost_gap_s"));
+            obj.setProperty(QStringLiteral("funrun_ghost_gap_m"), ghost.gapMeters());
+            obj.setProperty(QStringLiteral("funrun_ghost_label"), ghost.label());
+            obj.setProperty(QStringLiteral("funrun_ghost_time"), ghost.ghostTime());
+            obj.setProperty(QStringLiteral("funrun_ghost_mode"),
+                            settings.value(QZSettings::funrun_ghost_mode, QZSettings::default_funrun_ghost_mode).toString());
+        }
         obj.setProperty(QStringLiteral("peloton_offset"), pelotonOffset());
         obj.setProperty(QStringLiteral("peloton_ask_start"), pelotonAskStart());
         obj.setProperty(QStringLiteral("autoresistance"), homeform::singleton()->autoResistance());
