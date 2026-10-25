@@ -1336,8 +1336,14 @@ const QString QZSettings::ui_text_scale_system = QStringLiteral("ui_text_scale_s
 const QString QZSettings::funrun_wind_strength = QStringLiteral("funrun_wind_strength");
 const QString QZSettings::funrun_ghost_mode = QStringLiteral("funrun_ghost_mode");
 const QString QZSettings::default_funrun_ghost_mode = QStringLiteral("best");
+const QString QZSettings::funrun_selected_route = QStringLiteral("funrun_selected_route");
+const QString QZSettings::default_funrun_selected_route = QStringLiteral("");
+const QString QZSettings::funrun_flat_level = QStringLiteral("funrun_flat_level");
+const QString QZSettings::funrun_level_per_percent = QStringLiteral("funrun_level_per_percent");
+const QString QZSettings::funrun_level_interval = QStringLiteral("funrun_level_interval");
+const QString QZSettings::funrun_start_page = QStringLiteral("funrun_start_page");
 
-const uint32_t allSettingsCount = 1032;
+const uint32_t allSettingsCount = 1037;
 
 QVariant allSettings[allSettingsCount][2] = {
     {QZSettings::cryptoKeySettingsProfiles, QZSettings::default_cryptoKeySettingsProfiles},
@@ -2396,6 +2402,11 @@ QVariant allSettings[allSettingsCount][2] = {
     {QZSettings::ui_text_scale_system, QZSettings::default_ui_text_scale_system},
     {QZSettings::funrun_wind_strength, QZSettings::default_funrun_wind_strength},
     {QZSettings::funrun_ghost_mode, QZSettings::default_funrun_ghost_mode},
+    {QZSettings::funrun_selected_route, QZSettings::default_funrun_selected_route},
+    {QZSettings::funrun_flat_level, QZSettings::default_funrun_flat_level},
+    {QZSettings::funrun_level_per_percent, QZSettings::default_funrun_level_per_percent},
+    {QZSettings::funrun_level_interval, QZSettings::default_funrun_level_interval},
+    {QZSettings::funrun_start_page, QZSettings::default_funrun_start_page},
 };
 
 void QZSettings::qDebugAllSettings(bool showDefaults) {

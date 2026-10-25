@@ -66,23 +66,19 @@
 (function () {
 'use strict';
 const $ = FR.$;
-const fromHistory = FR.qs.get('from') === 'history';
-// opened from the history: back to the list inside this page, otherwise the app closes the page
-const demoQuery = FR.qs.get('demo') ? '&demo=' + encodeURIComponent(FR.qs.get('demo')) : '';
-const close = () => {
-  if (fromHistory && history.length > 1) history.back();
-  else if (fromHistory) location.replace('verlauf.htm?v=' + Date.now() + demoQuery);
-  else FR.close('home');
-};
+// opened from the history or the start page: back there inside this view; right after a ride the app closes it
+const backTo = { history: 'verlauf.htm', start: 'start.htm' }[FR.qs.get('from')] || null;
+const fromHistory = !!backTo;
+const close = () => (backTo ? FR.go(backTo) : FR.close('home'));
 $('btnClose').addEventListener('click', close);
 $('btnDone').addEventListener('click', close);
 // right after the ride: on to the history; from the history: delete this ride (a second tap confirms)
-$('btnHistory').addEventListener('click', () => { location.href = 'verlauf.htm?v=' + Date.now() + demoQuery; });
+$('btnHistory').addEventListener('click', () => FR.go('verlauf.htm'));
 let deleteArmed = false;
 $('btnDelete').addEventListener('click', async () => {
   if (!deleteArmed) { deleteArmed = true; $('btnDelete').textContent = 'Wirklich löschen?'; return; }
   try { await FR.remove(FR.qs.get('id')); } catch (e) { /* the list shows what is left */ }
-  location.replace('verlauf.htm?v=' + Date.now() + demoQuery);
+  FR.go('verlauf.htm');
 });
 
 const TROPHY = '<svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M8 4h8v5a4 4 0 0 1-8 0zM8 6H5a3 3 0 0 0 3 4M16 6h3a3 3 0 0 1-3 4M12 13v4M8.5 20h7M10 17h4"/></svg>';

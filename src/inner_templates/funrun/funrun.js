@@ -63,6 +63,7 @@
     ws.onmessage = ev => {
       let m;
       try { m = JSON.parse(ev.data); } catch (e) { return; }
+      if (m.msg === 'workout') { FR.workout = m.content || {}; for (const f of workoutListeners) f(FR.workout); return; }
       for (let i = 0; i < pending.length; i++) {
         const p = pending[i];
         if (p.reply === m.msg && (!p.match || p.match(m.content))) { pending.splice(i, 1); clearTimeout(p.timer); p.resolve(m.content); return; }
@@ -93,7 +94,60 @@
   FR.remove = async id => (demo ? { ok: true } : request('funrun_delete', { id }, c => c && c.id === id));
   // closes this page in the app: 'home' goes back to the start page, 'back' one page back
   FR.close = to => FR.send('funrun_close', { to: to || 'home' });
+  // GPX routes of the app (name, length, ascent, outline, profile)
+  FR.routes = async () => (demo ? (await demoJson('routes.json')).routes || [] : (await request('funrun_routes')) || []);
+  // starts a route: the app loads it, starts the ride and shows the 3D map
+  FR.start = file => (demo ? Promise.resolve({ ok: true }) : request('funrun_start', { file }));
+  // pages of the app: 'settings', 'menu', 'tiles', 'trainingprograms', 'gpxlist', 'gpx' (import)
+  FR.open = what => FR.send('funrun_open', { what });
+  // app settings
+  // (demo: kept in the tab's storage, so a choice survives going to another FunRun page)
+  let demoSettings = {};
+  try { demoSettings = JSON.parse(sessionStorage.getItem('funrunDemoSettings') || '{}') || {}; } catch (e) { /* not available */ }
+  FR.getSettings = async keys => {
+    if (demo) { const o = {}; for (const k of keys) o[k] = demoSettings[k] !== undefined ? demoSettings[k] : null; return o; }
+    return (await request('getsettings', { keys })) || {};
+  };
+  FR.setSettings = obj => {
+    if (!demo) { FR.send('setsettings', obj); return; }
+    Object.assign(demoSettings, obj);
+    try { sessionStorage.setItem('funrunDemoSettings', JSON.stringify(demoSettings)); } catch (e) { /* not available */ }
+  };
+  // live values of the app (every second): bike, heart rate, auto resistance ...
+  FR.workout = null;
+  const workoutListeners = [];
+  FR.onWorkout = f => workoutListeners.push(f);
+  // (demo: tests hand in live values here)
+  if (demo) FR.demoWorkout = w => { FR.workout = w; for (const f of workoutListeners) f(w); };
   connect();
+
+  // the app calls window.funrunRefresh() when the page shows again (back from a ride, from the settings)
+  FR.onRefresh = f => { window.funrunRefresh = f; };
+
+  // bottom navigation of the FunRun pages
+  FR.tabs = active => {
+    const items = [
+      ['start.htm', 'Fahren', '<circle cx="5.5" cy="16.5" r="3.5"/><circle cx="18.5" cy="16.5" r="3.5"/><path d="M5.5 16.5 9 9h6.5l3 7.5M9 9l3.5 7.5M14 5.5h2.5l-1 3.5"/>'],
+      ['strecken.htm', 'Strecken', '<circle cx="6" cy="18" r="2"/><circle cx="18" cy="6" r="2"/><path d="M8 18h7.5a3.5 3.5 0 0 0 0-7h-7a3.5 3.5 0 0 1 0-7H16"/>'],
+      ['verlauf.htm', 'Verlauf', '<path d="M4 20V11M10 20V5M16 20v-6M22 20H2"/>'],
+      ['einstellungen.htm', 'Einstellungen', '<path d="M4 6h9M17 6h3M4 12h3M11 12h9M4 18h11M19 18h1"/><circle cx="15" cy="6" r="2"/><circle cx="9" cy="12" r="2"/><circle cx="17" cy="18" r="2"/>'],
+    ];
+    const nav = document.createElement('nav');
+    nav.className = 'tabs';
+    nav.setAttribute('aria-label', 'FunRun');
+    for (const [page, label, icon] of items) {
+      const a = document.createElement('a');
+      a.href = '#';
+      if (page === active) { a.className = 'on'; a.setAttribute('aria-current', 'page'); }
+      a.innerHTML = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">' + icon + '</svg>' + label;
+      a.addEventListener('click', e => { e.preventDefault(); if (page !== active) FR.go(page); });
+      nav.appendChild(a);
+    }
+    document.body.appendChild(nav);
+    document.body.classList.add('withtabs');
+  };
+  // to another FunRun page in the same view (no history: the app's back button closes the FunRun pages)
+  FR.go = (page, query) => location.replace(page + '?v=' + Date.now() + (query ? '&' + query : '') + (demo ? '&demo=' + encodeURIComponent(demo) : ''));
 
   // ---------------------------------------------------------------- samples of a ride
   // route rides: time since the start of the route by distance along the route (for comparing rides)

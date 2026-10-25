@@ -138,6 +138,12 @@ body.bare #metrics,body.bare #camBar,body.bare #zoomCol{display:none}
 .hint{margin:14px 0 0;font-size:13px;line-height:1.45;color:var(--muted)}
 #windSeg,#ghostSeg{width:max-content;max-width:100%;flex-wrap:wrap;background:rgba(255,255,255,.06)}
 #windSeg button{min-width:52px}
+/* pause and end the ride (ending needs a second tap) */
+#ride button{display:flex;align-items:center;gap:7px;padding:0 13px}
+#ride svg{width:20px;height:20px;display:block;flex:none}
+#ride #btnStop.arm{background:#e5483a;color:#fff}
+#ride #btnPause.paused{background:var(--accent);color:#fff}
+@media (max-width:700px){#ride button{padding:0 11px}#ride button:not(.arm) span{display:none}}
 </style>
 </head>
 <body>
@@ -165,6 +171,10 @@ body.bare #metrics,body.bare #camBar,body.bare #zoomCol{display:none}
       <button id="btnProfile" title="Höhenprofil ein/aus"><svg viewBox="0 0 24 24"><path d="M2 18.6h20v1.8H2z" fill="currentColor"/>
         <path d="M2.6 17l5.3-6.6 3.4 3.7 3.5-5.6 6.6 8.5z" fill="currentColor" opacity=".85"/></svg></button>
       <button id="btnSettings" title="Anzeige einstellen"><svg viewBox="0 0 24 24"><path fill="currentColor" d="M19.14 12.94c.04-.3.06-.61.06-.94 0-.32-.02-.64-.07-.94l2.03-1.58a.49.49 0 0 0 .12-.61l-1.92-3.32a.49.49 0 0 0-.59-.22l-2.39.96c-.5-.38-1.03-.7-1.62-.94l-.36-2.54a.48.48 0 0 0-.48-.41h-3.84c-.24 0-.43.17-.47.41l-.36 2.54c-.59.24-1.13.57-1.62.94l-2.39-.96a.48.48 0 0 0-.59.22L2.74 8.87a.47.47 0 0 0 .12.61l2.03 1.58c-.05.3-.09.63-.09.94s.02.64.07.94l-2.03 1.58a.49.49 0 0 0-.12.61l1.92 3.32c.12.22.37.29.59.22l2.39-.96c.5.38 1.03.7 1.62.94l.36 2.54c.05.24.24.41.48.41h3.84c.24 0 .44-.17.47-.41l.36-2.54c.59-.24 1.13-.56 1.62-.94l2.39.96c.22.08.47 0 .59-.22l1.92-3.32a.48.48 0 0 0-.12-.61l-2.01-1.58zM12 15.6a3.6 3.6 0 1 1 0-7.2 3.6 3.6 0 0 1 0 7.2z"/></svg></button>
+    </div>
+    <div class="seg panel pe" id="ride">
+      <button id="btnPause" title="Pause"><svg viewBox="0 0 24 24" id="pauseIcon"><path d="M7 5h3.6v14H7zM13.4 5H17v14h-3.6z" fill="currentColor"/></svg><span id="pauseText">Pause</span></button>
+      <button id="btnStop" title="Fahrt beenden"><svg viewBox="0 0 24 24"><rect x="6" y="6" width="12" height="12" rx="2" fill="currentColor"/></svg><span id="stopText">Beenden</span></button>
     </div>
     <div id="demoBadge" class="panel">Vorschau · simulierte Fahrt</div>
   </div>
@@ -688,13 +698,23 @@ function setZoom(t, tau) {
 // ------------------------------------------------------------------ what is shown (the rider's choice, kept in the page storage)
 const CELL_NAMES = { 'm-grade': 'Steigung', 'm-level': 'Stufe', 'm-speed': 'Tempo', 'm-power': 'Leistung', 'm-cad': 'Trittfrequenz',
   'm-hr': 'Puls', 'm-time': 'Zeit', 'm-dist': 'Strecke' };
-const BUTTON_NAMES = { presets: 'Ich · Verfolger · Überblick', layers: 'Satellit · 3D-Fotos', zoomTrack: 'Zoom-Regler', compass: 'Kompass' };
+const BUTTON_NAMES = { presets: 'Ich · Verfolger · Überblick', layers: 'Satellit · 3D-Fotos', zoomTrack: 'Zoom-Regler', compass: 'Kompass',
+  ride: 'Pause · Beenden' };
 const UI = {
   bare: false, // after a tap on the map: only the map (and the profile, if switched on)
   cells: store.get('cells', Object.keys(CELL_NAMES)),
   buttons: store.get('buttons', Object.keys(BUTTON_NAMES)),
   profile: store.get('profile', true),
 };
+// buttons that came with a later version start switched on (also when the rider changed the list before)
+{
+  const known = store.get('buttonsKnown', ['presets', 'layers', 'zoomTrack', 'compass']);
+  const added = Object.keys(BUTTON_NAMES).filter(k => known.indexOf(k) < 0 && UI.buttons.indexOf(k) < 0);
+  if (added.length) { UI.buttons = UI.buttons.concat(added); store.set('buttons', UI.buttons); }
+  store.set('buttonsKnown', Object.keys(BUTTON_NAMES));
+}
+// state of the ride in QZ: 'running', 'paused' or 'stopped' (the pause button shows it)
+const RIDE = { state: 'running', armTimer: 0, hold: 0 };
 function updateMetricsPanel() {
   let any = false;
   document.querySelectorAll('#metrics .cell').forEach(c => { if (!c.classList.contains('hide') && !c.classList.contains('off')) any = true; });
@@ -897,6 +917,26 @@ function initInput() {
     WIND.strength = +b.dataset.w; markWind();
     qz.sendObj({ msg: 'setsettings', content: { funrun_wind_strength: WIND.strength } });
   }));
+  // pause / go on (QZ's start button), end the ride with a second tap (then QZ shows the ride end screen)
+  $('btnPause').addEventListener('click', () => {
+    if (demo) demo.paused = RIDE.state === 'running';
+    else qz.send(RIDE.state === 'stopped' ? 'start' : 'pause');
+    RIDE.state = RIDE.state === 'running' ? 'paused' : 'running';
+    RIDE.hold = performance.now() + 2500; // QZ reports the new state with one of its next values
+    markRide();
+  });
+  $('btnStop').addEventListener('click', () => {
+    if (!$('btnStop').classList.contains('arm')) {
+      $('btnStop').classList.add('arm');
+      $('stopText').textContent = 'Wirklich beenden?';
+      clearTimeout(RIDE.armTimer); RIDE.armTimer = setTimeout(disarmStop, 4000);
+      return;
+    }
+    disarmStop();
+    if (demo) { toast('Vorschau: Hier endet die Fahrt, dann kommt die Auswertung.', 4000); return; }
+    qz.send('stop');
+    toast('Fahrt wird beendet …', 4000);
+  });
   el.addEventListener('wheel', e => {
     if (!cam.active) return;
     e.preventDefault();
@@ -991,6 +1031,9 @@ const hud = {
       WIND.known = true;
     }
     if (m.elapsed_h != null) setVal('m-time', (+m.elapsed_h || 0) + ':' + pad2(m.elapsed_m) + ':' + pad2(m.elapsed_s));
+    if (m.funrun_state != null && String(m.funrun_state) !== RIDE.state && !(performance.now() < RIDE.hold)) {
+      RIDE.state = String(m.funrun_state); markRide();
+    }
   },
   tick() {
     placeBadges();
@@ -1067,6 +1110,24 @@ function markGhost() {
 }
 function markWind() {
   document.querySelectorAll('#windSeg button').forEach(b => b.classList.toggle('on', +b.dataset.w === WIND.strength));
+}
+const PAUSE_ICON = '<path d="M7 5h3.6v14H7zM13.4 5H17v14h-3.6z" fill="currentColor"/>';
+const PLAY_ICON = '<path d="M7.5 5v14l11.5-7z" fill="currentColor"/>';
+function markRide() {
+  const st = RIDE.state, b = $('btnPause');
+  const label = st === 'running' ? 'Pause' : st === 'paused' ? 'Weiter' : 'Start';
+  if ($('pauseText').textContent !== label) {
+    $('pauseText').textContent = label;
+    b.title = st === 'running' ? 'Pause' : st === 'paused' ? 'Weiterfahren' : 'Fahrt starten';
+    $('pauseIcon').innerHTML = st === 'running' ? PAUSE_ICON : PLAY_ICON;
+  }
+  b.classList.toggle('paused', st === 'paused');
+  $('btnStop').classList.toggle('hidden', st === 'stopped');
+}
+function disarmStop() {
+  clearTimeout(RIDE.armTimer);
+  $('btnStop').classList.remove('arm');
+  $('stopText').textContent = 'Beenden';
 }
 
 // ------------------------------------------------------------------ HUD: elevation profile
@@ -1603,15 +1664,15 @@ class Demo {
     if (o.wind != null) WIND.strength = o.wind;
   }
   update(dt) {
-    const sdt = dt * this.speedup, g = route.gradeAt(this.s);
-    const P = clamp(180 + 14 * g, 110, 330), v = Math.min(solveSpeed(P, g), 16.7);
+    const sdt = this.paused ? 0 : dt * this.speedup, g = route.gradeAt(this.s);
+    const P = clamp(180 + 14 * g, 110, 330), v = this.paused ? 0 : Math.min(solveSpeed(P, g), 16.7);
     this.s = Math.min(route.total, this.s + v * sdt);
     this.gs = Math.min(route.total, this.gs + v / 1.015 * sdt);
     if (this.s < route.total) { this.elapsed += sdt; this.kj += P * sdt / 1000; }
     this.tick -= dt;
     if (this.tick > 0) return;
     this.tick += 1;
-    const moving = this.s < route.total, el = Math.floor(this.elapsed);
+    const moving = !this.paused && this.s < route.total, el = Math.floor(this.elapsed);
     rider.measure(this.s + (moving ? (Math.random() - 0.5) * 4 : 0), moving ? v * this.speedup : 0);
     const fT = (1 + Math.cos((this.windFrom - route.headingAt(this.s, 20, 20) / DEG) * DEG)) / 2;
     this.windF = this.windF < 0 ? fT : this.windF + (fT - this.windF) * (1 - Math.exp(-this.speedup / 5));
@@ -1633,6 +1694,7 @@ class Demo {
 async function boot() {
   $('profile').classList.toggle('compact', PROFILE.compact);
   markButtons();
+  markRide();
   applyUI();
   status('3D-Karte wird geladen …');
   window.qzmapDiag.stage = 'cesium-laden';

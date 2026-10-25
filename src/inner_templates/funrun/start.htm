@@ -1,0 +1,247 @@
+<!doctype html>
+<html lang="de">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
+<title>FunRun – Fahren</title>
+<!-- FunRun start page: chosen route with its profile and best time, wind and ghost rider, start -->
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Barlow:wght@400;500;600;700&amp;family=Barlow+Condensed:wght@600;700&amp;display=swap">
+<link rel="stylesheet" href="funrun.css">
+<style>
+.brand { font-family: "Barlow Condensed", Barlow, Roboto, Arial, sans-serif; font-weight: 700; font-size: 34px; letter-spacing: .02em; line-height: 1; }
+.brand span { color: var(--accent); }
+.status { display: inline-flex; align-items: center; gap: 8px; padding: 7px 12px; border-radius: 999px; background: var(--panel); border: 1px solid var(--line); font-size: 13px; color: var(--soft); max-width: 60%; }
+.status i { width: 8px; height: 8px; border-radius: 50%; background: #5b6673; flex: none; }
+.status.on i { background: var(--good); }
+.status span { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.route { display: flex; flex-direction: column; gap: 14px; }
+.rhead { display: flex; justify-content: space-between; gap: 12px; align-items: flex-start; }
+.rhead h2 { margin: 2px 0; font-size: 25px; line-height: 1.15; }
+.thumb { width: 64px; height: 64px; flex: none; border-radius: 14px; background: var(--bg); border: 1px solid var(--line); }
+.thumb svg { width: 100%; height: 100%; display: block; }
+.prof svg { display: block; width: 100%; height: 64px; }
+.plabs { display: flex; justify-content: space-between; font-size: 12px; color: var(--muted); margin-top: 4px; }
+.go { appearance: none; -webkit-appearance: none; width: 100%; display: flex; align-items: center; justify-content: center; gap: 10px; height: 62px; border: 0; border-radius: 16px;
+  background: var(--accent); color: var(--accent-dark); font-size: 21px; font-weight: 700; cursor: pointer; }
+.go:disabled { opacity: .5; }
+.opt { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.opt .l { display: flex; align-items: center; gap: 10px; min-width: 0; }
+.opt .l svg { width: 24px; height: 24px; flex: none; }
+.opt .t { display: flex; flex-direction: column; min-width: 0; }
+.opt .t b { font-size: 16px; font-weight: 600; }
+.opt .t span { font-size: 13px; color: var(--muted); }
+@media (max-width: 400px) { .opt { flex-direction: column; align-items: stretch; } .opt .segs { align-self: flex-start; } }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div class="top" style="align-items:center">
+    <div class="brand">Fun<span>Run</span></div>
+    <div class="status" id="status"><i></i><span>Rad wird gesucht …</span></div>
+  </div>
+  <p class="muted" id="week" style="margin:-4px 0 14px">&nbsp;</p>
+
+  <div class="cols">
+    <div class="col">
+      <section class="card route hidden" id="routeCard">
+        <div class="rhead">
+          <div style="min-width:0">
+            <div class="eyebrow">Ausgewählte Strecke</div>
+            <h2 id="rName"></h2>
+            <div class="muted" id="rMeta"></div>
+          </div>
+          <div class="thumb" id="rThumb"></div>
+        </div>
+        <div class="prof">
+          <svg id="rProf" viewBox="0 0 320 64" preserveAspectRatio="none" role="img" aria-label="Höhenprofil"></svg>
+          <div class="plabs"><span id="pLo"></span><span id="pMid"></span><span id="pHi"></span></div>
+        </div>
+        <div style="height:1px;background:var(--line)"></div>
+        <div class="opt">
+          <div class="l">
+            <svg viewBox="0 0 24 24" fill="none" stroke="#6fd3ff" stroke-width="1.8" stroke-linecap="round" aria-hidden="true"><path d="M3 8h11a3 3 0 1 0-3-3M3 12h15a3 3 0 1 1-3 3M3 16h7"/></svg>
+            <div class="t"><b>Wind</b><span id="windText"></span></div>
+          </div>
+          <div class="segs" id="windSeg" role="group" aria-label="Windstärke">
+            <button data-v="0">Aus</button><button data-v="1">1</button><button data-v="2">2</button><button data-v="3">3</button><button data-v="4">4</button>
+          </div>
+        </div>
+        <div class="opt">
+          <div class="l">
+            <svg viewBox="0 0 34 42" aria-hidden="true"><path d="M4 40V17a13 13 0 0 1 26 0v23l-4.3-3.2-4.4 3.2-4.3-3.2-4.3 3.2-4.4-3.2z" fill="none" stroke="#6fd3ff" stroke-width="2.6" stroke-linejoin="round"/><circle cx="12.5" cy="17" r="2.3" fill="#6fd3ff"/><circle cx="21.5" cy="17" r="2.3" fill="#6fd3ff"/></svg>
+            <div class="t"><b>Geisterfahrer</b><span id="ghostText"></span></div>
+          </div>
+          <div class="segs" id="ghostSeg" role="group" aria-label="Geisterfahrer">
+            <button data-v="best">Bestzeit</button><button data-v="last">Letzte</button><button data-v="off">Aus</button>
+          </div>
+        </div>
+      </section>
+
+      <section class="card hidden" id="noRoute">
+        <h2>Noch keine Strecke</h2>
+        <p class="muted" style="margin:6px 0 12px">Lade eine GPX-Strecke (z. B. von Komoot, Strava oder gpxstudio.github.io), dann kannst du sie hier nachfahren.</p>
+        <button class="btn" id="btnImport" style="width:100%">GPX importieren</button>
+      </section>
+
+      <button class="go" id="btnGo" disabled>
+        <svg viewBox="0 0 24 24" width="22" height="22" aria-hidden="true"><path d="M8 5v14l11-7z" fill="currentColor"/></svg><span id="goText">Fahrt starten</span>
+      </button>
+      <p class="note hidden" id="goNote" style="margin-top:-4px"></p>
+    </div>
+
+    <div class="col">
+      <section class="card flat">
+        <button class="link" id="lnkRoutes">Andere Strecke wählen<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="m9 6 6 6-6 6"/></svg></button>
+        <button class="link" id="lnkFree">Freie Fahrt ohne Strecke<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="m9 6 6 6-6 6"/></svg></button>
+        <button class="link" id="lnkProgram">Trainingsprogramm laden<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="m9 6 6 6-6 6"/></svg></button>
+      </section>
+      <section class="card hidden" id="lastCard">
+        <div class="chead"><h2>Letzte Fahrt</h2><span class="aside" id="lastWhen"></span></div>
+        <button class="link" id="lastLink" style="padding:0;min-height:48px">
+          <span style="display:flex;flex-direction:column;min-width:0"><b id="lastName" style="font-size:16px"></b><span class="muted" id="lastMeta" style="font-size:13px"></span></span>
+          <span class="cond" id="lastTime" style="font-size:22px"></span>
+        </button>
+      </section>
+    </div>
+  </div>
+</div>
+<script src="funrun.js"></script>
+<script>
+(function () {
+'use strict';
+const $ = FR.$;
+FR.tabs('start.htm');
+
+let routes = [], rides = [], route = null, wind = 0, ghostMode = 'best';
+
+// ------------------------------------------------------------------ drawing
+function thumbSvg(shape) {
+  if (!shape || shape.length < 2) return '';
+  const p = shape.map(([x, y]) => (6 + x * 52).toFixed(1) + ' ' + (6 + y * 52).toFixed(1));
+  const a = shape[0], b = shape[shape.length - 1];
+  return '<svg viewBox="0 0 64 64" fill="none" stroke="#ff7a1a" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">' +
+    '<path d="M' + p.join(' L') + '"/><circle cx="' + (6 + a[0] * 52).toFixed(1) + '" cy="' + (6 + a[1] * 52).toFixed(1) + '" r="3" fill="#0b0f14"/>' +
+    '<circle cx="' + (6 + b[0] * 52).toFixed(1) + '" cy="' + (6 + b[1] * 52).toFixed(1) + '" r="3" fill="#ff7a1a"/></svg>';
+}
+function profileSvg(prof, W, H) {
+  let lo = Math.min(...prof), hi = Math.max(...prof);
+  if (hi - lo < 30) { const m = (hi + lo) / 2; lo = m - 15; hi = m + 15; }
+  const pts = prof.map((e, i) => (i / (prof.length - 1) * W).toFixed(1) + ' ' + (3 + (1 - (e - lo) / (hi - lo)) * (H - 6)).toFixed(1));
+  return '<path d="M' + pts.join(' L') + ' L' + W + ' ' + H + ' L0 ' + H + ' Z" fill="#ff7a1a" fill-opacity=".18"/>' +
+    '<path d="M' + pts.join(' L') + '" fill="none" stroke="#ff7a1a" stroke-width="2" vector-effect="non-scaling-stroke"/>';
+}
+
+const bestOf = key => {
+  let best = null;
+  for (const r of rides) { const t = FR.routeTime(r); if (t != null && r.route.key === key && (!best || t < FR.routeTime(best))) best = r; }
+  return best;
+};
+const lastOf = key => rides.find(r => r.route && r.route.key === key) || null;
+
+function renderRoute() {
+  $('routeCard').classList.toggle('hidden', !route);
+  $('noRoute').classList.toggle('hidden', !!route || !routes);
+  $('btnGo').disabled = !route;
+  renderGo();
+  if (!route) return;
+  $('rName').textContent = route.name;
+  const best = bestOf(route.key);
+  $('rMeta').textContent = FR.km(route.length) + ' km · ' + FR.num(route.ascent) + ' Hm' + (best ? ' · Bestzeit ' + FR.time(FR.routeTime(best)) : '');
+  $('rThumb').innerHTML = thumbSvg(route.shape);
+  $('rProf').innerHTML = profileSvg(route.profile || [0, 0], 320, 64);
+  $('pLo').textContent = FR.num(route.profile ? route.profile[0] : 0) + ' m';
+  $('pHi').textContent = FR.num(route.profile ? route.profile[route.profile.length - 1] : 0) + ' m';
+  $('pMid').textContent = 'Ø ' + FR.num(route.length > 0 ? route.ascent / route.length * 100 : 0, 1) + ' % bergauf';
+  renderOptions();
+}
+function renderOptions() {
+  document.querySelectorAll('#windSeg button').forEach(b => b.classList.toggle('on', +b.dataset.v === wind));
+  $('windText').textContent = wind ? 'Stärke ' + wind + ' · bis +' + wind * 5 + ' % bei Gegenwind' : 'kein Wind';
+  document.querySelectorAll('#ghostSeg button').forEach(b => b.classList.toggle('on', b.dataset.v === ghostMode));
+  let gt = 'aus';
+  if (route && ghostMode === 'best') { const b = bestOf(route.key); gt = b ? 'gegen deine Bestzeit ' + FR.time(FR.routeTime(b)) : 'ab der zweiten Fahrt auf dieser Strecke'; }
+  else if (route && ghostMode === 'last') { const l = lastOf(route.key); gt = l ? 'gegen deine letzte Fahrt (' + FR.when(FR.date(l.start)) + ')' : 'ab der zweiten Fahrt auf dieser Strecke'; }
+  $('ghostText').textContent = gt;
+}
+function renderWeek() {
+  const now = new Date(), wd = (now.getDay() + 6) % 7, from = new Date(now.getFullYear(), now.getMonth(), now.getDate() - wd);
+  const week = rides.filter(r => FR.date(r.start) >= from);
+  const km = week.reduce((s, r) => s + (r.distance || 0), 0), up = week.reduce((s, r) => s + (r.ascent || 0), 0);
+  $('week').textContent = week.length ? 'Diese Woche: ' + (week.length === 1 ? '1 Fahrt' : week.length + ' Fahrten') + ' · ' + FR.km(km) + ' km · ' + FR.num(up) + ' Hm'
+    : rides.length ? 'Diese Woche noch keine Fahrt' : 'Willkommen bei FunRun';
+  const last = rides[0];
+  $('lastCard').classList.toggle('hidden', !last);
+  if (last) {
+    $('lastWhen').textContent = FR.when(FR.date(last.start));
+    $('lastName').textContent = FR.title(last);
+    $('lastMeta').textContent = FR.km(last.distance) + ' km · ' + FR.num(last.ascent || 0) + ' Hm';
+    const t = FR.routeTime(last);
+    $('lastTime').textContent = FR.time(t != null ? t : last.duration);
+    $('lastLink').onclick = () => FR.go('ende.htm', 'id=' + encodeURIComponent(last.id) + '&from=start');
+  }
+}
+
+// ------------------------------------------------------------------ live: bike connection, ride going on
+let live = null;
+// a ride going on (100 m or more): on the chosen route the button goes back to it, another route ends it first
+function renderGo() {
+  const w = live || {};
+  const underway = !!w.funrun_state && w.funrun_state !== 'stopped' && (+w.distance || 0) >= 0.1;
+  const same = underway && !!route && w.funrun_route_file === route.file;
+  const text = same ? (w.funrun_state === 'paused' ? 'Weiterfahren' : 'Zurück zur Fahrt') : 'Fahrt starten';
+  if ($('goText').textContent !== text) $('goText').textContent = text;
+  const note = underway && !same && route ? 'Deine laufende Fahrt (' + FR.km((+w.distance || 0) * 1000) + ' km) wird dabei beendet und gespeichert.' : '';
+  if ($('goNote').textContent !== note) $('goNote').textContent = note;
+  $('goNote').classList.toggle('hidden', !note);
+}
+FR.onWorkout(w => {
+  const on = !!w.deviceConnected, el = $('status');
+  el.classList.toggle('on', on);
+  const name = w.deviceName && w.deviceName !== 'N/A' ? w.deviceName : 'Rad';
+  el.querySelector('span').textContent = on ? name + ' verbunden' : 'Rad wird gesucht …';
+  live = w;
+  renderGo();
+});
+
+// ------------------------------------------------------------------ input
+$('windSeg').addEventListener('click', e => {
+  const b = e.target.closest('button'); if (!b) return;
+  wind = +b.dataset.v; FR.setSettings({ funrun_wind_strength: wind }); renderOptions();
+});
+$('ghostSeg').addEventListener('click', e => {
+  const b = e.target.closest('button'); if (!b) return;
+  ghostMode = b.dataset.v; FR.setSettings({ funrun_ghost_mode: ghostMode }); renderOptions();
+});
+$('btnGo').addEventListener('click', async () => {
+  if (!route) return;
+  $('btnGo').disabled = true;
+  try { await FR.start(route.file); } catch (e) { /* the app shows the map anyway */ }
+  setTimeout(() => { $('btnGo').disabled = false; }, 3000);
+});
+$('lnkRoutes').addEventListener('click', () => FR.go('strecken.htm'));
+$('lnkFree').addEventListener('click', () => FR.open('tiles'));
+$('lnkProgram').addEventListener('click', () => FR.open('trainingprograms'));
+$('btnImport').addEventListener('click', () => FR.open('gpx'));
+
+// ------------------------------------------------------------------ data
+async function load() {
+  try {
+    const [rs, rd, st] = await Promise.all([FR.routes(), FR.rides(), FR.getSettings(['funrun_selected_route', 'funrun_wind_strength', 'funrun_ghost_mode'])]);
+    routes = rs; rides = rd.slice().sort((a, b) => (a.start < b.start ? 1 : -1));
+    wind = Math.max(0, Math.min(4, +st.funrun_wind_strength || 0));
+    ghostMode = st.funrun_ghost_mode || 'best';
+    // the chosen route, otherwise the route of the last ride, otherwise the first one
+    const lastRoute = rides.find(r => r.route);
+    route = routes.find(r => r.file === st.funrun_selected_route) || (lastRoute && routes.find(r => r.key === lastRoute.route.key)) || routes[0] || null;
+  } catch (e) {
+    $('week').textContent = e.message;
+  }
+  renderRoute();
+  renderWeek();
+}
+FR.onRefresh(load);
+load();
+})();
+</script>
+</body>
+</html>

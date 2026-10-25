@@ -2266,6 +2266,11 @@ import AndroidStatusBar 1.0
             property bool ui_text_scale_system: true
             property int funrun_wind_strength: 0
             property string funrun_ghost_mode: "best"
+            property string funrun_selected_route: ""
+            property int funrun_flat_level: 12
+            property real funrun_level_per_percent: 1.5
+            property int funrun_level_interval: 10
+            property bool funrun_start_page: true
         }
 
         // The home page has its own Settings copy, read once when it is created: hand it every new

@@ -27,6 +27,8 @@ class FunRunRoute {
     // Distance along the route of the point closest to lat/lon. Searches around `hint` first (-1: everywhere).
     // `off` gets the distance between the position and the route, in metres.
     double project(double lat, double lon, double hint, double &off) const;
+    // name, length, climbing, elevation range, outline (for a thumbnail) and elevation profile of the route
+    QJsonObject describe() const;
 
   private:
     int segment(double d) const;
@@ -60,6 +62,8 @@ class FunRunStore {
     static bool deleteRide(const QString &id);
     // Name that recognises the same route again: the GPX file name without folder and extension, lower case
     static QString routeKey(const QString &gpxFile);
+    // GPX routes in the app's gpx folder (described by FunRunRoute::describe, cached in funrun/routes.json)
+    static QJsonArray listRoutes();
 
   private:
     static QString folder();

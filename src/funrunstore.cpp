@@ -67,6 +67,8 @@ bool FunRunRoute::load(const QString &gpxFile) {
     QVector<double> lat, lon, ele;
     bool inPoint = false;    // inside a track or route point
     bool inWaypoint = false; // inside a waypoint: its name is not the name of the route
+    bool inMetadata = false, inTrack = false;
+    QString metaName, trackName;
     while (!xml.atEnd()) {
         xml.readNext();
         if (xml.isStartElement()) {
@@ -78,13 +80,21 @@ bool FunRunRoute::load(const QString &gpxFile) {
                 inPoint = true;
             } else if (n == QLatin1String("wpt")) {
                 inWaypoint = true;
+            } else if (n == QLatin1String("metadata")) {
+                inMetadata = true;
+            } else if (n == QLatin1String("trk") || n == QLatin1String("rte")) {
+                inTrack = true;
             } else if (n == QLatin1String("ele") && inPoint) {
                 bool ok = false;
                 const double v = xml.readElementText().toDouble(&ok);
                 if (ok)
                     ele.last() = v;
-            } else if (n == QLatin1String("name") && !inPoint && !inWaypoint && routeName.isEmpty()) {
-                routeName = xml.readElementText().trimmed();
+            } else if (n == QLatin1String("name") && !inPoint && !inWaypoint) {
+                const QString name = xml.readElementText().trimmed();
+                if (inTrack && trackName.isEmpty())
+                    trackName = name;
+                else if (inMetadata && metaName.isEmpty())
+                    metaName = name;
             }
         } else if (xml.isEndElement()) {
             const QStringRef n = xml.name();
@@ -92,10 +102,16 @@ bool FunRunRoute::load(const QString &gpxFile) {
                 inPoint = false;
             else if (n == QLatin1String("wpt"))
                 inWaypoint = false;
+            else if (n == QLatin1String("metadata"))
+                inMetadata = false;
+            else if (n == QLatin1String("trk") || n == QLatin1String("rte"))
+                inTrack = false;
         }
     }
-    if (routeName.isEmpty())
-        routeName = QFileInfo(gpxFile).completeBaseName();
+    // the name of the track first (route tools put their own name into the metadata), then the metadata, the file
+    if (trackName.endsWith(QLatin1String(".gpx"), Qt::CaseInsensitive))
+        trackName.chop(4);
+    routeName = !trackName.isEmpty() ? trackName : !metaName.isEmpty() ? metaName : QFileInfo(gpxFile).completeBaseName();
     if (lat.size() < 2)
         return false;
 
@@ -153,6 +169,63 @@ double FunRunRoute::elevationAt(double d) const {
     const double len = s[i + 1] - s[i];
     const double u = len > 0 ? qBound(0.0, (d - s[i]) / len, 1.0) : 0.0;
     return e[i] + (e[i + 1] - e[i]) * u;
+}
+
+QJsonObject FunRunRoute::describe() const {
+    QJsonObject o;
+    o[QStringLiteral("name")] = routeName;
+    if (!valid())
+        return o;
+    const double len = length();
+    // climbing: elevation every 20 m, averaged over 100 m (GPX elevations are noisy)
+    const int n = qMax(2, (int)(len / 20.0) + 1);
+    QVector<double> ev(n);
+    for (int i = 0; i < n; i++)
+        ev[i] = elevationAt(len * i / (n - 1));
+    double ascent = 0, lo = 1e9, hi = -1e9, prev = 0;
+    for (int i = 0; i < n; i++) {
+        double sum = 0;
+        int cnt = 0;
+        for (int k = qMax(0, i - 2); k <= qMin(n - 1, i + 2); k++) {
+            sum += ev[k];
+            cnt++;
+        }
+        const double v = sum / cnt;
+        if (i && v > prev)
+            ascent += v - prev;
+        prev = v;
+        lo = qMin(lo, ev[i]);
+        hi = qMax(hi, ev[i]);
+    }
+    // outline in a square 0..1 (north up), 48 points along the route
+    double minX = 1e18, maxX = -1e18, minY = 1e18, maxY = -1e18;
+    for (int i = 0; i < x.size(); i++) {
+        minX = qMin(minX, x[i]);
+        maxX = qMax(maxX, x[i]);
+        minY = qMin(minY, y[i]);
+        maxY = qMax(maxY, y[i]);
+    }
+    const double span = qMax(1.0, qMax(maxX - minX, maxY - minY));
+    const double offX = (span - (maxX - minX)) / 2, offY = (span - (maxY - minY)) / 2;
+    QJsonArray shape, profile;
+    for (int k = 0; k < 48; k++) {
+        const double d = len * k / 47;
+        const int i = segment(d);
+        const double segLen = s[i + 1] - s[i];
+        const double u = segLen > 0 ? qBound(0.0, (d - s[i]) / segLen, 1.0) : 0.0;
+        const double px = x[i] + (x[i + 1] - x[i]) * u, py = y[i] + (y[i + 1] - y[i]) * u;
+        shape.append(QJsonArray{std::round((px - minX + offX) / span * 1000) / 1000,
+                                std::round((1.0 - (py - minY + offY) / span) * 1000) / 1000});
+    }
+    for (int k = 0; k < 60; k++)
+        profile.append((qint64)std::lround(elevationAt(len * k / 59)));
+    o[QStringLiteral("length")] = (qint64)std::lround(len);
+    o[QStringLiteral("ascent")] = (qint64)std::lround(ascent);
+    o[QStringLiteral("eleMin")] = (qint64)std::lround(lo);
+    o[QStringLiteral("eleMax")] = (qint64)std::lround(hi);
+    o[QStringLiteral("shape")] = shape;
+    o[QStringLiteral("profile")] = profile;
+    return o;
 }
 
 double FunRunRoute::project(double lat, double lon, double hint, double &off) const {
@@ -443,6 +516,53 @@ QString FunRunStore::saveRide(const QList<SessionLine> &session, const QHash<qui
     qDebug() << QStringLiteral("FunRun: ride saved") << id << QStringLiteral("samples") << at.size()
              << QStringLiteral("on route") << onRoute;
     return id;
+}
+
+QJsonArray FunRunStore::listRoutes() {
+    const QString cacheFile = folder() + QStringLiteral("routes.json");
+    const QJsonObject cache = readJsonFile(cacheFile).value(QStringLiteral("routes")).toObject();
+    QJsonObject newCache;
+    bool changed = false;
+    QList<QJsonObject> routes;
+    QDir dir(homeform::getWritableAppDir() + QStringLiteral("gpx"));
+    const QFileInfoList files =
+        dir.entryInfoList(QStringList() << QStringLiteral("*.gpx") << QStringLiteral("*.GPX"), QDir::Files, QDir::Name);
+    for (const QFileInfo &fi : files) {
+        const QString path = fi.absoluteFilePath();
+        const qint64 size = fi.size(), mtime = fi.lastModified().toMSecsSinceEpoch();
+        QJsonObject entry = cache.value(path).toObject();
+        if (entry.value(QStringLiteral("size")).toDouble() != (double)size ||
+            entry.value(QStringLiteral("mtime")).toDouble() != (double)mtime) {
+            FunRunRoute route;
+            route.load(path);
+            entry = QJsonObject();
+            entry[QStringLiteral("size")] = size;
+            entry[QStringLiteral("mtime")] = mtime;
+            entry[QStringLiteral("info")] = route.describe();
+            changed = true;
+        }
+        newCache[path] = entry;
+        QJsonObject info = entry.value(QStringLiteral("info")).toObject();
+        if (!info.contains(QStringLiteral("length")))
+            continue; // not a usable route
+        info[QStringLiteral("file")] = path;
+        info[QStringLiteral("key")] = routeKey(path);
+        routes.append(info);
+    }
+    if (changed || newCache.size() != cache.size()) {
+        QDir().mkpath(folder());
+        QJsonObject out;
+        out[QStringLiteral("v")] = 1;
+        out[QStringLiteral("routes")] = newCache;
+        writeJsonFile(cacheFile, out);
+    }
+    std::sort(routes.begin(), routes.end(), [](const QJsonObject &a, const QJsonObject &b) {
+        return a.value(QStringLiteral("name")).toString().toLower() < b.value(QStringLiteral("name")).toString().toLower();
+    });
+    QJsonArray out;
+    for (const QJsonObject &o : qAsConst(routes))
+        out.append(o);
+    return out;
 }
 
 QJsonArray FunRunStore::listRides() {

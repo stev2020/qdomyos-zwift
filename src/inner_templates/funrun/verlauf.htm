@@ -48,9 +48,6 @@
       <div class="eyebrow">FunRun</div>
       <h1>Meine Fahrten</h1>
     </div>
-    <button class="iconbtn" id="btnClose" aria-label="Schließen">
-      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18"/></svg>
-    </button>
   </div>
 
   <div class="msg" id="msg">Fahrten werden geladen …</div>
@@ -92,7 +89,7 @@
 (function () {
 'use strict';
 const $ = FR.$;
-$('btnClose').addEventListener('click', () => FR.close('home'));
+FR.tabs('verlauf.htm');
 
 const ROUTE_ICON = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="6" cy="18" r="2"/><circle cx="18" cy="6" r="2"/><path d="M8 18h7.5a3.5 3.5 0 0 0 0-7h-7a3.5 3.5 0 0 1 0-7H16"/></svg>';
 const BIKE_ICON = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="5.5" cy="16.5" r="3.5"/><circle cx="18.5" cy="16.5" r="3.5"/><path d="M5.5 16.5 9 9h6.5l3 7.5M9 9l3.5 7.5M14 5.5h2.5l-1 3.5"/></svg>';
@@ -222,10 +219,10 @@ $('bars').addEventListener('click', e => { const b = e.target.closest('button');
 $('more').addEventListener('click', () => { shown += 20; renderRides(); });
 document.addEventListener('click', e => {
   const r = e.target.closest('.ride');
-  if (r && r.dataset.id) location.href = 'ende.htm?id=' + encodeURIComponent(r.dataset.id) + '&from=history' + (FR.qs.get('demo') ? '&demo=' + encodeURIComponent(FR.qs.get('demo')) : '');
+  if (r && r.dataset.id) FR.go('ende.htm', 'id=' + encodeURIComponent(r.dataset.id) + '&from=history');
 });
 
-(async function () {
+async function load() {
   try { rides = await FR.rides(); } catch (e) { $('msg').textContent = e.message; return; }
   rides.sort((a, b) => (a.start < b.start ? 1 : -1));
   computeBests();
@@ -233,7 +230,9 @@ document.addEventListener('click', e => {
   renderRides();
   $('msg').classList.add('hidden');
   $('content').classList.remove('hidden');
-})();
+}
+FR.onRefresh(load);
+load();
 })();
 </script>
 </body>

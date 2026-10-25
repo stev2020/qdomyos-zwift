@@ -1594,6 +1594,36 @@ void TemplateInfoSenderBuilder::onFunRunClose(const QJsonValue &msgContent, Temp
     tempSender->send(QJsonDocument(main).toJson(QJsonDocument::Compact));
 }
 
+void TemplateInfoSenderBuilder::onFunRunRoutes(TemplateInfoSender *tempSender) {
+    QJsonObject main;
+    main[QStringLiteral("msg")] = QStringLiteral("R_funrun_routes");
+    main[QStringLiteral("content")] = FunRunStore::listRoutes();
+    tempSender->send(QJsonDocument(main).toJson(QJsonDocument::Compact));
+}
+
+void TemplateInfoSenderBuilder::onFunRunStart(const QJsonValue &msgContent, TemplateInfoSender *tempSender) {
+    const QString file = msgContent.toObject().value(QStringLiteral("file")).toString();
+    // only routes of the app's gpx folder
+    const QString gpxDir = QFileInfo(homeform::getWritableAppDir() + QStringLiteral("gpx")).absoluteFilePath();
+    const bool ok = !file.isEmpty() && QFileInfo(file).absolutePath() == gpxDir && QFile::exists(file);
+    if (ok && homeform::singleton())
+        homeform::singleton()->funrunStartRoute(file);
+    QJsonObject content;
+    content[QStringLiteral("ok")] = ok;
+    QJsonObject main;
+    main[QStringLiteral("msg")] = QStringLiteral("R_funrun_start");
+    main[QStringLiteral("content")] = content;
+    tempSender->send(QJsonDocument(main).toJson(QJsonDocument::Compact));
+}
+
+void TemplateInfoSenderBuilder::onFunRunOpen(const QJsonValue &msgContent, TemplateInfoSender *tempSender) {
+    if (homeform::singleton())
+        homeform::singleton()->funrunRequestOpen(msgContent.toObject().value(QStringLiteral("what")).toString());
+    QJsonObject main;
+    main[QStringLiteral("msg")] = QStringLiteral("R_funrun_open");
+    tempSender->send(QJsonDocument(main).toJson(QJsonDocument::Compact));
+}
+
 void TemplateInfoSenderBuilder::onDataReceived(const QByteArray &data) {
     TemplateInfoSender *sender = qobject_cast<TemplateInfoSender *>(this->sender());
     if (!sender) {
@@ -1746,6 +1776,15 @@ void TemplateInfoSenderBuilder::onDataReceived(const QByteArray &data) {
                     return;
                 } else if (msg == QStringLiteral("funrun_close")) {
                     onFunRunClose(jsonObject[QStringLiteral("content")], sender);
+                    return;
+                } else if (msg == QStringLiteral("funrun_routes")) {
+                    onFunRunRoutes(sender);
+                    return;
+                } else if (msg == QStringLiteral("funrun_start")) {
+                    onFunRunStart(jsonObject[QStringLiteral("content")], sender);
+                    return;
+                } else if (msg == QStringLiteral("funrun_open")) {
+                    onFunRunOpen(jsonObject[QStringLiteral("content")], sender);
                     return;
                 }
                 if (msg == QStringLiteral("start")) {
@@ -1910,6 +1949,8 @@ void TemplateInfoSenderBuilder::buildContext(bool forceReinit) {
         obj.setProperty(QStringLiteral("funrun_wind_strength"),
                         settings.value(QZSettings::funrun_wind_strength, QZSettings::default_funrun_wind_strength).toInt());
         obj.setProperty(QStringLiteral("funrun_hr_max"), homeform::singleton()->heartRateMax());
+        obj.setProperty(QStringLiteral("funrun_state"), homeform::singleton()->funrunRideState());
+        obj.setProperty(QStringLiteral("funrun_route_file"), device->currentGPXFile());
         // FunRun ghost rider: distances along the route in metres (measured on the GPX like the kept rides)
         {
             const FunRunGhost &ghost = homeform::singleton()->funrunGhostState();

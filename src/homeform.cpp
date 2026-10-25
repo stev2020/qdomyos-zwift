@@ -9795,6 +9795,39 @@ void homeform::funrunSaveRide() {
     emit funrunRideSaved(id);
 }
 
+void homeform::funrunStartRoute(const QString &gpxFile) {
+    if (gpxFile.isEmpty() || !QFile::exists(gpxFile))
+        return;
+    QSettings settings;
+    settings.setValue(QZSettings::funrun_selected_route, gpxFile);
+    bluetoothdevice *dev = bluetoothManager->device();
+    // a ride is going on (running or paused) once it has covered 100 m
+    const bool underway = !stopped && dev && dev->odometer() >= 0.1;
+    if (underway && QFileInfo(dev->currentGPXFile()) == QFileInfo(gpxFile)) {
+        // back to the ride on this route (the start page was opened during the ride)
+        if (paused)
+            Start();
+        emit funrunMapRequested();
+        return;
+    }
+    if (underway) {
+        // another route during a ride: the ride so far is kept (as after "Beenden"), then the new one starts
+        Stop();
+    } else if (!stopped && dev) {
+        // the app counts from its start: the minutes on the start page are not part of the ride
+        stopped = true;
+    }
+    if (stopped || paused) {
+        // a new ride (Start clears the session), or after a pause: go on
+        Start();
+    }
+    // the route after Start: Start forgets the name of the workout (the FIT file takes the route's name)
+    gpx_open_clicked(QUrl::fromLocalFile(gpxFile));
+    if (trainProgram && !trainProgram->isStarted())
+        trainProgram->restart();
+    emit funrunMapRequested();
+}
+
 void homeform::fit_save_clicked() {
 
     QString path = getWritableAppDir();

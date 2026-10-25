@@ -88,7 +88,8 @@ HomeForm {
 
     function showFunRunPage(page, rideId, from) {
         var cur = stackView.currentItem
-        if (cur && cur.objectName === "funrunPage") {
+        // another FunRun page on top shows it in place (the start page stays: "Fertig" goes back to it)
+        if (cur && cur.objectName === "funrunPage" && cur.page !== "start.htm") {
             cur.open(page, rideId, from)
             return
         }
@@ -324,6 +325,9 @@ HomeForm {
         onTriggered: {
             if(rootItem.firstRun()) {
                 stackView.push("Wizard.qml")
+            } else if (rootItem.funrunStartPage()) {
+                // FunRun: the start page (route, wind, ghost rider) on top of the tiles
+                stackView.push("FunRunPage.qml", { "page": "start.htm", "rideId": "", "from": "" })
             }
         }
     }

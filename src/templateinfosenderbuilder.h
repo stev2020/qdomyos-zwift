@@ -115,6 +115,10 @@ class TemplateInfoSenderBuilder : public QObject {
     void onFunRunRide(const QJsonValue &msgContent, TemplateInfoSender *tempSender);
     void onFunRunDelete(const QJsonValue &msgContent, TemplateInfoSender *tempSender);
     void onFunRunClose(const QJsonValue &msgContent, TemplateInfoSender *tempSender);
+    // FunRun start page: GPX routes, start a route, open a page of the app
+    void onFunRunRoutes(TemplateInfoSender *tempSender);
+    void onFunRunStart(const QJsonValue &msgContent, TemplateInfoSender *tempSender);
+    void onFunRunOpen(const QJsonValue &msgContent, TemplateInfoSender *tempSender);
     void onGetLatLon(TemplateInfoSender *tempSender);
     void onNextInclination300Meters(TemplateInfoSender *tempSender);
     void onGetGPXBase64(TemplateInfoSender *tempSender);

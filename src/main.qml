@@ -971,6 +971,42 @@ ApplicationWindow {
         visible: false
     }
 
+    // FunRun pages: a route was started (3D map) or a page of the app is wanted
+    Connections {
+        target: rootItem
+        ignoreUnknownSignals: true
+        function onFunrunMapRequested() {
+            if (googleMapUI.status === Loader.Ready) {
+                if (stackView.find(function(item) { return item === googleMapUI.item }))
+                    stackView.pop(googleMapUI.item)
+                else
+                    stackView.push(googleMapUI.item)
+            } else {
+                googleMapUI.active = true
+            }
+        }
+        function onFunrunOpenRequested(what) {
+            if (what === "settings") {
+                toolButtonLoadSettings.visible = true
+                toolButtonSaveSettings.visible = true
+                stackView.push("settings.qml")
+            } else if (what === "menu") {
+                drawer.open()
+            } else if (what === "trainingprograms") {
+                trainprogram_open.clicked()
+            } else if (what === "gpxlist") {
+                gpx_open.clicked()
+            } else if (what === "gpx") {
+                if (OS_VERSION === "Android")
+                    rootItem.openAndroidDocumentPicker("gpx")
+                else
+                    gpx_open.clicked()
+            } else if (what === "tiles") {
+                stackView.pop(null)
+            }
+        }
+    }
+
     Connections {
         target: rootItem
         ignoreUnknownSignals: true
@@ -1586,6 +1622,14 @@ ApplicationWindow {
                     }
                 }
 
+            ItemDelegate {
+                text: qsTr("FunRun Start")
+                width: parent.width
+                onClicked: {
+                    stackView.push("FunRunPage.qml", { "page": "start.htm", "rideId": "", "from": "" })
+                    drawer.close()
+                }
+            }
             ItemDelegate {
                 text: qsTr("Meine Fahrten")
                 width: parent.width

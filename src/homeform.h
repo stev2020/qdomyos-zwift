@@ -250,6 +250,13 @@ class homeform : public QObject {
     Q_INVOKABLE QString funrunLastRideId() const { return funrunLastRide; }
     void funrunRequestClose(const QString &to) { emit funrunCloseRequested(to); }
     const FunRunGhost &funrunGhostState() const { return funrunGhost; }
+    // FunRun start page: loads the GPX route, starts the ride and asks the app for the map
+    void funrunStartRoute(const QString &gpxFile);
+    void funrunRequestOpen(const QString &what) { emit funrunOpenRequested(what); }
+    // FunRun map (pause and stop buttons): "running", "paused" or "stopped"
+    QString funrunRideState() const {
+        return stopped ? QStringLiteral("stopped") : paused ? QStringLiteral("paused") : QStringLiteral("running");
+    }
     // Status line of the search for the equipment on the home page, with the last device found;
     // empty once it is connected
     Q_INVOKABLE QString bluetoothSearchStatus();
@@ -406,6 +413,12 @@ class homeform : public QObject {
             axisY->setShadesPen(Qt::NoPen);
             axisY->setShadesBrush(QBrush(QColor(0x99, 0xcc, 0xcc, 0x55)));
         }
+    }
+
+    // FunRun: the app opens with the FunRun start page
+    Q_INVOKABLE bool funrunStartPage() {
+        QSettings settings;
+        return settings.value(QZSettings::funrun_start_page, QZSettings::default_funrun_start_page).toBool();
     }
 
     Q_INVOKABLE bool firstRun() {
@@ -1384,6 +1397,10 @@ public:
     void funrunRideSaved(QString rideId);
     // FunRun: a FunRun page (web) asks to be closed: to = "home" (back to the start page) or "back" (one page)
     void funrunCloseRequested(QString to);
+    // FunRun: a route was started from the start page, the app shows the 3D map
+    void funrunMapRequested();
+    // FunRun: a FunRun page asks for a page of the app ("settings", "menu", "tiles", "trainingprograms", "gpx")
+    void funrunOpenRequested(QString what);
     void stravaUploadRequestedChanged(bool value);
     void garminMfaRequestedChanged(bool value);
     void garminWorkoutPromptRequestedChanged(bool value);

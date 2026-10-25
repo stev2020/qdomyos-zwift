@@ -3416,6 +3416,24 @@ class QZSettings {
     static const QString funrun_ghost_mode;
     static const QString default_funrun_ghost_mode;
 
+    // FunRun start page: the route chosen last (GPX file path)
+    static const QString funrun_selected_route;
+    static const QString default_funrun_selected_route;
+
+    // FunRun resistance on GPX routes (Skandika P12-H): level on a flat road and levels added per percent of grade
+    static const QString funrun_flat_level;
+    static constexpr int default_funrun_flat_level = 12;
+    static const QString funrun_level_per_percent;
+    static constexpr double default_funrun_level_per_percent = 1.5;
+
+    // FunRun: the level changes at most every this many seconds (every change makes the bike beep)
+    static const QString funrun_level_interval;
+    static constexpr int default_funrun_level_interval = 10;
+
+    // FunRun: the app opens with the FunRun start page
+    static const QString funrun_start_page;
+    static constexpr bool default_funrun_start_page = true;
+
     /**
      * @brief Write the QSettings values using the constants from this namespace.
      * @param showDefaults Optionally indicates if the default should be shown with the key.

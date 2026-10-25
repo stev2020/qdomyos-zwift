@@ -475,8 +475,9 @@ double ftmsbike::p12hResistanceForGrade(double grade) {
             return lower.value() + (grade - lower.key()) / (upper.key() - lower.key()) * (upper.value() - lower.value());
         }
     }
-    // Default: flat road = level 12, +1.5 levels per percent of grade (levels 1..32)
-    return 12.0 + 1.5 * grade;
+    // FunRun settings (default: flat road = level 12, +1.5 levels per percent of grade; levels 1..32)
+    return settings.value(QZSettings::funrun_flat_level, QZSettings::default_funrun_flat_level).toDouble() +
+           settings.value(QZSettings::funrun_level_per_percent, QZSettings::default_funrun_level_per_percent).toDouble() * grade;
 }
 
 void ftmsbike::updateP12hGradeResistance() {
@@ -515,9 +516,12 @@ void ftmsbike::updateP12hGradeResistance() {
         p12hLastGears = gears;
         gearsChanged = target != p12hLastLevel;
     }
-    // otherwise write only when the level really changes and at most every 10 seconds (every write makes the bike beep)
+    // otherwise write only when the level really changes and at most every few seconds (FunRun setting, 10 s by
+    // default: every write makes the bike beep)
+    const qint64 interval =
+        1000LL * qBound(1, settings.value(QZSettings::funrun_level_interval, QZSettings::default_funrun_level_interval).toInt(), 120);
     if (first || gearsChanged ||
-        (target != p12hLastLevel && fabs(level - p12hLastLevelExact) >= 1.0 && now - p12hLastLevelTime >= 10000)) {
+        (target != p12hLastLevel && fabs(level - p12hLastLevelExact) >= 1.0 && now - p12hLastLevelTime >= interval)) {
         qDebug() << QStringLiteral("P12-H grade") << p12hGradeSmoothed << QStringLiteral("gears") << gearsModifier()
                  << QStringLiteral("wind %") << funrunWindPct << QStringLiteral("-> resistance level") << target;
         init();

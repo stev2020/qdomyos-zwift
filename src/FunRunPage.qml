@@ -46,11 +46,33 @@ Item {
         function onFunrunCloseRequested(to) {
             if (stackView.currentItem !== funrunPage)
                 return
-            if (to === "back")
+            if (to === "back") {
                 stackView.pop()
+                return
+            }
+            // "home": back to the FunRun start page if it is open below, otherwise to the tiles
+            var start = stackView.find(function(item) { return item.objectName === "funrunPage" && item.page === "start.htm" })
+            if (start && start !== funrunPage)
+                stackView.pop(start)
             else
                 stackView.pop(null)
         }
+        // a GPX file was imported (FunRun "GPX importieren"): it becomes the chosen route and the page shows it
+        function onAndroidDocumentPicked(kind, localUrl) {
+            if (stackView.currentItem !== funrunPage || kind !== "gpx")
+                return
+            var path = localUrl.toString()
+            if (path.indexOf("file://") === 0)
+                path = path.substring(7)
+            settings.setValue("funrun_selected_route", decodeURIComponent(path))
+            webView.runJavaScript("window.funrunRefresh && window.funrunRefresh()")
+        }
+    }
+
+    // back on this page (after a ride, after the settings): fresh numbers
+    StackView.onActivated: {
+        if (webView.url.toString() !== "")
+            webView.runJavaScript("window.funrunRefresh && window.funrunRefresh()")
     }
 
     // as after the old chart page: the workout summary mail goes out if it is set up

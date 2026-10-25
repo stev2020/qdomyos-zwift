@@ -1,0 +1,226 @@
+<!doctype html>
+<html lang="de">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
+<title>FunRun – Einstellungen</title>
+<!-- FunRun settings: resistance on routes, wind, ghost rider, map, heart rate; all other settings stay in QZ -->
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Barlow:wght@400;500;600;700&amp;family=Barlow+Condensed:wght@600;700&amp;display=swap">
+<link rel="stylesheet" href="funrun.css">
+<style>
+.sec h2 { margin: 0 0 8px 4px; font-size: 12px; letter-spacing: .12em; text-transform: uppercase; color: var(--muted); font-weight: 600; }
+.sec .card { padding: 4px 16px; }
+.switch { appearance: none; -webkit-appearance: none; width: 56px; height: 32px; flex: none; border: 0; border-radius: 999px; padding: 4px; cursor: pointer; background: #2a3542; display: flex; align-items: center; }
+.switch span { width: 24px; height: 24px; border-radius: 50%; background: #f3f5f7; box-shadow: 0 1px 3px rgba(0,0,0,.4); transition: transform .15s; }
+.switch.on { background: var(--accent); }
+.switch.on span { transform: translateX(24px); }
+.step { display: flex; align-items: center; gap: 4px; flex: none; }
+.step button { appearance: none; -webkit-appearance: none; width: 42px; height: 42px; border-radius: 10px; border: 1px solid var(--line2); background: var(--bg); color: var(--text); font-size: 22px; font-weight: 600; cursor: pointer; }
+.step b { min-width: 52px; text-align: center; font-size: 24px; }
+.example { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin: 4px 0 12px; padding: 10px 12px; border-radius: 12px; background: var(--bg); border: 1px solid var(--line); }
+.dirs { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; margin: 0 0 8px; }
+.dirs div { display: flex; flex-direction: column; gap: 2px; padding: 8px 10px; border-radius: 12px; background: var(--bg); border: 1px solid var(--line); }
+.dirs span { font-size: 12px; font-weight: 600; color: var(--muted); }
+.dirs b { font-size: 17px; }
+.range { display: flex; flex-direction: column; gap: 6px; padding: 12px 0; }
+.range input { width: 100%; height: 26px; margin: 0; accent-color: var(--accent); }
+.hint { margin: 0 0 12px; font-size: 13px; color: var(--muted); }
+.zones { display: flex; gap: 2px; height: 10px; border-radius: 4px; overflow: hidden; margin: 2px 0 6px; }
+.disabled { opacity: .4; pointer-events: none; }
+#exLevel { white-space: nowrap; }
+/* phones: a choice of several goes below its label, as wide as the card */
+@media (max-width: 560px) {
+  .line.wide { flex-direction: column; align-items: stretch; gap: 8px; padding: 12px 0; }
+  .line.wide .segs { display: flex; flex-wrap: nowrap; }
+  .line.wide .segs button { flex: 1; min-width: 0; padding: 0 6px; }
+}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1 style="margin:0 0 14px;font-family:'Barlow Condensed',Barlow,sans-serif;font-size:32px">Einstellungen</h1>
+  <div class="cols">
+    <div class="col">
+      <section class="sec">
+        <h2>Widerstand auf Strecken</h2>
+        <div class="card">
+          <div class="line"><div class="l"><span class="n">Automatik</span><span class="m">Stufe folgt der Steigung der Strecke</span></div>
+            <button class="switch" id="auto" aria-label="Automatik an oder aus"><span></span></button></div>
+          <div id="levelBox">
+            <div class="line"><div class="l"><span class="n">Flache Strecke</span><span class="m">Stufe bei 0 % Steigung</span></div>
+              <div class="step"><button data-k="flat" data-d="-1" aria-label="weniger">−</button><b class="cond" id="flat"></b><button data-k="flat" data-d="1" aria-label="mehr">+</button></div></div>
+            <div class="line"><div class="l"><span class="n">Pro 1 % Steigung</span><span class="m">so viele Stufen mehr</span></div>
+              <div class="step"><button data-k="per" data-d="-0.5" aria-label="weniger">−</button><b class="cond" id="per"></b><button data-k="per" data-d="0.5" aria-label="mehr">+</button></div></div>
+            <div class="line wide"><div class="l"><span class="n">Wechsel höchstens alle</span><span class="m">seltener = weniger Piepen</span></div>
+              <div class="segs" id="intSeg"><button data-v="5">5 s</button><button data-v="10">10 s</button><button data-v="20">20 s</button><button data-v="30">30 s</button></div></div>
+            <div class="example"><div class="l" style="display:flex;flex-direction:column;gap:2px"><span class="m" style="font-size:12px;font-weight:600;color:var(--muted)">Beispiel: 8 % Steigung</span>
+              <span style="font-size:13px;color:var(--soft)" id="exWind"></span></div><b class="cond" style="font-size:24px;color:var(--accent)" id="exLevel"></b></div>
+          </div>
+        </div>
+      </section>
+
+      <section class="sec">
+        <h2>Wind</h2>
+        <div class="card">
+          <div class="line wide"><div class="l"><span class="n">Windstärke</span><span class="m" id="windText"></span></div>
+            <div class="segs" id="windSeg"><button data-v="0">Aus</button><button data-v="1">1</button><button data-v="2">2</button><button data-v="3">3</button><button data-v="4">4</button></div></div>
+          <div class="dirs" id="dirs"></div>
+          <p class="hint">Die Richtung wird bei jeder Fahrt neu ausgelost. Gegenwind zählt voll, Seitenwind halb, Rückenwind gar nicht.</p>
+        </div>
+      </section>
+
+      <section class="sec">
+        <h2>Geisterfahrer</h2>
+        <div class="card">
+          <div class="line wide"><div class="l"><span class="n">Gegner</span><span class="m" id="ghostText"></span></div>
+            <div class="segs" id="ghostSeg"><button data-v="best">Bestzeit</button><button data-v="last">Letzte</button><button data-v="off">Aus</button></div></div>
+        </div>
+      </section>
+    </div>
+
+    <div class="col">
+      <section class="sec">
+        <h2>Karte</h2>
+        <div class="card">
+          <div class="line wide"><div class="l"><span class="n">Start-Ansicht</span></div>
+            <div class="segs" id="viewSeg"><button data-v="ich">Ich</button><button data-v="verfolger">Verfolger</button><button data-v="ueberblick">Überblick</button></div></div>
+          <div class="line wide"><div class="l"><span class="n">Kartenbild</span></div>
+            <div class="segs" id="layerSeg"><button data-v="sat">Satellit</button><button data-v="g3d">3D-Fotos</button></div></div>
+          <div class="range" style="border-top:1px solid var(--line)">
+            <div style="display:flex;justify-content:space-between"><span class="n" style="font-size:16px;font-weight:600">Verfolger-Abstand</span><span style="color:var(--soft)" id="followText"></span></div>
+            <input type="range" id="follow" min="10" max="90" step="1" aria-label="Verfolger-Abstand">
+          </div>
+        </div>
+      </section>
+
+      <section class="sec">
+        <h2>Puls</h2>
+        <div class="card">
+          <div class="line"><div class="l"><span class="n">Pulsgurt</span><span class="m" id="belt"></span></div>
+            <button class="btn" id="btnBelt" style="min-height:40px;font-size:14px;padding:0 14px">Koppeln</button></div>
+          <div class="line"><div class="l"><span class="n">Maximalpuls</span><span class="m">für die Zonen (wie bei Orangetheory)</span></div>
+            <div class="step"><button data-k="hr" data-d="-1" aria-label="weniger">−</button><b class="cond" id="hrMax"></b><button data-k="hr" data-d="1" aria-label="mehr">+</button></div></div>
+          <div class="zones" aria-hidden="true">
+            <div style="flex:61;background:#b9c2cc"></div><div style="flex:10;background:#3d9bff"></div><div style="flex:13;background:#3fcf5e"></div><div style="flex:8;background:#ff8c1a"></div><div style="flex:8;background:#ff4d4d"></div>
+          </div>
+          <p class="hint" id="zoneText"></p>
+        </div>
+      </section>
+
+      <section class="sec">
+        <h2>App</h2>
+        <div class="card flat">
+          <div class="line" style="padding:0 16px"><div class="l"><span class="n">Mit FunRun-Startseite öffnen</span><span class="m">sonst mit den QZ-Kacheln</span></div>
+            <button class="switch" id="startPage" aria-label="FunRun-Startseite an oder aus"><span></span></button></div>
+          <button class="link" id="lnkSettings" style="border-top:1px solid var(--line)">Alle QZ-Einstellungen<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="m9 6 6 6-6 6"/></svg></button>
+          <button class="link" id="lnkTiles">QZ-Kacheln (Fahrt ohne Karte)<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="m9 6 6 6-6 6"/></svg></button>
+          <button class="link" id="lnkMenu">QZ-Menü<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="m9 6 6 6-6 6"/></svg></button>
+        </div>
+      </section>
+    </div>
+  </div>
+</div>
+<script src="funrun.js"></script>
+<script>
+(function () {
+'use strict';
+const $ = FR.$;
+FR.tabs('einstellungen.htm');
+
+// map settings live in the map page's storage (same address as this page)
+const mapStore = {
+  get(k, d) { try { const v = localStorage.getItem('qzmap.' + k); return v === null ? d : JSON.parse(v); } catch (e) { return d; } },
+  set(k, v) { try { localStorage.setItem('qzmap.' + k, JSON.stringify(v)); } catch (e) { /* not available */ } },
+};
+const dist = t => 1.97 * (Math.exp(7.84 * t) - 1);
+const OVERVIEW = Math.log(1800 / 1.97 + 1) / 7.84;
+
+const S = { auto: true, flat: 12, per: 1.5, interval: 10, wind: 0, ghost: 'best', hrMax: 190, belt: '', startPage: true };
+const bool = v => v === true || v === 'true' || v === 1 || v === '1';
+const numOr = (v, d) => (v === null || v === undefined || v === '' || !Number.isFinite(+v) ? d : +v);
+
+function seg(id, value) { document.querySelectorAll('#' + id + ' button').forEach(b => b.classList.toggle('on', b.dataset.v === String(value))); }
+function render() {
+  $('auto').classList.toggle('on', S.auto);
+  $('levelBox').classList.toggle('disabled', !S.auto);
+  $('flat').textContent = S.flat;
+  $('per').textContent = FR.num(S.per, 1);
+  seg('intSeg', S.interval);
+  const lv = Math.max(1, Math.min(32, Math.round(S.flat + S.per * 8)));
+  $('exLevel').textContent = 'Stufe ' + lv;
+  $('exWind').textContent = S.wind ? 'mit Gegenwind Stärke ' + S.wind + ': Stufe ' + Math.min(32, Math.round((S.flat + S.per * 8) * (1 + 0.05 * S.wind))) : 'ohne Wind';
+  seg('windSeg', S.wind);
+  $('windText').textContent = S.wind ? 'Stärke ' + S.wind + ' · bis +' + S.wind * 5 + ' %' : 'kein Wind';
+  $('dirs').innerHTML = [['Gegenwind', S.wind * 5], ['Seitenwind', S.wind * 2.5], ['Rückenwind', 0]].map(([n, p]) =>
+    '<div style="opacity:' + (S.wind ? 1 : 0.4) + '"><span>' + n + '</span><b>' + (p ? '+' + FR.num(p, p % 1 ? 1 : 0) + ' %' : '±0 %') + '</b></div>').join('');
+  seg('ghostSeg', S.ghost);
+  $('ghostText').textContent = { best: 'deine Bestzeit fährt als Geist mit', last: 'deine letzte Fahrt fährt als Geist mit', off: 'kein Geisterfahrer' }[S.ghost] || '';
+  // map
+  const followT = Math.max(0.1, Math.min(0.9, +mapStore.get('followT', 0.5) || 0.5)), zoom = +mapStore.get('zoom', followT);
+  seg('viewSeg', Math.abs(zoom) < 0.03 ? 'ich' : Math.abs(zoom - OVERVIEW) < 0.03 ? 'ueberblick' : 'verfolger');
+  seg('layerSeg', mapStore.get('layer', 'sat'));
+  $('follow').value = Math.round(followT * 100);
+  $('followText').textContent = '≈ ' + Math.round(dist(followT)).toLocaleString('de-DE') + ' m';
+  // heart rate
+  $('belt').textContent = S.belt && S.belt !== 'Disabled' ? S.belt : 'keiner gekoppelt';
+  $('hrMax').textContent = S.hrMax;
+  const z = p => Math.round(S.hrMax * p / 100);
+  $('zoneText').textContent = 'Grau bis ' + (z(61) - 1) + ', Blau bis ' + (z(71) - 1) + ', Grün bis ' + (z(84) - 1) + ', Orange bis ' + (z(92) - 1) + ', Rot ab ' + z(92) + ' /min';
+  $('startPage').classList.toggle('on', S.startPage);
+}
+
+// ------------------------------------------------------------------ input
+$('auto').addEventListener('click', () => { S.auto = !S.auto; FR.send('autoresistance'); render(); });
+document.addEventListener('click', e => {
+  const b = e.target.closest('.step button'); if (!b) return;
+  const d = +b.dataset.d;
+  if (b.dataset.k === 'flat') { S.flat = Math.max(1, Math.min(32, S.flat + d)); FR.setSettings({ funrun_flat_level: S.flat }); }
+  else if (b.dataset.k === 'per') { S.per = Math.max(0.5, Math.min(3, Math.round((S.per + d) * 2) / 2)); FR.setSettings({ funrun_level_per_percent: S.per }); }
+  else if (b.dataset.k === 'hr') { S.hrMax = Math.max(120, Math.min(220, S.hrMax + d)); FR.setSettings({ heart_max_override_enable: true, heart_max_override_value: S.hrMax }); }
+  render();
+});
+$('intSeg').addEventListener('click', e => { const b = e.target.closest('button'); if (!b) return; S.interval = +b.dataset.v; FR.setSettings({ funrun_level_interval: S.interval }); render(); });
+$('windSeg').addEventListener('click', e => { const b = e.target.closest('button'); if (!b) return; S.wind = +b.dataset.v; FR.setSettings({ funrun_wind_strength: S.wind }); render(); });
+$('ghostSeg').addEventListener('click', e => { const b = e.target.closest('button'); if (!b) return; S.ghost = b.dataset.v; FR.setSettings({ funrun_ghost_mode: S.ghost }); render(); });
+$('viewSeg').addEventListener('click', e => {
+  const b = e.target.closest('button'); if (!b) return;
+  const followT = Math.max(0.1, Math.min(0.9, +mapStore.get('followT', 0.5) || 0.5));
+  mapStore.set('zoom', { ich: 0, verfolger: followT, ueberblick: OVERVIEW }[b.dataset.v]);
+  render();
+});
+$('layerSeg').addEventListener('click', e => { const b = e.target.closest('button'); if (!b) return; mapStore.set('layer', b.dataset.v); render(); });
+$('follow').addEventListener('input', e => {
+  const old = +mapStore.get('followT', 0.5) || 0.5, t = Math.max(0.1, Math.min(0.9, +e.target.value / 100));
+  mapStore.set('followT', t);
+  if (Math.abs(+mapStore.get('zoom', old) - old) < 0.03) mapStore.set('zoom', t); // the follower view moves along
+  render();
+});
+$('btnBelt').addEventListener('click', () => FR.open('settings'));
+$('startPage').addEventListener('click', () => { S.startPage = !S.startPage; FR.setSettings({ funrun_start_page: S.startPage }); render(); });
+$('lnkSettings').addEventListener('click', () => FR.open('settings'));
+$('lnkTiles').addEventListener('click', () => FR.open('tiles'));
+$('lnkMenu').addEventListener('click', () => FR.open('menu'));
+FR.onWorkout(w => { if (w.autoresistance != null && bool(w.autoresistance) !== S.auto) { S.auto = bool(w.autoresistance); render(); } });
+
+async function load() {
+  try {
+    const st = await FR.getSettings(['funrun_flat_level', 'funrun_level_per_percent', 'funrun_level_interval', 'funrun_wind_strength', 'funrun_ghost_mode',
+      'heart_rate_belt_name', 'age', 'heart_max_override_enable', 'heart_max_override_value', 'funrun_start_page']);
+    S.flat = numOr(st.funrun_flat_level, 12);
+    S.per = numOr(st.funrun_level_per_percent, 1.5);
+    S.interval = numOr(st.funrun_level_interval, 10);
+    S.wind = numOr(st.funrun_wind_strength, 0);
+    S.ghost = st.funrun_ghost_mode || 'best';
+    S.belt = st.heart_rate_belt_name || '';
+    S.hrMax = Math.round(bool(st.heart_max_override_enable) ? numOr(st.heart_max_override_value, 195) : 220 - numOr(st.age, 35));
+    S.startPage = st.funrun_start_page === null || st.funrun_start_page === undefined ? true : bool(st.funrun_start_page);
+  } catch (e) { /* defaults */ }
+  if (FR.workout && FR.workout.autoresistance != null) S.auto = bool(FR.workout.autoresistance);
+  render();
+}
+FR.onRefresh(load);
+load();
+})();
+</script>
+</body>
+</html>

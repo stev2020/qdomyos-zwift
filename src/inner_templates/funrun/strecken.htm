@@ -1,0 +1,137 @@
+<!doctype html>
+<html lang="de">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
+<title>FunRun – Strecken</title>
+<!-- FunRun routes: the GPX files of the app with outline, profile and best time; a tap chooses the route -->
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Barlow:wght@400;500;600;700&amp;family=Barlow+Condensed:wght@600;700&amp;display=swap">
+<link rel="stylesheet" href="funrun.css">
+<style>
+.search { display: flex; align-items: center; gap: 10px; height: 46px; padding: 0 14px; border-radius: 12px; background: var(--panel); border: 1px solid var(--line); }
+.search svg { width: 20px; height: 20px; flex: none; }
+.search input { flex: 1; min-width: 0; height: 100%; background: transparent; border: 0; outline: none; color: var(--text); font: inherit; font-size: 16px; }
+.search input::placeholder { color: #7d8996; }
+.chips { display: flex; gap: 8px; flex-wrap: wrap; }
+.chips button { appearance: none; -webkit-appearance: none; height: 38px; padding: 0 16px; border-radius: 999px; font-size: 14px; font-weight: 600; cursor: pointer;
+  border: 1px solid var(--line); background: var(--panel); color: var(--soft); }
+.chips button.on { background: var(--accent); border-color: var(--accent); color: var(--accent-dark); }
+.list { display: grid; grid-template-columns: minmax(0, 1fr); gap: 10px; }
+@media (min-width: 760px) { .list { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+.rc { appearance: none; -webkit-appearance: none; width: 100%; text-align: left; display: flex; flex-direction: column; gap: 10px; padding: 12px; border-radius: 16px;
+  background: var(--panel); border: 1px solid var(--line); color: var(--text); cursor: pointer; }
+.rc.sel { border-color: var(--accent); }
+.rc .h { display: flex; gap: 12px; align-items: center; }
+.rc .th { width: 56px; height: 56px; flex: none; border-radius: 12px; background: var(--bg); border: 1px solid var(--line); }
+.rc .th svg { width: 100%; height: 100%; display: block; }
+.rc .tx { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 3px; }
+.rc .n { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.rc .n b { font-size: 17px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.rc .lv { flex: none; font-size: 12px; font-weight: 700; padding: 3px 9px; border-radius: 999px; border: 1px solid currentColor; }
+.rc .m { font-size: 14px; color: var(--muted); }
+.rc svg.pf { display: block; width: 100%; height: 36px; }
+.rc .f { display: flex; justify-content: space-between; font-size: 13px; color: var(--soft); }
+.rc .f span:last-child { color: var(--accent); font-weight: 600; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div class="top" style="align-items:center">
+    <h1 style="margin:0;font-family:'Barlow Condensed',Barlow,sans-serif;font-size:32px">Strecken</h1>
+    <button class="btn" id="btnImport" style="min-height:44px;font-size:15px;border-color:var(--accent);color:var(--accent)">
+      <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 4v11M7 10l5 5 5-5M5 20h14"/></svg>GPX importieren
+    </button>
+  </div>
+  <div style="display:flex;flex-direction:column;gap:12px">
+    <label class="search">
+      <svg viewBox="0 0 24 24" fill="none" stroke="#9ba7b4" stroke-width="2" stroke-linecap="round" aria-hidden="true"><circle cx="11" cy="11" r="6.5"/><path d="m16 16 4.5 4.5"/></svg>
+      <input type="search" id="q" placeholder="Strecke suchen" aria-label="Strecke suchen">
+    </label>
+    <div class="chips" id="chips" role="group" aria-label="Filter">
+      <button data-f="all" class="on">Alle</button><button data-f="climb">Berge</button><button data-f="flat">Flach</button><button data-f="ridden">Gefahren</button>
+    </div>
+    <div class="msg" id="msg">Strecken werden geladen …</div>
+    <div class="list" id="list"></div>
+  </div>
+</div>
+<script src="funrun.js"></script>
+<script>
+(function () {
+'use strict';
+const $ = FR.$;
+FR.tabs('strecken.htm');
+let routes = [], rides = [], selected = '', filter = 'all';
+
+const avgGrade = r => (r.length > 0 ? r.ascent / r.length * 100 : 0);
+const isClimb = r => avgGrade(r) >= 3 || r.ascent >= 500;
+function level(r) {
+  const g = avgGrade(r);
+  if (r.ascent >= 800 || g >= 5) return ['schwer', '#ff7a1a'];
+  if (r.ascent >= 250 || g >= 2) return ['mittel', '#ffca28'];
+  return ['leicht', '#9ba7b4'];
+}
+function thumb(shape) {
+  if (!shape || shape.length < 2) return '';
+  const p = shape.map(([x, y]) => (5 + x * 46).toFixed(1) + ' ' + (5 + y * 46).toFixed(1));
+  return '<svg viewBox="0 0 56 56" fill="none" stroke="#ff7a1a" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M' + p.join(' L') + '"/></svg>';
+}
+function profile(prof) {
+  if (!prof || prof.length < 2) return '';
+  let lo = Math.min(...prof), hi = Math.max(...prof);
+  if (hi - lo < 40) { const m = (hi + lo) / 2; lo = m - 20; hi = m + 20; }
+  const pts = prof.map((e, i) => (i / (prof.length - 1) * 300).toFixed(1) + ' ' + (2 + (1 - (e - lo) / (hi - lo)) * 40).toFixed(1));
+  return '<svg class="pf" viewBox="0 0 300 44" preserveAspectRatio="none" aria-hidden="true"><path d="M' + pts.join(' L') + ' L300 44 L0 44 Z" fill="#ff7a1a" fill-opacity=".16"/>' +
+    '<path d="M' + pts.join(' L') + '" fill="none" stroke="#ff7a1a" stroke-width="1.6" stroke-linejoin="round" vector-effect="non-scaling-stroke"/></svg>';
+}
+function render() {
+  const q = $('q').value.trim().toLowerCase();
+  const best = new Map(), ridden = new Set();
+  for (const r of rides) {
+    if (!r.route) continue;
+    ridden.add(r.route.key);
+    const t = FR.routeTime(r);
+    if (t != null && (!best.has(r.route.key) || t < best.get(r.route.key))) best.set(r.route.key, t);
+  }
+  const list = routes.filter(r => (!q || r.name.toLowerCase().includes(q)) &&
+    (filter === 'all' || (filter === 'climb' && isClimb(r)) || (filter === 'flat' && !isClimb(r)) || (filter === 'ridden' && ridden.has(r.key))));
+  $('msg').classList.toggle('hidden', list.length > 0);
+  $('msg').textContent = routes.length ? 'Keine Strecke passt.' : 'Noch keine Strecke. Importiere eine GPX-Datei, z. B. von Komoot, Strava oder gpxstudio.github.io.';
+  $('list').innerHTML = list.map(r => {
+    const lv = level(r), b = best.get(r.key);
+    return '<button class="rc' + (r.file === selected ? ' sel' : '') + '" data-file="' + FR.esc(r.file) + '">' +
+      '<span class="h"><span class="th">' + thumb(r.shape) + '</span><span class="tx"><span class="n"><b>' + FR.esc(r.name) + '</b>' +
+      '<span class="lv" style="color:' + lv[1] + '">' + lv[0] + '</span></span>' +
+      '<span class="m">' + FR.km(r.length) + ' km · ' + FR.num(r.ascent) + ' Hm · Ø ' + FR.num(avgGrade(r), 1) + ' %</span></span></span>' +
+      profile(r.profile) +
+      '<span class="f"><span>' + (b != null ? 'Bestzeit ' + FR.time(b) : ridden.has(r.key) ? 'noch nicht bis ins Ziel' : 'noch nicht gefahren') + '</span>' +
+      '<span>' + (r.file === selected ? 'Ausgewählt' : 'Auswählen') + '</span></span></button>';
+  }).join('');
+}
+
+$('q').addEventListener('input', render);
+$('chips').addEventListener('click', e => {
+  const b = e.target.closest('button'); if (!b) return;
+  filter = b.dataset.f;
+  document.querySelectorAll('#chips button').forEach(x => x.classList.toggle('on', x === b));
+  render();
+});
+$('list').addEventListener('click', e => {
+  const b = e.target.closest('.rc'); if (!b) return;
+  FR.setSettings({ funrun_selected_route: b.dataset.file });
+  FR.go('start.htm');
+});
+$('btnImport').addEventListener('click', () => FR.open('gpx'));
+
+async function load() {
+  try {
+    const [rs, rd, st] = await Promise.all([FR.routes(), FR.rides(), FR.getSettings(['funrun_selected_route'])]);
+    routes = rs; rides = rd; selected = st.funrun_selected_route || '';
+  } catch (e) { $('msg').textContent = e.message; return; }
+  render();
+}
+FR.onRefresh(load);
+load();
+})();
+</script>
+</body>
+</html>
