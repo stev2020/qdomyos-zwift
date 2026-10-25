@@ -589,7 +589,8 @@ function surfaceHeight(lonDeg, latDeg, slot) {
   if (!tilesOn) { const h = globe.getHeight(_carto); return h === undefined ? null : h; }
   const c = surfaceHeight.cache[slot] || (surfaceHeight.cache[slot] = { t: 0, v: null });
   const now = performance.now();
-  if (now - c.t < 120 && c.v != null) return c.v;
+  // each sample renders the 3D photos once more from above, so keep it rare (phones)
+  if (now - c.t < 400 && c.v != null) return c.v;
   c.t = now;
   const h = scene.sampleHeightSupported ? scene.sampleHeight(_carto) : undefined;
   if (h !== undefined) c.v = h;
@@ -1149,10 +1150,13 @@ async function setLayer(l) {
     try {
       if (!tileset) {
         toast('3D-Fotos werden geladen …', 2500);
-        tileset = await Cesium.createGooglePhotorealistic3DTileset({ onlyUsingWithGoogleGeocoder: true }, { maximumScreenSpaceError: 18 });
+        // coarser tiles in the distance and a smaller tile cache keep the 3D photos fluid on phones
+        tileset = await Cesium.createGooglePhotorealistic3DTileset({ onlyUsingWithGoogleGeocoder: true },
+                                                                  { maximumScreenSpaceError: 32, cacheBytes: 256 * 1024 * 1024 });
         scene.primitives.add(tileset);
       }
       tileset.show = true; globe.show = false; tilesOn = true; surfaceHeight.cache = {};
+      widget.targetFrameRate = 30; // steady 30 fps leaves time for loading tiles
     } catch (e) {
       console.error(e);
       toast('3D-Fotos nicht verfügbar. Im Cesium-ion-Konto unter „Asset Depot“ das Asset „Google Photorealistic 3D Tiles“ hinzufügen.' + errInfo(e), 9000);
@@ -1161,6 +1165,7 @@ async function setLayer(l) {
   } else if (l === 'sat' && tilesOn) {
     if (tileset) tileset.show = false;
     globe.show = true; tilesOn = false;
+    widget.targetFrameRate = 60;
   }
   store.set('layer', tilesOn ? 'g3d' : 'sat');
   markButtons();
@@ -1247,7 +1252,8 @@ async function boot() {
   // cesium-key.js carries the own ion key from the build (secret CESIUM_TOKEN). Without one, CesiumJS keeps its
   // built-in evaluation key: fine for testing, Cesium then shows a notice in the credits.
   const builtinToken = Cesium.Ion.defaultAccessToken;
-  if (!CFG.offline) { try { await loadScript('cesium-key.js'); } catch (e) { /* not available in previews */ } }
+  // (query string: never take a cached key file from before an app update)
+  if (!CFG.offline) { try { await loadScript('cesium-key.js?v=' + Date.now()); } catch (e) { /* not available in previews */ } }
   if (!Cesium.Ion.defaultAccessToken) Cesium.Ion.defaultAccessToken = builtinToken;
   window.qzmapDiag.key = Cesium.Ion.defaultAccessToken === builtinToken ? 'cesium-test' : 'eigener';
   if (!CFG.offline) await checkIonKey(builtinToken);

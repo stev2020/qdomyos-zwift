@@ -224,6 +224,7 @@ class ftmsbike : public bike {
     int p12hLastLevel = -1;
     double p12hLastLevelExact = 0;
     qint64 p12hLastLevelTime = 0;
+    double p12hLastGears = 0;
     bool HAMMER = false;
     bool HS_5000L = false;
     bool H9115 = false;

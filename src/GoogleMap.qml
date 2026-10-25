@@ -57,11 +57,11 @@ ColumnLayout {
 
     // Start loading only once the page is on screen: a web view that starts loading while it is still
     // hidden inside the Loader can stay white on Android. "Neu laden" forces a fresh load.
+    // Every load gets a new query string, otherwise the web view keeps cached copies of the page
+    // (and of its key file) from before an app update.
     function loadMap(force) {
-        if (webView.url.toString() !== column1.mapUrl) {
-            webView.url = column1.mapUrl;
-        } else if (force) {
-            webView.reload();
+        if (force || webView.url.toString().indexOf(column1.mapUrl) !== 0) {
+            webView.url = column1.mapUrl + "?v=" + Date.now();
         }
     }
 
@@ -99,8 +99,8 @@ ColumnLayout {
 
     // Opened again later: load fresh, so a page that stayed white the first time gets another chance
     StackView.onActivated: {
-        if (webView.url.toString() === column1.mapUrl)
-            webView.reload();
+        if (webView.url.toString().indexOf(column1.mapUrl) === 0)
+            column1.loadMap(true);
         else
             loadTimer.restart();
     }
