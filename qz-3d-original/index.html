@@ -1,0 +1,61 @@
+<!doctype html>
+<html lang="de">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1">
+<title>QZ 3D-Karte (Nachbau)</title>
+<script src="https://cdn.jsdelivr.net/npm/cesium@1.146.0/Build/Cesium/Cesium.js"></script>
+<link href="https://cdn.jsdelivr.net/npm/cesium@1.146.0/Build/Cesium/Widgets/widgets.css" rel="stylesheet">
+<style>
+  html, body, #cesiumContainer { width: 100%; height: 100%; margin: 0; padding: 0; overflow: hidden; background: #000; }
+  /* QZ's metrics box, same markup and colours as src/inner_templates/googlemaps/maps.htm */
+  #metricsContainer { position: absolute; bottom: 0; right: 0; width: 200px; height: 250px; z-index: 1000; }
+  #metricsContainer .metrics { color: #fff; width: 100%; height: 100%; border-radius: 25px; border: 2px solid #73AD21; background: #73AD21;
+                               padding: 8px; box-sizing: border-box; overflow: hidden; font-family: sans-serif; }
+  #metricsText { font-size: 12px; line-height: 1.4; }
+  #hint { position: absolute; left: 10px; top: 10px; z-index: 1000; background: rgba(0,0,0,.6); color: #fff; font: 14px sans-serif; padding: 8px 12px; border-radius: 8px; max-width: 60%; }
+</style>
+</head>
+<body>
+<div id="cesiumContainer"></div>
+<div id="metricsContainer"><div class="metrics"><div id="metricsText">
+🏃Geschwindigkeit: 13.80<br>🚴Trittfrequenz:72<br>💓Herz:0<br>🔥Kalorien:498.6<br>📏Kilometerzähler:16.79<br>⚡Watt:214<br>⏲️Vergangen:01:06:41<br>📐Neigung:7.6<br>🧲Widerstand:26<br>✈️Höhe:2404.3<br>⛰️Höhenmeter:1190.20
+</div></div></div>
+<div id="hint">Nachbau der 3D-Karte aus QZ · Stelvio-Pass (Beispielstrecke aus QZ) · mit zwei Fingern drehen und zoomen</div>
+<script>
+// Same set-up as QZ's maps.htm: Cesium World Terrain + default Bing aerial imagery from Cesium ion,
+// sun lighting, fog, QZ's orange bike model tracked by the camera, GPX clamped to the ground.
+const viewer = new Cesium.Viewer('cesiumContainer', { terrain: Cesium.Terrain.fromWorldTerrain() });
+for (const sel of ['.cesium-viewer-animationContainer', '.cesium-viewer-bottom', '.cesium-viewer-timelineContainer', '.cesium-viewer-fullscreenContainer'])
+  document.querySelectorAll(sel).forEach(e => e.style.visibility = 'hidden');
+viewer.scene.globe.enableLighting = true;
+viewer.scene.fog.enabled = true;
+viewer.scene.globe.depthTestAgainstTerrain = true;
+
+(async () => {
+  const gpxText = await (await fetch('stelvio.gpx')).text();
+  const doc = new DOMParser().parseFromString(gpxText, 'application/xml');
+  const pts = [...doc.getElementsByTagName('trkpt')].map(p => [parseFloat(p.getAttribute('lon')), parseFloat(p.getAttribute('lat'))]);
+  const ds = await Cesium.GpxDataSource.load('stelvio.gpx', { clampToGround: true });
+  await viewer.dataSources.add(ds);
+
+  const k = 1500, a = pts[k], b = pts[k + 4];
+  const bearing = Math.atan2((b[0] - a[0]) * Math.cos(a[1] * Math.PI / 180), b[1] - a[1]) * 180 / Math.PI;
+  const pos = Cesium.Cartesian3.fromDegrees(a[0], a[1]);
+  const bike = viewer.entities.add({
+    position: pos,
+    orientation: Cesium.Transforms.headingPitchRollQuaternion(pos, new Cesium.HeadingPitchRoll(Cesium.Math.toRadians(bearing), 0, 0)),
+    model: { uri: 'bike.glb', runAnimations: false, minimumPixelSize: 32, scale: 0.5, color: Cesium.Color.ORANGE,
+             silhouetteColor: Cesium.Color.ORANGE, silhouetteSize: 1, heightReference: Cesium.HeightReference.CLAMP_TO_GROUND },
+  });
+  viewer.trackedEntity = bike;
+  // QZ zooms out by 200 m once the first position arrives
+  let done = false;
+  viewer.scene.postRender.addEventListener(() => {
+    if (!done && viewer.trackedEntity === bike) { done = true; setTimeout(() => viewer.camera.zoomOut(200), 300); }
+  });
+  window.__qzReady = true;
+})().catch(e => { document.getElementById('hint').textContent = 'Fehler: ' + e; });
+</script>
+</body>
+</html>
