@@ -1,624 +1,1174 @@
 <!doctype html>
+<html lang="de">
 <head>
-  <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <!-- Include the CesiumJS JavaScript and CSS files -->
-  <script src="https://cesium.com/downloads/cesiumjs/releases/1.94/Build/Cesium/Cesium.js"></script>
-  <link href="https://cesium.com/downloads/cesiumjs/releases/1.94/Build/Cesium/Widgets/widgets.css" rel="stylesheet">  
-  <script src="jquery-3.6.0.min.js"></script>
-  <script src="chartjs.3.4.1.min.js"></script>
-  <script src="chart.js"></script>
-  <script src="globals.js"></script>
-  <script src="bike.js"></script>
-  <script src="main_ws_manager.js"></script>
-  <script src="../i18n/i18n.js"></script>
-  <script src="cesium-key.js"></script>
-  <style>
-  canvas{
-      -moz-user-select: none;
-      -webkit-user-select: none;
-      -ms-user-select: none;
-  }
-  </style>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
+<title>QZ 3D-Karte</title>
+<!--
+  3D route view for GPX rides (own build).
+  CesiumJS + Cesium ion (Cesium World Terrain, Bing Maps aerial imagery, optional Google Photorealistic 3D Tiles).
+  Talks to QZ over the template websocket (/googlemaps-ws): "getgpxbase64" for the route, pushed "workout"
+  messages (1 Hz) for position and metrics. The rider is moved smoothly along the route between updates.
+  Preview / test switches: ?demo=<gpx url>&speedup=<n>&startkm=<km>, ?offline (no ion), ?cesium=<base url>.
+-->
+<style>
+:root{--gap:10px;--panel:rgba(16,22,30,.86);--line:rgba(255,255,255,.09);--text:#f3f5f7;--muted:#9ba7b4;--accent:#ff7a1a;
+  --c1:#66bb6a;--c2:#a5d16b;--c3:#ffca28;--c4:#ff8f00;--c5:#e53935}
+*{box-sizing:border-box}
+html,body{margin:0;padding:0;width:100%;height:100%;overflow:hidden;background:#0b0f14;color:var(--text);
+  font-family:Roboto,"Segoe UI",system-ui,-apple-system,"Helvetica Neue",Arial,sans-serif;
+  -webkit-user-select:none;user-select:none;-webkit-tap-highlight-color:transparent;-webkit-text-size-adjust:100%}
+button{font:inherit;color:inherit}
+#map{position:absolute;inset:0;touch-action:none}
+.cesium-widget,.cesium-widget canvas{width:100%;height:100%;display:block;touch-action:none;outline:none}
+.cesium-widget{position:relative;overflow:hidden}
+#hud{position:absolute;inset:0;pointer-events:none}
+.pe{pointer-events:auto}
+.panel{background:var(--panel);border:1px solid var(--line);border-radius:16px;box-shadow:0 4px 18px rgba(0,0,0,.35)}
+
+#metrics{position:absolute;top:var(--gap);left:var(--gap);right:var(--gap);display:grid;
+  grid-template-columns:repeat(auto-fit,minmax(112px,1fr));overflow:hidden}
+.cell{padding:8px 14px 9px;border-left:1px solid var(--line);min-width:0}
+.cell:first-child{border-left:0}
+.cell.off{display:none}
+.lab{font-size:11px;letter-spacing:.13em;text-transform:uppercase;color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.val{font-size:clamp(21px,2.8vw,36px);font-weight:700;line-height:1.12;white-space:nowrap;font-variant-numeric:tabular-nums}
+.val small{font-size:.46em;font-weight:500;color:var(--muted);margin-left:3px}
+
+#camBar{position:absolute;left:var(--gap);top:120px;display:flex;flex-wrap:wrap;gap:8px;align-items:flex-start;max-width:calc(100% - 100px)}
+.seg{display:flex;gap:4px;padding:4px;border-radius:14px}
+.seg button{appearance:none;-webkit-appearance:none;border:0;background:transparent;font-weight:600;font-size:15px;line-height:1;
+  padding:0 15px;min-height:42px;border-radius:10px;cursor:pointer;white-space:nowrap}
+.seg button.on{background:var(--accent);color:#fff}
+.seg.small button{font-size:12px;min-height:28px;padding:0 10px;border-radius:8px}
+#demoBadge{display:none;align-self:center;padding:9px 14px;font-size:13px;color:#ffd9bf;border-radius:12px}
+
+#zoomCol{position:absolute;right:var(--gap);top:120px;display:flex;flex-direction:column;align-items:center;gap:10px}
+#compass{width:54px;height:54px;border-radius:50%;padding:0;border:1px solid var(--line);cursor:pointer;display:flex;align-items:center;justify-content:center}
+#compass svg{width:40px;height:40px;transition:none}
+#zoomTrack{position:relative;width:54px;height:220px;border-radius:27px;touch-action:none;cursor:pointer}
+#zoomRail{position:absolute;left:50%;top:34px;bottom:34px;width:4px;margin-left:-2px;border-radius:2px;background:rgba(255,255,255,.2)}
+#zoomFill{position:absolute;left:50%;bottom:34px;width:4px;margin-left:-2px;border-radius:2px;background:var(--accent)}
+#zoomThumb{position:absolute;left:50%;width:28px;height:28px;margin:-14px 0 0 -14px;border-radius:50%;background:#fff;
+  box-shadow:0 0 0 4px rgba(255,122,26,.55),0 2px 6px rgba(0,0,0,.5)}
+.zicon{position:absolute;left:50%;width:22px;height:22px;margin-left:-11px;color:var(--muted)}
+.zicon.top{top:7px}.zicon.bot{bottom:7px}
+.ztick{position:absolute;left:50%;width:12px;height:2px;margin-left:10px;background:rgba(255,255,255,.35)}
+
+#profile{position:absolute;left:var(--gap);right:var(--gap);bottom:var(--gap);height:27vh;min-height:150px;max-height:270px;
+  display:flex;flex-direction:column;padding:9px 14px 4px}
+#profile.compact{height:84px;min-height:0}
+#profile.compact .legend,#profile.compact #pmode,#profile.compact #pclimb2{display:none}
+.phead{display:flex;align-items:flex-start;gap:14px;min-height:0}
+.ptitle{font-size:17px;font-weight:700;white-space:nowrap;cursor:pointer}
+.ptitle span{font-weight:400;color:var(--muted);font-size:13px;margin-left:8px}
+.legend{display:flex;flex-wrap:wrap;gap:4px 12px;font-size:12px;color:var(--muted);align-items:center;margin-top:3px}
+.legend i{display:inline-block;width:10px;height:10px;border-radius:3px;margin-right:5px;vertical-align:-1px}
+#pmode{margin-top:-2px}
+.pstats{margin-left:auto;text-align:right;font-size:13px;color:var(--muted);white-space:nowrap}
+.pstats .big{font-size:16px;font-weight:700;color:var(--text)}
+.pstats .climb{color:#ffd54f;font-weight:700;font-size:14px}
+#pcanvas{flex:1;width:100%;min-height:0;display:block}
+#profile.compact .pstats .big{font-size:14px}
+@media (max-width:1100px){.legend{display:none}}
+@media (max-width:700px){.val{font-size:20px}.cell{padding:6px 10px}#presets button,#layers button{padding:0 11px;font-size:14px}}
+
+.poi{position:absolute;left:0;top:0;width:0;height:0;will-change:transform;pointer-events:none;display:none}
+#rider .halo{position:absolute;left:-29px;top:-29px;width:58px;height:58px;border-radius:50%;background:rgba(255,122,26,.18);
+  border:2px solid rgba(255,122,26,.7);animation:pulse 2.2s ease-out infinite}
+#rider .dot{position:absolute;left:-17px;top:-17px;width:34px;height:34px;border-radius:50%;background:#fff;
+  box-shadow:0 2px 8px rgba(0,0,0,.5);display:flex;align-items:center;justify-content:center}
+#rider .dot svg{width:22px;height:22px}
+@keyframes pulse{0%{transform:scale(.72);opacity:1}100%{transform:scale(1.25);opacity:0}}
+.flag .pole{position:absolute;left:-1px;bottom:0;width:2px;height:40px;background:#fff;box-shadow:0 0 2px rgba(0,0,0,.7)}
+.flag .fl{position:absolute;left:0;bottom:24px;padding:4px 9px 4px 8px;font-size:13px;font-weight:700;border-radius:0 7px 7px 0;
+  white-space:nowrap;background:#fff;color:#14181d;box-shadow:0 2px 6px rgba(0,0,0,.45);display:flex;align-items:center;gap:6px}
+.flag .fl.start{background:#2e7d32;color:#fff}
+.flag .fl i{display:inline-block;width:12px;height:12px;background:repeating-conic-gradient(#14181d 0 25%,#fff 0 50%) 0 0/6px 6px;border:1px solid #14181d}
+.flag .fl svg{width:14px;height:14px}
+
+#credits{position:absolute;left:calc(var(--gap) + 4px);bottom:300px;max-width:62%;font-size:10px;line-height:1.25;color:rgba(255,255,255,.88);
+  text-shadow:0 1px 2px rgba(0,0,0,.9)}
+#credits img{max-height:16px;width:auto;vertical-align:middle}
+#credits a{color:inherit}
+#credits .cesium-credit-expand-link{text-decoration:underline;cursor:pointer}
+#status{position:absolute;left:50%;top:46%;transform:translate(-50%,-50%);padding:14px 20px;font-size:16px;line-height:1.4;
+  max-width:min(520px,86%);text-align:center;display:none}
+#status.err{border-color:rgba(229,57,53,.6)}
+#toast{position:absolute;left:50%;transform:translateX(-50%);top:46%;padding:12px 18px;font-size:15px;line-height:1.4;max-width:min(560px,90%);
+  text-align:center;display:none}
+</style>
 </head>
 <body>
-  <div id="cesiumContainer" style="display: block;
-  position: absolute;
-  top: 0;
-  left: 0;
-  border: none;
-  width: 100%;
-  height: 100%;"></div>
-  <script>    
-    // Initialize the Cesium Viewer in the HTML element with the `cesiumContainer` ID.
-    const viewer = new Cesium.Viewer('cesiumContainer', {
-      terrainProvider: Cesium.createWorldTerrain()
-    });
+<div id="map"></div>
+<div id="hud">
+  <div id="metrics" class="panel">
+    <div class="cell" id="m-grade"><div class="lab">Steigung</div><div class="val"><span>–</span><small>%</small></div></div>
+    <div class="cell" id="m-level"><div class="lab">Stufe</div><div class="val"><span>–</span><small id="m-level-max">/ 32</small></div></div>
+    <div class="cell" id="m-speed"><div class="lab">Tempo</div><div class="val"><span>–</span><small>km/h</small></div></div>
+    <div class="cell" id="m-power"><div class="lab">Leistung</div><div class="val"><span>–</span><small>W</small></div></div>
+    <div class="cell" id="m-cad"><div class="lab">Trittfrequenz</div><div class="val"><span>–</span><small>U/min</small></div></div>
+    <div class="cell off" id="m-hr"><div class="lab">Puls</div><div class="val"><span>–</span><small>/min</small></div></div>
+    <div class="cell" id="m-time"><div class="lab">Zeit</div><div class="val"><span>0:00:00</span></div></div>
+    <div class="cell" id="m-dist"><div class="lab">Strecke</div><div class="val"><span>–</span><small id="m-dist-tot">km</small></div></div>
+  </div>
 
-    $('.cesium-viewer-animationContainer').css("visibility", "hidden");
-	 $('.cesium-viewer-bottom').css("visibility", "hidden");
-	 $('.cesium-viewer-timelineContainer').css("visibility", "hidden");
-	 $('.cesium-viewer-fullscreenContainer').css("visibility", "hidden");
-
-
-    viewer.scene.globe.enableLighting = true;
-	 viewer.scene.fog.enabled = true;
-    viewer.scene.globe.depthTestAgainstTerrain = true;
-    // Add Cesium OSM Buildings, a global 3D buildings layer.
-    //const buildingTileset = viewer.scene.primitives.add(Cesium.createOsmBuildings());
-         var center = Cesium.Cartesian3.fromDegrees(10.855092, 44.508273);
-	 var transform = Cesium.Transforms.eastNorthUpToFixedFrame(center);
-	 let map = viewer;
-
-// Add our vehicle model.
-const bike = viewer.entities.add({
-  position: center,
-  model: {
-    uri: bikeUri,
-    runAnimations: false,
-          minimumPixelSize: 32,
-          scale: 0.5,
-          color: Cesium.Color.ORANGE,
-          silhouetteColor: Cesium.Color.ORANGE,
-          silhouetteSize: 1,
-  },
-
-});
-
-viewer.trackedEntity = bike;
-
-  </script>
- </div>
-</body>
-  <body>
-    <div id="cesiumContainer" class="cesiumContainer"></div>
-	 <div id="metricsContainer" style="position: absolute; bottom: 0px; right: 0px; width: 200px; height: 250px; touch-action: none; user-select: none; z-index: 1000;">
-        <div class="metrics" style="color: #FFFFFF; width: 100%; height: 100%; margin: 0; border-radius: 25px; border: 2px solid #73AD21; background: #73AD21; padding: 8px; box-sizing: border-box; overflow: hidden; position: relative; touch-action: none;">
-            <div id="metricsText" style="font-size: 12px; line-height: 1.4;">🏃Speed: 0.00<br>🚴Cadence:0<br>💓Heart:0<br>🔥Calories:0.0<br>📏Odometer:0.00<br>⚡Watt:0<br>⏲️Elapsed:0:00:00<br>📐Inclination:0.0<br>🧲Resistance:0<br>✈️Altitude:0.0<br>⛰️Elevation:0.0</div>
-            <div id="resizeHandle" style="position: absolute; bottom: 0; right: 0; width: 50px; height: 50px; background: linear-gradient(135deg, transparent 50%, rgba(255,255,255,0.8) 50%); cursor: nwse-resize; border-bottom-right-radius: 23px; display: flex; align-items: flex-end; justify-content: flex-end; font-size: 24px; color: rgba(0,0,0,0.6); padding-bottom: 2px; padding-right: 4px;">⤡</div>
-        </div>
+  <div id="camBar">
+    <div class="seg panel pe" id="presets">
+      <button data-p="ich">Ich</button><button data-p="verfolger">Verfolger</button><button data-p="ueberblick">Überblick</button>
     </div>
-	      <div id="chartContainer" style="border: 0px solid #aaa; border-radius: 10px; overflow: hidden; position:absolute; bottom: 0px; right: 150px; width=150px; height=75px; z-index: 999; touch-action: none;"><canvas id="canvasChart" style="width=150px; height=75px; border-right: 0pt solid #ffff00;"></canvas></div>
-    <script type="text/javascript">
-    let cameraComplete = true
-    let lastAzimuth = 0
-    let lastAlt = 0
-    let lastLat = 0
-    let lastLon = 0
-    let refreshRate = 25
-    let currentSpeed = 0
-    let lastCoordinateTS = 0
-    let altOffset = 0
-    let lastBikeHeight = 0
-    let firstTime = 0
+    <div class="seg panel pe" id="layers">
+      <button data-l="sat" class="on">Satellit</button><button data-l="g3d">3D-Fotos</button>
+    </div>
+    <div id="demoBadge" class="panel">Vorschau · simulierte Fahrt</div>
+  </div>
 
-    function t(key, fallback) {
-        return window.qzTranslate ? window.qzTranslate(key, fallback) : fallback;
-    }
+  <div id="zoomCol">
+    <button id="compass" class="panel pe" title="Ansicht wieder hinter mich drehen">
+      <svg viewBox="0 0 40 40" id="needle"><path d="M20 5 L25 20 L15 20 Z" fill="#e53935"/><path d="M20 35 L25 20 L15 20 Z" fill="#eceff1"/>
+        <circle cx="20" cy="20" r="2.2" fill="#14181d"/></svg>
+    </button>
+    <div id="zoomTrack" class="panel pe" title="Zoom: oben Überblick, unten Ich-Perspektive">
+      <svg class="zicon top" viewBox="0 0 24 24"><path d="M2.5 19.5 L9.5 7.5 L13.2 13.6 L15.6 10.2 L21.5 19.5 Z" fill="currentColor"/></svg>
+      <div id="zoomRail"></div><div id="zoomFill"></div>
+      <div class="ztick" id="tick-ueberblick"></div><div class="ztick" id="tick-verfolger"></div>
+      <div id="zoomThumb"></div>
+      <svg class="zicon bot" viewBox="0 0 24 24"><path d="M12 5.5C6.4 5.5 2.6 12 2.6 12s3.8 6.5 9.4 6.5 9.4-6.5 9.4-6.5S17.6 5.5 12 5.5zm0 10.2a3.7 3.7 0 1 1 0-7.4 3.7 3.7 0 0 1 0 7.4z" fill="currentColor"/></svg>
+    </div>
+  </div>
 
-    function a() {
-    onWorkout = false;
-    let el = new MainWSQueueElement({
-        msg: 'getlatlon'
-    }, function(msg) {
-        if (msg.msg === 'R_getlatlon') {
-            return msg.content;
-        }
-        return null;
-    }, 15000, 3);
-    el.enqueue().then(process_latlon);
-    keys_arr = ['speed', 'cadence', 'heart', 'calories', 'distance', 'watts', 'elapsed_h', 'elapsed_m', 'elapsed_s', 'inclination', 'resistance', 'elevation', 'altitude']
-         let ell = new MainWSQueueElement({
-	     msg: null,
-		}, function(msg) {
-		  if (msg.msg === 'workout') {
-		      var speed = 0;
-				var cadence = 0;
-				var hr = 0;
-				var calories = 0;
-				var odometer = 0;
-				var watt = 0;
-				var elapsed_h = 0;
-				var elapsed_m = 0;
-				var elapsed_s = 0;
-				var inclination = 0;
-				var resistance = 0;
-				var elevation = 0;
-				var altitude = 0;
-				for (let key of keys_arr) {
-				    if (msg.content[key] === undefined)
-                                             continue;
-						if (key === 'speed') {
-                                                  currentSpeed = speed = msg.content[key];
-						} else if (key === 'cadence') {
-						  cadence = msg.content[key];
-						} else if (key === 'heart') {
-                                                  hr = msg.content[key];
-						} else if (key === 'calories') {
-                                                  calories = msg.content[key];
-						} else if (key === 'distance') {
-                                                  odometer = msg.content[key];
-						} else if (key === 'watts') {
-                                                  watt = msg.content[key];
-						} else if (key === 'elapsed_h') {
-                                                  elapsed_h = msg.content[key];
-						} else if (key === 'elapsed_m') {
-                                                  elapsed_m = msg.content[key];
-						} else if (key === 'elapsed_s') {
-                                                  elapsed_s = msg.content[key];
-						} else if (key === 'inclination') {
-                                                  inclination = msg.content[key];
-						} else if (key === 'resistance') {
-                                                  resistance = msg.content[key];
-						} else if (key === 'elevation') {
-                                                  elevation = msg.content[key];
-																} else if (key === 'altitude') {
-																  altitude = msg.content[key];
-																}
-				}
+  <div class="poi flag" id="flagStart"><div class="pole"></div><div class="fl start">Start</div></div>
+  <div class="poi flag" id="flagFinish"><div class="pole"></div><div class="fl"><i></i><span>Ziel</span></div></div>
+  <div class="poi flag" id="flagSummit"><div class="pole"></div><div class="fl"><svg viewBox="0 0 24 24"><path d="M2.5 19.5 L9.5 7.5 L13.2 13.6 L15.6 10.2 L21.5 19.5 Z" fill="#ff8f00"/></svg><span>Kuppe</span></div></div>
+  <div class="poi" id="rider"><div class="halo"></div><div class="dot"><svg viewBox="0 0 24 24" id="riderArrow"><path d="M12 2.5 L19.6 20.6 L12 16.3 L4.4 20.6 Z" fill="#ff7a1a"/></svg></div></div>
 
-            $('#metricsText').html("🏃" + t('metric.speedTitle', 'Speed') + ": " + speed.toFixed(2) + "<br>🚴" + t('metric.cadenceTitle', 'Cadence') + ":" + cadence.toFixed(0) + "<br>💓" + t('metric.heart', 'Heart') + ":"+ hr.toFixed(0) + "<br>🔥" + t('metric.caloriesTitle', 'Calories') + ":"+ calories.toFixed(1) + "<br>📏" + t('metric.odometer', 'Odometer') + ":"+ odometer.toFixed(2) + "<br>⚡" + t('metric.watt', 'Watt') + ":"+ watt.toFixed(0) + "<br>⏲️" + t('metric.elapsed', 'Elapsed') + ":"+ elapsed_h.toString().padStart(2, "0") + ":" + elapsed_m.toString().padStart(2, "0") + ":"+ elapsed_s.toString().padStart(2, "0") + "<br>📐" + t('metric.inclinationTitle', 'Inclination') + ":"+ inclination.toFixed(1) + "<br>🧲" + t('metric.resistanceTitle', 'Resistance') + ":"+ resistance.toFixed(0) + "<br>✈️" + t('metric.altitude', 'Altitude') + ":"+ altitude.toFixed(1) + "<br>⛰️" + t('metric.elevationTitle', 'Elevation') + ":"+ elevation.toFixed(2));
-		  }
-		  return null;
-		}, 15000, 3);
-         ell.enqueue().then(onWorkout).catch(function(err) {
-	     console.error('Error is ' + err);
-                });
-    }
+  <div id="credits" class="pe"></div>
 
-    function camera_complete() {
-        cameraComplete = true;
-    }
+  <div id="profile" class="panel pe">
+    <div class="phead">
+      <div class="ptitle" id="ptitle" title="Profil groß/klein">Höhenprofil<span id="pname"></span></div>
+      <div class="legend"><span><i style="background:var(--c1)"></i>bis 1 %</span><span><i style="background:var(--c2)"></i>1–3 %</span>
+        <span><i style="background:var(--c3)"></i>3–5 %</span><span><i style="background:var(--c4)"></i>5–7 %</span><span><i style="background:var(--c5)"></i>über 7 %</span></div>
+      <div class="seg small" id="pmode"><button data-m="all" class="on">Gesamt</button><button data-m="near">5 km</button></div>
+      <div class="pstats"><div class="big" id="premain"></div><div class="climb" id="pclimb"></div><div id="pclimb2"></div></div>
+    </div>
+    <canvas id="pcanvas"></canvas>
+  </div>
 
-    function easing_function(time) {
-        return time;
-    }
+  <div id="status" class="panel"></div>
+  <div id="toast" class="panel"></div>
+</div>
 
-    function  process_latlon(msg) {
+<script>
+(function () {
+'use strict';
 
-    if(firstTime==0)
-        viewer.camera.zoomOut(200);
-    firstTime=1;
+// ------------------------------------------------------------------ configuration
+const QS = new URLSearchParams(location.search);
+const CFG = Object.assign({
+  demo: QS.has('demo') ? { gpxUrl: QS.get('demo') || 'stelvio.gpx', speedup: +(QS.get('speedup') || 1), startKm: +(QS.get('startkm') || 0) } : null,
+  offline: QS.has('offline'),
+  cesiumBases: [QS.get('cesium'),
+    'https://cesium.com/downloads/cesiumjs/releases/1.146/Build/Cesium/',
+    'https://cdn.jsdelivr.net/npm/cesium@1.146.0/Build/Cesium/'].filter(Boolean),
+  maxLevel: 32, // Skandika Cykling P12-H: resistance levels 1..32
+}, window.QZMAP_CONFIG || {});
 
-
-	 /*if(!cameraComplete) return;*/
-    cameraComplete = false;
-    let lat = parseFloat(msg.split(",")[0]);
-    let lon = parseFloat(msg.split(",")[1]);
-	 let alt = parseFloat(msg.split(",")[2]) + altOffset;
-	 let realAzimuth = parseFloat(msg.split(",")[3]);
-	 let azimuth = parseFloat(msg.split(",")[4]);
-	 let realLat = lat
-	 let realLon = lon
-
-    if(lastAlt != alt && Math.abs(lastAlt-alt) < 30) {
-        if(lastAlt > alt)
-            lastAlt = alt = lastAlt - 0.01;
-        else
-            lastAlt = alt = lastAlt + 0.01;
-    } else {
-        lastAlt = alt;
-    }
-    if(Math.abs(lastAlt - alt) < 0.01)
-        lastAlt = alt;
-
-
-   const length = 2;
-
-   const startLon = Cesium.Math.toRadians(realLon);
-	const endLon = Cesium.Math.toRadians(realLon + 0.000001);
-
-   const startLat = Cesium.Math.toRadians(realLat);
-
-   const terrainSamplePositions = [];
-   let i
-        for (i = 0; i < length; ++i) {
-	  const lonL = Cesium.Math.lerp(
-	    endLon,
-		 startLon,
-		 i / (length - 1)
-	  );
-	  const position = new Cesium.Cartographic(lonL, startLat);
-	  terrainSamplePositions.push(position);
-	  }
-
-    bike.position = Cesium.Cartesian3.fromDegrees(realLon, realLat, lastBikeHeight);
-    bike.orientation = Cesium.Transforms.headingPitchRollQuaternion(Cesium.Cartesian3.fromDegrees(realLon, realLat), new Cesium.HeadingPitchRoll(Cesium.Math.toRadians(realAzimuth), 0, 0));
-
-Promise.resolve(
-       Cesium.sampleTerrainMostDetailed(
-         viewer.terrainProvider,
-              terrainSamplePositions
-       )
-       ).then(function (samples) {
-       const hpr = new Cesium.HeadingPitchRoll(
-         Cesium.Math.toRadians(realAzimuth),
-              0,
-              0
-       );
-           lastBikeHeight = samples[0].height
-           //bike.modelMatrix = Cesium.Transforms.headingPitchRollToFixedFrame(Cesium.Cartesian3.fromDegrees(realLon, realLat, lastBikeHeight), hpr);
-       });
-
-
-         setTimeout(a,refreshRate);
-
-                }
-					function process_gpxbase64(msg) {
-	  viewer.dataSources
-	            .add(
-					  Cesium.GpxDataSource.load(
-                                            msg,
-						 {
-						   clampToGround: true,
-							}
-						)).then(function(dataSource) {
-							// Add start and end markers
-							const entities = dataSource.entities.values;
-							if (entities.length > 0) {
-								// Find the polyline entity (the track)
-								const track = entities.find(entity => entity.polyline);
-								if (track && track.polyline.positions) {
-									const positions = track.polyline.positions.getValue();
-									if (positions.length > 0) {
-										// Add start marker (green) - elevated 45m above ground
-										const startPos = Cesium.Cartographic.fromCartesian(positions[0]);
-										const elevatedStartPos = Cesium.Cartesian3.fromRadians(startPos.longitude, startPos.latitude, startPos.height + 45);
-										viewer.entities.add({
-											position: elevatedStartPos,
-											billboard: {
-												image: 'data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iMzIiIGhlaWdodD0iMzIiIHZpZXdCb3g9IjAgMCAzMiAzMiIgZmlsbD0ibm9uZSIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj4KPGNpcmNsZSBjeD0iMTYiIGN5PSIxNiIgcj0iMTYiIGZpbGw9IiMwMEZGMDAiLz4KPHN2ZyB4PSI4IiB5PSI4IiB3aWR0aD0iMTYiIGhlaWdodD0iMTYiIHZpZXdCb3g9IjAgMCAyNCAyNCIgZmlsbD0iI0ZGRkZGRiI+CjxwYXRoIGQ9Im04IDEyIDQgNCA4LTgiLz4KPC9zdmc+Cjwvc3ZnPgo=',
-												scale: 1.0,
-												pixelOffset: new Cesium.Cartesian2(0, -16),
-												verticalOrigin: Cesium.VerticalOrigin.BOTTOM
-											},
-											label: {
-												text: 'START',
-												font: 'bold 14px sans-serif',
-												fillColor: Cesium.Color.WHITE,
-												outlineColor: Cesium.Color.BLACK,
-												outlineWidth: 2,
-												style: Cesium.LabelStyle.FILL_AND_OUTLINE,
-												pixelOffset: new Cesium.Cartesian2(0, -50),
-												verticalOrigin: Cesium.VerticalOrigin.BOTTOM
-											}
-										});
-										
-										// Add end marker (red) - elevated 45m above ground
-										const endPos = Cesium.Cartographic.fromCartesian(positions[positions.length - 1]);
-										const elevatedEndPos = Cesium.Cartesian3.fromRadians(endPos.longitude, endPos.latitude, endPos.height + 45);
-										viewer.entities.add({
-											position: elevatedEndPos,
-											billboard: {
-												image: 'data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iMzIiIGhlaWdodD0iMzIiIHZpZXdCb3g9IjAgMCAzMiAzMiIgZmlsbD0ibm9uZSIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj4KPGNpcmNsZSBjeD0iMTYiIGN5PSIxNiIgcj0iMTYiIGZpbGw9IiNGRjAwMDAiLz4KPHN2ZyB4PSI4IiB5PSI4IiB3aWR0aD0iMTYiIGhlaWdodD0iMTYiIHZpZXdCb3g9IjAgMCAyNCAyNCIgZmlsbD0iI0ZGRkZGRiI+CjxwYXRoIGQ9Ik02IDZoMTJ2MTJINnoiLz4KPC9zdmc+Cjwvc3ZnPgo=',
-												scale: 1.0,
-												pixelOffset: new Cesium.Cartesian2(0, -16),
-												verticalOrigin: Cesium.VerticalOrigin.BOTTOM
-											},
-											label: {
-												text: 'FINISH',
-												font: 'bold 14px sans-serif',
-												fillColor: Cesium.Color.WHITE,
-												outlineColor: Cesium.Color.BLACK,
-												outlineWidth: 2,
-												style: Cesium.LabelStyle.FILL_AND_OUTLINE,
-												pixelOffset: new Cesium.Cartesian2(0, -50),
-												verticalOrigin: Cesium.VerticalOrigin.BOTTOM
-											}
-										});
-									}
-								}
-							}
-						});
-	  }
-
-let el = new MainWSQueueElement({
-msg: 'getgpxbase64'
-}, function(msg) {
-if (msg.msg === 'R_getgpxbase64') {
-return msg.content;
+// ------------------------------------------------------------------ helpers
+const DEG = Math.PI / 180;
+const M_PER_DEG = 6371008.8 * DEG;
+const $ = id => document.getElementById(id);
+const clamp = (x, a, b) => (x < a ? a : x > b ? b : x);
+const lerp = (a, b, t) => a + (b - a) * t;
+const smoothstep = (a, b, x) => { const t = clamp((x - a) / (b - a), 0, 1); return t * t * (3 - 2 * t); };
+const follow = (cur, target, dt, tau) => cur + (target - cur) * (1 - Math.exp(-dt / Math.max(tau, 1e-3)));
+const wrapPi = a => { a = (a + Math.PI) % (2 * Math.PI); if (a < 0) a += 2 * Math.PI; return a - Math.PI; };
+const pad2 = v => String(Math.max(0, Math.floor(+v || 0))).padStart(2, '0');
+const num = (x, d) => (Number.isFinite(x) ? x : 0).toLocaleString('de-DE', { minimumFractionDigits: d, maximumFractionDigits: d });
+function interp(tab, x) {
+  if (x <= tab[0][0]) return tab[0][1];
+  for (let i = 1; i < tab.length; i++) {
+    if (x <= tab[i][0]) { const a = tab[i - 1], b = tab[i]; return a[1] + (b[1] - a[1]) * (x - a[0]) / (b[0] - a[0]); }
+  }
+  return tab[tab.length - 1][1];
 }
-return null;
-}, 15000, 3);
-el.enqueue().then(process_gpxbase64).catch(function(err) {
-console.error('Error is ' + err);
-});
-      setTimeout(a,0);
+const store = {
+  get(k, d) { try { const v = localStorage.getItem('qzmap.' + k); return v === null ? d : JSON.parse(v); } catch (e) { return d; } },
+  set(k, v) { try { localStorage.setItem('qzmap.' + k, JSON.stringify(v)); } catch (e) { /* storage not available */ } },
+};
+const GRADE_COLORS = ['#66bb6a', '#a5d16b', '#ffca28', '#ff8f00', '#e53935'];
+const gradeClass = g => (g <= 1 ? 0 : g <= 3 ? 1 : g <= 5 ? 2 : g <= 7 ? 3 : 4);
 
-      // Metrics container drag and resize functionality
-      (function() {
-          const container = document.getElementById('metricsContainer');
-          const resizeHandle = document.getElementById('resizeHandle');
-          const metricsText = document.getElementById('metricsText');
-          const chartContainer = document.getElementById('chartContainer');
+function loadScript(src) {
+  return new Promise((resolve, reject) => {
+    const s = document.createElement('script');
+    s.src = src; s.async = false;
+    s.onload = () => resolve(); s.onerror = () => reject(new Error('Laden fehlgeschlagen: ' + src));
+    document.head.appendChild(s);
+  });
+}
+async function loadCesium() {
+  for (const base of CFG.cesiumBases) {
+    try {
+      window.CESIUM_BASE_URL = base;
+      await loadScript(base + 'Cesium.js');
+      const l = document.createElement('link'); l.rel = 'stylesheet'; l.href = base + 'Widgets/widgets.css';
+      document.head.insertBefore(l, document.head.firstChild);
+      return;
+    } catch (e) { console.warn(e.message); }
+  }
+  throw new Error('CesiumJS konnte nicht geladen werden');
+}
 
-          let isDragging = false;
-          let isResizing = false;
-          let startX, startY, startLeft, startTop, startWidth, startHeight;
-          let resizeTimeout = null;
+let statusTimer = 0, toastTimer = 0;
+function status(msg, isError) {
+  const el = $('status');
+  el.textContent = msg || ''; el.style.display = msg ? 'block' : 'none'; el.classList.toggle('err', !!isError);
+  clearTimeout(statusTimer);
+}
+function toast(msg, ms) {
+  const el = $('toast');
+  el.textContent = msg; el.style.display = 'block';
+  clearTimeout(toastTimer); toastTimer = setTimeout(() => { el.style.display = 'none'; }, ms || 3500);
+}
 
-          // Update chart position to follow metrics container
-          function updateChartPosition() {
-              // Position chart to the left of metrics container, aligned at bottom
-              const metricsLeft = container.offsetLeft;
-              const metricsTop = container.offsetTop;
-              const metricsHeight = container.offsetHeight;
-              const chartWidth = chartContainer.offsetWidth;
-              const chartHeight = chartContainer.offsetHeight;
+// ------------------------------------------------------------------ GPX + route model
+function parseGpx(text) {
+  const doc = new DOMParser().parseFromString(text, 'application/xml');
+  if (doc.getElementsByTagName('parsererror').length) throw new Error('Die GPX-Datei ist fehlerhaft.');
+  let nodes = doc.getElementsByTagName('trkpt');
+  if (!nodes.length) nodes = doc.getElementsByTagName('rtept');
+  const pts = [];
+  for (let i = 0; i < nodes.length; i++) {
+    const n = nodes[i];
+    const lat = parseFloat(n.getAttribute('lat')), lon = parseFloat(n.getAttribute('lon'));
+    if (!Number.isFinite(lat) || !Number.isFinite(lon)) continue;
+    const e = n.getElementsByTagName('ele')[0];
+    const ele = e ? parseFloat(e.textContent) : NaN;
+    pts.push({ lat, lon, ele });
+  }
+  const nm = doc.getElementsByTagName('name');
+  return { pts, name: nm.length ? (nm[0].textContent || '').trim() : '' };
+}
 
-              // Position chart: 10px to the left of metrics, aligned at bottom
-              chartContainer.style.left = (metricsLeft - chartWidth - 10) + 'px';
-              chartContainer.style.top = (metricsTop + metricsHeight - chartHeight) + 'px';
-              chartContainer.style.right = 'auto';
-              chartContainer.style.bottom = 'auto';
-          }
+// Douglas-Peucker on local metric coordinates (iterative)
+function simplify(xs, ys, tol) {
+  const n = xs.length, keep = new Uint8Array(n), tol2 = tol * tol, stack = [[0, n - 1]];
+  keep[0] = keep[n - 1] = 1;
+  while (stack.length) {
+    const [a, b] = stack.pop();
+    const ax = xs[a], ay = ys[a], dx = xs[b] - ax, dy = ys[b] - ay, l2 = dx * dx + dy * dy;
+    let maxD = -1, idx = -1;
+    for (let i = a + 1; i < b; i++) {
+      const px = xs[i] - ax, py = ys[i] - ay;
+      let d2;
+      if (l2 > 0) { const t = clamp((px * dx + py * dy) / l2, 0, 1); const qx = px - t * dx, qy = py - t * dy; d2 = qx * qx + qy * qy; }
+      else d2 = px * px + py * py;
+      if (d2 > maxD) { maxD = d2; idx = i; }
+    }
+    if (maxD > tol2) { keep[idx] = 1; stack.push([a, idx], [idx, b]); }
+  }
+  return keep;
+}
 
-          // Load saved position and size
-          function loadState() {
-              const saved = localStorage.getItem('metricsContainerState');
-              if (saved) {
-                  try {
-                      const state = JSON.parse(saved);
-                      if (state.left !== undefined) container.style.left = state.left + 'px';
-                      if (state.top !== undefined) container.style.top = state.top + 'px';
-                      if (state.right !== undefined) container.style.right = state.right + 'px';
-                      if (state.bottom !== undefined) container.style.bottom = state.bottom + 'px';
-                      if (state.width) container.style.width = state.width + 'px';
-                      if (state.height) container.style.height = state.height + 'px';
-                      updateChartPosition();
-                      updateFontSize();
-                  } catch (e) {
-                      console.error('Error loading metrics state:', e);
-                  }
-              }
-          }
+// Extrema of an elevation series with hysteresis H (metres)
+function findExtrema(E, H) {
+  const n = E.length, ext = [];
+  let trend = 0, lo = 0, hi = 0;
+  for (let k = 1; k < n; k++) {
+    const e = E[k];
+    if (e > E[hi]) hi = k;
+    if (e < E[lo]) lo = k;
+    if (trend === 0) {
+      if (E[hi] - E[lo] >= H) {
+        if (hi > lo) { ext.push({ k: lo, type: 'min' }); trend = 1; lo = hi; }
+        else { ext.push({ k: hi, type: 'max' }); trend = -1; hi = lo; }
+      }
+    } else if (trend > 0) {
+      if (E[hi] - e >= H) { ext.push({ k: hi, type: 'max' }); trend = -1; lo = k; }
+    } else if (e - E[lo] >= H) { ext.push({ k: lo, type: 'min' }); trend = 1; hi = k; }
+  }
+  if (trend > 0) ext.push({ k: hi, type: 'max' });
+  else if (trend < 0) ext.push({ k: lo, type: 'min' });
+  return ext;
+}
 
-          // Save position and size
-          function saveState() {
-              const state = {
-                  left: container.offsetLeft,
-                  top: container.offsetTop,
-                  width: container.offsetWidth,
-                  height: container.offsetHeight
-              };
-              localStorage.setItem('metricsContainerState', JSON.stringify(state));
-          }
+class Route {
+  constructor(text) {
+    const gpx = parseGpx(text);
+    const pts = gpx.pts;
+    if (pts.length < 2) throw new Error('Die GPX-Datei enthält keine Strecke.');
+    this.name = gpx.name;
+    const kx0 = Math.cos(pts[0].lat * DEG) * M_PER_DEG;
+    const P = [pts[0]];
+    for (let i = 1; i < pts.length; i++) {
+      const a = P[P.length - 1], b = pts[i];
+      if (Math.hypot((b.lon - a.lon) * kx0, (b.lat - a.lat) * M_PER_DEG) >= 0.5) P.push(b);
+    }
+    if (P.length < 2) throw new Error('Die GPX-Strecke ist zu kurz.');
+    const n0 = P.length;
+    const xs = new Float64Array(n0), ys = new Float64Array(n0), so = new Float64Array(n0);
+    for (let i = 0; i < n0; i++) {
+      xs[i] = (P[i].lon - P[0].lon) * kx0; ys[i] = (P[i].lat - P[0].lat) * M_PER_DEG;
+      if (i) so[i] = so[i - 1] + Math.hypot(xs[i] - xs[i - 1], ys[i] - ys[i - 1]);
+    }
+    // elevations: interpolate gaps along the track
+    const ele = new Float64Array(n0);
+    let known = 0;
+    for (let i = 0; i < n0; i++) if (Number.isFinite(P[i].ele)) known++;
+    this.hasEle = known >= Math.max(2, n0 * 0.5);
+    this.ready = this.hasEle; // without GPX elevations we wait for terrain samples (fillElevationFromTerrain)
+    if (this.hasEle) {
+      let prev = -1;
+      for (let i = 0; i < n0; i++) {
+        if (!Number.isFinite(P[i].ele)) continue;
+        ele[i] = P[i].ele;
+        if (prev < 0) { for (let j = 0; j < i; j++) ele[j] = P[i].ele; }
+        else if (i - prev > 1) { for (let j = prev + 1; j < i; j++) ele[j] = lerp(ele[prev], ele[i], (so[j] - so[prev]) / ((so[i] - so[prev]) || 1)); }
+        prev = i;
+      }
+      for (let j = prev + 1; j < n0; j++) ele[j] = ele[prev];
+    }
+    // geometry used for rendering and positioning (simplified only for very dense tracks)
+    const keep = n0 > 4000 ? simplify(xs, ys, 1.0) : null;
+    const idx = [];
+    for (let i = 0; i < n0; i++) if (!keep || keep[i]) idx.push(i);
+    const n = this.n = idx.length;
+    this.lon = new Float64Array(n); this.lat = new Float64Array(n); this.S = new Float64Array(n); this.cart = new Array(n);
+    for (let j = 0; j < n; j++) {
+      const p = P[idx[j]];
+      this.lon[j] = p.lon; this.lat[j] = p.lat;
+      this.cart[j] = Cesium.Cartesian3.fromDegrees(p.lon, p.lat, 0);
+      // same chord metric as Cesium's ground polyline texture coordinates
+      if (j) this.S[j] = this.S[j - 1] + Cesium.Cartesian3.distance(this.cart[j - 1], this.cart[j]);
+    }
+    this.total = this.S[n - 1];
+    if (!(this.total > 1)) throw new Error('Die GPX-Strecke ist zu kurz.');
+    const sMap = new Float64Array(n0);
+    for (let j = 0; j < n - 1; j++) {
+      const a = idx[j], b = idx[j + 1], da = so[a], db = so[b], ra = this.S[j], rb = this.S[j + 1];
+      for (let i = a; i <= b; i++) sMap[i] = db > da ? ra + (so[i] - da) / (db - da) * (rb - ra) : ra;
+    }
+    // regular elevation grid for the profile
+    const m = this.m = Math.max(2, Math.ceil(this.total / Math.max(10, this.total / 4000)) + 1);
+    const step = this.step = this.total / (m - 1);
+    const raw = new Float64Array(m);
+    let i = 0;
+    for (let k = 0; k < m; k++) {
+      const s = k * step;
+      while (i < n0 - 2 && sMap[i + 1] < s) i++;
+      const sa = sMap[i], sb = sMap[i + 1], u = sb > sa ? clamp((s - sa) / (sb - sa), 0, 1) : 0;
+      raw[k] = ele[i] + (ele[i + 1] - ele[i]) * u;
+    }
+    this.setElevation(raw);
+    this._a = {}; this._b = {};
+  }
 
-          // Update font size using binary search to find maximum size that fits
-          function updateFontSize() {
-              const minFontSize = 6;
-              const maxFontSize = 48;
-              let low = minFontSize;
-              let high = maxFontSize;
-              let bestFit = minFontSize;
+  setElevation(raw) {
+    const m = this.m, step = this.step;
+    const sig = Math.max(0.6, 20 / step), r = Math.ceil(sig * 3), w = [];
+    for (let j = -r; j <= r; j++) w.push(Math.exp(-0.5 * (j / sig) * (j / sig)));
+    const E = new Float64Array(m);
+    for (let k = 0; k < m; k++) {
+      let acc = 0, ws = 0;
+      for (let j = -r; j <= r; j++) { const q = k + j; if (q < 0 || q >= m) continue; acc += raw[q] * w[j + r]; ws += w[j + r]; }
+      E[k] = acc / ws;
+    }
+    const h = Math.max(1, Math.round(50 / step)), G = new Float64Array(m), C = new Float64Array(m);
+    let lo = Infinity, hi = -Infinity;
+    for (let k = 0; k < m; k++) {
+      const a = Math.max(0, k - h), b = Math.min(m - 1, k + h);
+      G[k] = b > a ? (E[b] - E[a]) / ((b - a) * step) * 100 : 0;
+      if (k) C[k] = C[k - 1] + Math.max(0, E[k] - E[k - 1]);
+      lo = Math.min(lo, E[k]); hi = Math.max(hi, E[k]);
+    }
+    this.E = E; this.G = G; this.C = C; this.eMin = lo; this.eMax = hi; this.totalGain = C[m - 1];
+    this.findClimbs();
+  }
 
-              // Count number of lines in the content
-              function countLines() {
-                  const html = metricsText.innerHTML;
-                  const brCount = (html.match(/<br>/gi) || []).length;
-                  return brCount + 1; // +1 for the first line
-              }
+  findClimbs() {
+    const E = this.E, G = this.G, step = this.step;
+    const ext = findExtrema(E, 6);
+    this.summits = ext.filter(x => x.type === 'max').map(x => x.k * step);
+    const raw = [];
+    for (let i = 0; i < ext.length - 1; i++) if (ext[i].type === 'min' && ext[i + 1].type === 'max') raw.push({ k0: ext[i].k, k1: ext[i + 1].k });
+    const merged = [];
+    for (const c of raw) {
+      const last = merged[merged.length - 1];
+      if (last && E[last.k1] - E[c.k0] < 12 && (c.k0 - last.k1) * step < 400) last.k1 = c.k1;
+      else merged.push({ k0: c.k0, k1: c.k1 });
+    }
+    this.climbs = merged.map(c => {
+      const gain = E[c.k1] - E[c.k0], len = (c.k1 - c.k0) * step;
+      let gmax = 0;
+      for (let k = c.k0; k <= c.k1; k++) gmax = Math.max(gmax, G[k]);
+      return { s0: c.k0 * step, s1: c.k1 * step, gain, len, avg: len > 0 ? gain / len * 100 : 0, gmax, top: E[c.k1] };
+    }).filter(c => c.gain >= 15 && c.len >= 150 && c.avg >= 2);
+  }
 
-              // Check if content fits with current font size
-              function contentFits() {
-                  // Force reflow
-                  void metricsText.offsetHeight;
+  seg(s) {
+    const S = this.S;
+    let lo = 0, hi = this.n - 1;
+    if (s <= 0) return 0;
+    if (s >= S[hi]) return hi - 1;
+    while (hi - lo > 1) { const mid = (lo + hi) >> 1; if (S[mid] <= s) lo = mid; else hi = mid; }
+    return lo;
+  }
+  pointAt(s, out) {
+    s = clamp(s, 0, this.total);
+    const i = this.seg(s), S = this.S, u = S[i + 1] > S[i] ? (s - S[i]) / (S[i + 1] - S[i]) : 0;
+    out = out || {};
+    out.lon = this.lon[i] + (this.lon[i + 1] - this.lon[i]) * u;
+    out.lat = this.lat[i] + (this.lat[i + 1] - this.lat[i]) * u;
+    return out;
+  }
+  grid(arr, s) {
+    const x = clamp(s, 0, this.total) / this.step, k = Math.min(Math.floor(x), this.m - 2), u = x - k;
+    return arr[k] + (arr[k + 1] - arr[k]) * u;
+  }
+  eleAt(s) { return this.grid(this.E, s); }
+  // most detailed terrain height along the route (NaN until sampled)
+  terrainAt(s) {
+    const T = this.T;
+    if (!T) return NaN;
+    const x = clamp(s, 0, this.total) / this.step, k = Math.min(Math.floor(x), this.m - 2), u = x - k;
+    return T[k] + (T[k + 1] - T[k]) * u;
+  }
+  gradeAt(s) { return this.grid(this.G, s); }
+  climbedAt(s) { return this.grid(this.C, s); }
+  headingAt(s, back, fwd) {
+    const a = this.pointAt(Math.max(0, s - back), this._a), b = this.pointAt(Math.min(this.total, s + fwd), this._b);
+    let dx = (b.lon - a.lon) * Math.cos(b.lat * DEG), dy = b.lat - a.lat;
+    if (dx * dx + dy * dy < 1e-16) {
+      const i = this.seg(s);
+      dx = (this.lon[i + 1] - this.lon[i]) * Math.cos(this.lat[i] * DEG); dy = this.lat[i + 1] - this.lat[i];
+    }
+    return Math.atan2(dx, dy);
+  }
+  // route distance of the point closest to lon/lat; searches near `hint` first
+  project(lon, lat, hint) {
+    const kx = Math.cos(lat * DEG) * M_PER_DEG, ky = M_PER_DEG, best = { d: Infinity, s: 0 };
+    const scan = (i0, i1) => {
+      for (let i = i0; i < i1; i++) {
+        const ax = (this.lon[i] - lon) * kx, ay = (this.lat[i] - lat) * ky;
+        const dx = (this.lon[i + 1] - lon) * kx - ax, dy = (this.lat[i + 1] - lat) * ky - ay, l2 = dx * dx + dy * dy;
+        const t = l2 > 0 ? clamp(-(ax * dx + ay * dy) / l2, 0, 1) : 0;
+        const px = ax + t * dx, py = ay + t * dy, d = px * px + py * py;
+        if (d < best.d) { best.d = d; best.s = this.S[i] + t * (this.S[i + 1] - this.S[i]); }
+      }
+    };
+    if (hint != null) {
+      scan(Math.max(0, this.seg(hint - 400)), Math.min(this.n - 1, this.seg(hint + 400) + 1));
+      if (best.d <= 3600) return best.s;
+      best.d = Infinity;
+    }
+    scan(0, this.n - 1);
+    return best.s;
+  }
+  climbInfo(s) {
+    for (const c of this.climbs) {
+      if (s >= c.s0 && s < c.s1) return { cur: c };
+      if (c.s0 >= s) return { next: c };
+    }
+    return {};
+  }
+  nextSummit(s) {
+    for (const x of this.summits) if (x > s + 25) return x;
+    return null;
+  }
+}
 
-                  // Get computed line height
-                  const computedStyle = window.getComputedStyle(metricsText);
-                  const lineHeight = parseFloat(computedStyle.lineHeight);
+// ------------------------------------------------------------------ rider (smoothed position along the route)
+const rider = {
+  s: null, v: 0, corr: 0, lastMeas: 0,
+  measure(s, v) {
+    if (this.s == null || Math.abs(s - this.s) > 150) { this.s = s; this.corr = 0; }
+    else this.corr = s - this.s;
+    this.v = Math.max(0, v || 0);
+    this.lastMeas = performance.now();
+  },
+  update(dt) {
+    if (this.s == null || !route) return;
+    const v = performance.now() - this.lastMeas > 4000 ? 0 : this.v;
+    let ds = v * dt + this.corr * (1 - Math.exp(-dt / 0.9));
+    if (ds < 0 && this.corr > -25) ds = 0; // never roll backwards for small corrections
+    this.corr -= ds - v * dt;
+    this.s = clamp(this.s + ds, 0, route.total);
+  },
+};
 
-                  // Calculate total height needed
-                  const numLines = countLines();
-                  const totalHeightNeeded = numLines * lineHeight;
+// ------------------------------------------------------------------ globals filled at runtime
+let widget, scene, camera, globe, route = null, routeMat = null, routePrim = null, tileset = null, tilesOn = false, demo = null;
+let terrainReady = null;
+const riderCart = { pos: null, h: 0, hOff: null, lon: 0, lat: 0 };
+const PROFILE = { mode: store.get('pmode', 'all'), compact: store.get('pcompact', false), dirty: true, lastS: -1, lastT: 0 };
+const LAYOUT = { W: 1, H: 1, freeTop: 0, freeBot: 1 };
 
-                  // Get available height (parent's clientHeight minus padding)
-                  const metricsDiv = metricsText.parentElement;
-                  const parentStyle = window.getComputedStyle(metricsDiv);
-                  const paddingTop = parseFloat(parentStyle.paddingTop);
-                  const paddingBottom = parseFloat(parentStyle.paddingBottom);
-                  const availableHeight = metricsDiv.clientHeight - paddingTop - paddingBottom;
+// ------------------------------------------------------------------ camera rig
+// Zoom parameter t in [0,1]: t = 0 first person, t = 1 about 5 km away. Distance grows exponentially.
+const dist = t => 1.97 * (Math.exp(7.84 * t) - 1);
+const tForDist = d => Math.log(d / 1.97 + 1) / 7.84;
+const PRESETS = { ich: 0, verfolger: tForDist(12), ueberblick: tForDist(1800) };
+const EPS_TAB = [[0, 8], [0.5, 8.5], [1.08, 10], [1.78, 15], [2.48, 23], [3.18, 33], [3.7, 44]]; // camera elevation angle (deg) by log10(distance)
+const FREE_TAB = [[0, 0.86], [1.08, 0.84], [2, 0.76], [3, 0.66], [3.7, 0.6]]; // rider position inside the free map area (0 top .. 1 bottom)
+const cam = { t: 1, tTarget: clamp(+store.get('zoom', PRESETS.verfolger) || 0, 0, 1), tau: 0.5, psi: 0, lastTouch: -1e9, head: null, lift: 0, grad: 0, active: false, d: 0 };
+const EYE = 1.55;
+const _enu = {}, _v3 = {}, _c3 = {}, _carto = {};
 
-                  // Check if it fits
-                  const fitsVertically = totalHeightNeeded <= availableHeight;
-                  const fitsHorizontally = metricsText.scrollWidth <= metricsText.clientWidth;
+function setZoom(t, tau) {
+  cam.tTarget = clamp(t, 0, 1); cam.tau = tau == null ? 0.12 : tau;
+  store.set('zoom', cam.tTarget);
+}
 
-                  return fitsVertically && fitsHorizontally;
-              }
+function fovy() {
+  const f = camera.frustum, aspect = f.aspectRatio || LAYOUT.W / LAYOUT.H;
+  return aspect > 1 ? 2 * Math.atan(Math.tan(f.fov / 2) / aspect) : f.fov;
+}
+const freeFrac = f => (LAYOUT.freeTop + f * (LAYOUT.freeBot - LAYOUT.freeTop)) / LAYOUT.H;
 
-              // Binary search for the maximum font size that fits
-              while (low <= high) {
-                  const mid = Math.floor((low + high) / 2);
-                  metricsText.style.fontSize = mid + 'px';
+function surfaceHeight(lonDeg, latDeg, slot) {
+  _carto.longitude = lonDeg * DEG; _carto.latitude = latDeg * DEG; _carto.height = 0;
+  if (!tilesOn) { const h = globe.getHeight(_carto); return h === undefined ? null : h; }
+  const c = surfaceHeight.cache[slot] || (surfaceHeight.cache[slot] = { t: 0, v: null });
+  const now = performance.now();
+  if (now - c.t < 120 && c.v != null) return c.v;
+  c.t = now;
+  const h = scene.sampleHeightSupported ? scene.sampleHeight(_carto) : undefined;
+  if (h !== undefined) c.v = h;
+  return c.v;
+}
+surfaceHeight.cache = {};
+// Heights from coarse (not yet refined) terrain tiles can be kilometres off. Only accept a sampled height
+// when it is close to the expected one (GPX elevation + learned offset), otherwise fall back to the estimate.
+const trusted = (h, ref, tol) => (h != null && Math.abs(h - ref) <= tol ? h : null);
+const refHeight = s => (CFG.offline ? 0 : route.eleAt(s) + (riderCart.hOff == null ? 0 : riderCart.hOff)); // offline test globe is flat
+const refTol = () => (riderCart.hOff == null ? 400 : 150);
+// ground height on the route: sampled terrain if available, else rendered tiles (if plausible), else GPX + offset
+function routeGround(s, slot) {
+  const t = route.terrainAt(s);
+  if (Number.isFinite(t)) return t;
+  const pt = route.pointAt(s, routeGround.p || (routeGround.p = {}));
+  const h = slot ? trusted(surfaceHeight(pt.lon, pt.lat, slot), refHeight(s), refTol()) : null;
+  return h == null ? refHeight(s) : h;
+}
 
-                  if (contentFits()) {
-                      bestFit = mid;
-                      low = mid + 1; // Try larger
-                  } else {
-                      high = mid - 1; // Try smaller
-                  }
-              }
+function updateCamera(dt, now) {
+  cam.t = follow(cam.t, cam.tTarget, dt, cam.tau);
+  const d = cam.d = dist(cam.t), L = Math.log10(Math.max(d, 1));
+  const s = rider.s;
+  // heading along the route, smoothed (longer windows and slower when far away)
+  const hT = route.headingAt(s, Math.min(4 + 0.3 * d, 400), Math.min(14 + 0.5 * d, 1500));
+  cam.head = cam.head == null ? hT : cam.head + wrapPi(hT - cam.head) * (1 - Math.exp(-dt / (0.45 + Math.min(d, 2000) / 1000)));
+  cam.psi = wrapPi(cam.psi);
+  if (!input.active && now - cam.lastTouch > 2500) cam.psi *= Math.exp(-dt / 0.6); // swing back behind the rider
+  const yaw = cam.head + cam.psi, eps = interp(EPS_TAB, L) * DEG;
+  const sy = Math.sin(yaw), cy = Math.cos(yaw), hor = d * Math.cos(eps);
+  const ox = -sy * hor, oy = -cy * hor, oz = EYE + d * Math.sin(eps);
+  const enu = Cesium.Transforms.eastNorthUpToFixedFrame(riderCart.pos, undefined, _enu.m || (_enu.m = new Cesium.Matrix4()));
+  const local = _v3.a || (_v3.a = new Cesium.Cartesian3());
+  // keep the camera above the ground (and above trees/buildings in 3D-photo mode)
+  local.x = ox; local.y = oy; local.z = oz;
+  const p0 = Cesium.Matrix4.multiplyByPoint(enu, local, _c3.a || (_c3.a = new Cesium.Cartesian3()));
+  const cg = Cesium.Cartographic.fromCartesian(p0, undefined, _carto.c || (_carto.c = new Cesium.Cartographic()));
+  if (cg) {
+    const hs = trusted(surfaceHeight(cg.longitude / DEG, cg.latitude / DEG, 'cam'), riderCart.h, 1500);
+    let need = hs == null ? -Infinity : hs + 1.2 + 0.03 * d;
+    if (hor < 300 && Math.abs(cam.psi) < 0.5) need = Math.max(need, routeGround(s - hor * 0.95) + 1.2 + 0.03 * d);
+    const liftT = Math.max(0, need - cg.height);
+    cam.lift = liftT > cam.lift ? follow(cam.lift, liftT, dt, 0.08) : follow(cam.lift, liftT, dt, 0.9);
+  }
+  local.z = oz + cam.lift;
+  const dest = Cesium.Matrix4.multiplyByPoint(enu, local, _c3.b || (_c3.b = new Cesium.Cartesian3()));
+  // pitch for chase views: put the rider at a fixed height inside the free map area
+  const fy = fovy(), tanH = Math.tan(fy / 2);
+  const beta = Math.atan2(local.z, Math.max(hor, 0.05));
+  const alphaR = Math.atan((2 * freeFrac(interp(FREE_TAB, L)) - 1) * tanH);
+  const pitchChase = -(beta - alphaR);
+  // first person: look along the road gradient, horizon at ~38 % of the free area
+  const la = 25;
+  const ha = routeGround(s + la, 'ahead');
+  cam.grad = follow(cam.grad, Math.atan2(ha - riderCart.h, la), dt, 0.6);
+  const pitchFp = cam.grad + Math.atan((2 * freeFrac(0.38) - 1) * tanH);
+  const pitch = clamp(lerp(pitchFp, pitchChase, smoothstep(0.4, 3.0, d)), -89 * DEG, 30 * DEG);
+  camera.setView({ destination: dest, orientation: { heading: yaw, pitch, roll: 0 } });
+}
 
-              // Apply the best fit size
-              metricsText.style.fontSize = bestFit + 'px';
-          }
+// ------------------------------------------------------------------ input (rig only)
+const input = { pts: new Map(), active: false, mode: null, axis: null, sx: 0, sy: 0, st: 0, spsi: 0, sd: 0, sa: 0 };
+function gestureStart() {
+  const p = [...input.pts.values()];
+  input.st = cam.tTarget; input.spsi = cam.psi; input.axis = null;
+  if (p.length === 1) { input.mode = 'drag'; input.sx = p[0].x; input.sy = p[0].y; }
+  else if (p.length >= 2) {
+    input.mode = 'pinch';
+    input.sd = Math.hypot(p[1].x - p[0].x, p[1].y - p[0].y) || 1;
+    input.sa = Math.atan2(p[1].y - p[0].y, p[1].x - p[0].x);
+  } else input.mode = null;
+}
+function gestureMove() {
+  const p = [...input.pts.values()];
+  if (input.mode === 'drag' && p.length === 1) {
+    const dx = p[0].x - input.sx, dy = p[0].y - input.sy;
+    if (!input.axis && Math.hypot(dx, dy) > 10) input.axis = Math.abs(dx) > Math.abs(dy) ? 'x' : 'y';
+    if (input.axis === 'x') cam.psi = input.spsi - dx / Math.max(LAYOUT.W, 1) * Math.PI;
+    else if (input.axis === 'y') setZoom(input.st - dy / Math.max(LAYOUT.freeBot - LAYOUT.freeTop, 100) * 0.9, 0.08);
+  } else if (input.mode === 'pinch' && p.length >= 2) {
+    const dd = Math.hypot(p[1].x - p[0].x, p[1].y - p[0].y) || 1, aa = Math.atan2(p[1].y - p[0].y, p[1].x - p[0].x);
+    setZoom(input.st - Math.log(dd / input.sd) / 7.84 * 1.4, 0.08);
+    cam.psi = input.spsi - wrapPi(aa - input.sa);
+  }
+}
+function initInput() {
+  const el = $('map');
+  el.addEventListener('pointerdown', e => {
+    if (!cam.active) return;
+    try { el.setPointerCapture(e.pointerId); } catch (err) { /* ignore */ }
+    input.pts.set(e.pointerId, { x: e.clientX, y: e.clientY });
+    input.active = true; cam.lastTouch = performance.now(); gestureStart();
+  });
+  el.addEventListener('pointermove', e => {
+    const p = input.pts.get(e.pointerId);
+    if (!p) return;
+    p.x = e.clientX; p.y = e.clientY; cam.lastTouch = performance.now(); gestureMove();
+  });
+  const end = e => {
+    if (!input.pts.delete(e.pointerId)) return;
+    cam.lastTouch = performance.now();
+    if (input.pts.size) gestureStart(); else { input.active = false; input.mode = null; }
+  };
+  ['pointerup', 'pointercancel', 'lostpointercapture'].forEach(t => el.addEventListener(t, end));
+  el.addEventListener('wheel', e => {
+    if (!cam.active) return;
+    e.preventDefault();
+    setZoom(cam.tTarget + clamp(e.deltaY, -120, 120) * 0.0011, 0.15);
+  }, { passive: false });
+  el.addEventListener('contextmenu', e => e.preventDefault());
 
-          // Debounced version of updateFontSize (only during resize)
-          function debouncedUpdateFontSize() {
-              if (resizeTimeout) {
-                  clearTimeout(resizeTimeout);
-              }
-              resizeTimeout = setTimeout(function() {
-                  updateFontSize();
-              }, 500);
-          }
+  document.querySelectorAll('#presets button').forEach(b => b.addEventListener('click', () => setZoom(PRESETS[b.dataset.p], 0.45)));
+  $('compass').addEventListener('click', () => { cam.lastTouch = -1e9; cam.psi = wrapPi(cam.psi) * 0.5; });
+  const track = $('zoomTrack');
+  const fromY = y => { const r = track.getBoundingClientRect(); return 1 - clamp((y - r.top - 34) / Math.max(r.height - 68, 1), 0, 1); };
+  let dragging = false;
+  track.addEventListener('pointerdown', e => { dragging = true; try { track.setPointerCapture(e.pointerId); } catch (err) { /* ignore */ } setZoom(fromY(e.clientY), 0.15); });
+  track.addEventListener('pointermove', e => { if (dragging) setZoom(fromY(e.clientY), 0.08); });
+  ['pointerup', 'pointercancel'].forEach(t => track.addEventListener(t, () => { dragging = false; }));
+  document.querySelectorAll('#layers button').forEach(b => b.addEventListener('click', () => setLayer(b.dataset.l)));
+  document.querySelectorAll('#pmode button').forEach(b => b.addEventListener('click', () => {
+    PROFILE.mode = b.dataset.m; store.set('pmode', PROFILE.mode); markButtons(); PROFILE.dirty = true;
+  }));
+  $('ptitle').addEventListener('click', () => {
+    PROFILE.compact = !PROFILE.compact; store.set('pcompact', PROFILE.compact);
+    $('profile').classList.toggle('compact', PROFILE.compact); layout();
+  });
+}
 
-          // Get touch or mouse coordinates
-          function getCoordinates(e) {
-              if (e.touches && e.touches.length > 0) {
-                  return { x: e.touches[0].clientX, y: e.touches[0].clientY };
-              }
-              return { x: e.clientX, y: e.clientY };
-          }
+function markButtons() {
+  document.querySelectorAll('#presets button').forEach(b => b.classList.toggle('on', Math.abs(cam.tTarget - PRESETS[b.dataset.p]) < 0.03));
+  document.querySelectorAll('#layers button').forEach(b => b.classList.toggle('on', (b.dataset.l === 'g3d') === tilesOn));
+  document.querySelectorAll('#pmode button').forEach(b => b.classList.toggle('on', b.dataset.m === PROFILE.mode));
+}
 
-          // Check if touch/click is in resize handle area (bottom-right 50x50px)
-          function isInResizeHandle(x, y) {
-              const rect = container.getBoundingClientRect();
-              const handleSize = 50;
-              return (
-                  x >= rect.right - handleSize &&
-                  x <= rect.right &&
-                  y >= rect.bottom - handleSize &&
-                  y <= rect.bottom
-              );
-          }
+// ------------------------------------------------------------------ layout
+function layout() {
+  const W = window.innerWidth, H = window.innerHeight;
+  const mr = $('metrics').getBoundingClientRect(), pr = $('profile').getBoundingClientRect();
+  LAYOUT.W = W; LAYOUT.H = H; LAYOUT.freeTop = mr.bottom; LAYOUT.freeBot = pr.top;
+  const top = mr.bottom + 8;
+  $('camBar').style.top = top + 'px';
+  $('zoomCol').style.top = top + 'px';
+  const th = clamp(pr.top - top - 8 - 64, 110, 300);
+  $('zoomTrack').style.height = th + 'px';
+  for (const k of ['ueberblick', 'verfolger']) $('tick-' + k).style.top = (34 + (1 - PRESETS[k]) * (th - 68) - 1) + 'px';
+  $('credits').style.bottom = (H - pr.top + 6) + 'px';
+  if (camera) camera.frustum.fov = (W > H ? 66 : 62) * DEG;
+  PROFILE.dirty = true;
+}
 
-          // Start dragging
-          function startDrag(e) {
-              if (isResizing) return;
-              isDragging = true;
-              const coords = getCoordinates(e);
-              startX = coords.x;
-              startY = coords.y;
-              startLeft = container.offsetLeft;
-              startTop = container.offsetTop;
-              container.style.right = 'auto';
-              container.style.bottom = 'auto';
+// ------------------------------------------------------------------ HUD: metrics
+function setVal(id, txt, color) {
+  const el = $(id).querySelector('.val span');
+  if (el.textContent !== txt) el.textContent = txt;
+  if (color !== undefined) el.style.color = color;
+}
+const hud = {
+  metrics(m) {
+    if (m.inclination != null) { const g = +m.inclination; setVal('m-grade', num(g, 1), g < -0.5 ? '#81d4fa' : g <= 1 ? '' : GRADE_COLORS[gradeClass(g)]); }
+    if (m.resistance != null) setVal('m-level', String(Math.round(+m.resistance)));
+    if (m.speed != null) setVal('m-speed', num(+m.speed, 1));
+    if (m.watts != null) setVal('m-power', String(Math.round(+m.watts)));
+    if (m.cadence != null) setVal('m-cad', String(Math.round(+m.cadence)));
+    const hr = +m.heart || 0;
+    const hrCell = $('m-hr');
+    if ((hr > 0) === hrCell.classList.contains('off')) { hrCell.classList.toggle('off', !(hr > 0)); layout(); }
+    if (hr > 0) setVal('m-hr', String(Math.round(hr)));
+    if (m.elapsed_h != null) setVal('m-time', (+m.elapsed_h || 0) + ':' + pad2(m.elapsed_m) + ':' + pad2(m.elapsed_s));
+  },
+  tick() {
+    if (!route) return;
+    const s = rider.s == null ? 0 : rider.s;
+    setVal('m-dist', num(s / 1000, 1));
+    const rem = Math.max(0, route.total - s), up = Math.max(0, route.totalGain - route.climbedAt(s));
+    $('premain').textContent = 'Noch ' + num(rem / 1000, 1) + ' km · ↑ ' + Math.round(up) + ' Hm';
+    const ci = route.climbInfo(s);
+    let a = '', b = '';
+    if (ci.cur) {
+      const c = ci.cur, left = c.s1 - s, gain = Math.max(0, c.top - route.eleAt(s));
+      a = 'Anstieg: noch ' + num(left / 1000, 1) + ' km';
+      b = 'Ø ' + num(left > 0 ? gain / left * 100 : 0, 1) + ' % · +' + Math.round(gain) + ' Hm bis oben';
+    } else if (ci.next) {
+      const c = ci.next;
+      a = 'Nächster Anstieg in ' + num((c.s0 - s) / 1000, 1) + ' km';
+      b = num(c.len / 1000, 1) + ' km · Ø ' + num(c.avg, 1) + ' % · max ' + num(c.gmax, 1) + ' % · +' + Math.round(c.gain) + ' Hm';
+    } else if (route.climbs.length) a = 'Keine Anstiege mehr bis zum Ziel';
+    if ($('pclimb').textContent !== a) $('pclimb').textContent = a;
+    if ($('pclimb2').textContent !== b) $('pclimb2').textContent = b;
+  },
+};
 
-              // Add global listeners
-              document.addEventListener('mousemove', handleMove);
-              document.addEventListener('touchmove', handleMove, { passive: false });
-              document.addEventListener('mouseup', endDragOrResize);
-              document.addEventListener('touchend', endDragOrResize);
-              document.addEventListener('touchcancel', endDragOrResize);
+// ------------------------------------------------------------------ HUD: elevation profile
+function niceStep(x) {
+  const p = Math.pow(10, Math.floor(Math.log10(x))), f = x / p;
+  return (f <= 1 ? 1 : f <= 2 ? 2 : f <= 2.5 ? 2.5 : f <= 5 ? 5 : 10) * p;
+}
+function roundRect(g, x, y, w, h, r) {
+  g.beginPath(); g.moveTo(x + r, y); g.arcTo(x + w, y, x + w, y + h, r); g.arcTo(x + w, y + h, x, y + h, r);
+  g.arcTo(x, y + h, x, y, r); g.arcTo(x, y, x + w, y, r); g.closePath();
+}
+function drawProfile() {
+  if (!route) return;
+  const cv = $('pcanvas'), W = cv.clientWidth, H = cv.clientHeight;
+  if (W < 20 || H < 20) return;
+  const dpr = Math.min(window.devicePixelRatio || 1, 2);
+  if (cv.width !== Math.round(W * dpr) || cv.height !== Math.round(H * dpr)) { cv.width = Math.round(W * dpr); cv.height = Math.round(H * dpr); }
+  const g = cv.getContext('2d');
+  g.setTransform(dpr, 0, 0, dpr, 0, 0); g.clearRect(0, 0, W, H);
+  const compact = PROFILE.compact, s = rider.s == null ? 0 : rider.s, E = route.E, G = route.G, st = route.step;
+  let x0 = 0, x1 = route.total;
+  if (PROFILE.mode === 'near' && route.total > 5200) { x0 = Math.max(0, s - 500); x1 = Math.min(route.total, x0 + 5000); x0 = Math.max(0, x1 - 5000); }
+  const k0 = Math.max(0, Math.floor(x0 / st)), k1 = Math.min(route.m - 1, Math.ceil(x1 / st));
+  let lo = Infinity, hi = -Infinity;
+  for (let k = k0; k <= k1; k++) { lo = Math.min(lo, E[k]); hi = Math.max(hi, E[k]); }
+  const span = Math.max(hi - lo, PROFILE.mode === 'near' ? 40 : 60), mid = (hi + lo) / 2;
+  lo = mid - span * 0.55; hi = mid + span * (compact ? 0.6 : 0.75);
+  const tick = niceStep((hi - lo) / (compact ? 2 : 3.2));
+  const padL = compact ? 4 : 44, padR = 8, padT = compact ? 2 : 6, padB = compact ? 3 : 16;
+  const X = v => padL + (v - x0) / (x1 - x0) * (W - padL - padR);
+  const Y = e => padT + (1 - (e - lo) / (hi - lo)) * (H - padT - padB);
+  const base = H - padB;
+  g.font = '11px Roboto, "Segoe UI", Arial, sans-serif';
+  if (!compact) {
+    g.strokeStyle = 'rgba(255,255,255,.08)'; g.lineWidth = 1; g.fillStyle = '#9ba7b4'; g.textAlign = 'left'; g.textBaseline = 'middle';
+    for (let e = Math.ceil(lo / tick) * tick; e <= hi; e += tick) {
+      const y = Math.round(Y(e)) + 0.5;
+      if (y < padT + 6) continue;
+      g.beginPath(); g.moveTo(padL, y); g.lineTo(W - padR, y); g.stroke();
+      g.fillText(Math.round(e).toLocaleString('de-DE') + ' m', 0, y);
+    }
+  }
+  const curve = (ka, kb) => { for (let k = ka; k <= kb; k++) g.lineTo(X(k * st), Y(E[k])); };
+  const ks = clamp(Math.floor(s / st), k0, k1);
+  // ridden part
+  if (s > x0) {
+    g.beginPath(); g.moveTo(X(k0 * st), base); curve(k0, ks); g.lineTo(X(s), Y(route.eleAt(s))); g.lineTo(X(s), base); g.closePath();
+    g.fillStyle = 'rgba(155,167,180,.38)'; g.fill();
+  }
+  // ahead, coloured by grade class
+  let runStart = ks, cls = gradeClass(G[ks]);
+  const flush = (ka, kb, c) => {
+    g.beginPath(); g.moveTo(X(Math.max(ka * st, s)), base); g.lineTo(X(Math.max(ka * st, s)), Y(route.eleAt(Math.max(ka * st, s))));
+    curve(ka + 1, kb); g.lineTo(X(kb * st), base); g.closePath(); g.fillStyle = GRADE_COLORS[c]; g.fill();
+  };
+  for (let k = ks + 1; k <= k1; k++) {
+    const c = gradeClass(G[k]);
+    if (c !== cls || k === k1) { flush(runStart, k, cls); runStart = k; cls = c; }
+  }
+  // outline
+  g.beginPath(); g.moveTo(X(k0 * st), Y(E[k0])); curve(k0 + 1, k1);
+  g.strokeStyle = 'rgba(255,255,255,.85)'; g.lineWidth = 1.4; g.stroke();
+  // next climb bracket + summit flag
+  const ci = route.climbInfo(s), c = ci.cur || ci.next;
+  if (c && !compact && c.s1 > x0 && c.s0 < x1) {
+    const xa = X(Math.max(c.s0, s, x0)), xb = X(Math.min(c.s1, x1)), y = Math.max(padT + 2, Y(c.top) - 9);
+    g.strokeStyle = '#ffd54f'; g.lineWidth = 2;
+    g.beginPath(); g.moveTo(xa, y + 5); g.lineTo(xa, y); g.lineTo(xb, y); g.lineTo(xb, y + 5); g.stroke();
+  }
+  const sm = route.nextSummit(s);
+  if (sm != null && sm <= x1 && !compact) {
+    const x = X(sm), y = Y(route.eleAt(sm));
+    g.strokeStyle = '#fff'; g.lineWidth = 1.5; g.beginPath(); g.moveTo(x, y - 2); g.lineTo(x, y - 22); g.stroke();
+    g.fillStyle = '#fff'; g.beginPath(); g.moveTo(x, y - 22); g.lineTo(x + 11, y - 18); g.lineTo(x, y - 14); g.closePath(); g.fill();
+    const t = 'Kuppe in ' + num((sm - s) / 1000, 1) + ' km';
+    g.font = '600 12px Roboto, "Segoe UI", Arial, sans-serif'; g.textBaseline = 'middle';
+    const tw = g.measureText(t).width;
+    const right = x + 14 + tw < W - padR;
+    g.textAlign = right ? 'left' : 'right'; g.fillStyle = '#fff'; g.fillText(t, right ? x + 14 : x - 4, y - 18);
+  }
+  // rider marker
+  if (rider.s != null && s >= x0 && s <= x1) {
+    const x = X(s), y = Y(route.eleAt(s));
+    g.setLineDash([3, 3]); g.strokeStyle = 'rgba(255,255,255,.6)'; g.lineWidth = 1;
+    g.beginPath(); g.moveTo(x, compact ? 0 : 20); g.lineTo(x, base); g.stroke(); g.setLineDash([]);
+    g.fillStyle = '#ff7a1a'; g.strokeStyle = '#fff'; g.lineWidth = 2.5;
+    g.beginPath(); g.arc(x, y, 6.5, 0, Math.PI * 2); g.fill(); g.stroke();
+    if (!compact) {
+      const t = 'Du · km ' + num(s / 1000, 1) + ' · ' + Math.round(route.eleAt(s)).toLocaleString('de-DE') + ' m';
+      g.font = '700 12px Roboto, "Segoe UI", Arial, sans-serif';
+      const tw = g.measureText(t).width + 16, bx = clamp(x - tw / 2, padL, W - padR - tw);
+      roundRect(g, bx, 0, tw, 20, 6); g.fillStyle = '#fff'; g.fill();
+      g.fillStyle = '#14181d'; g.textAlign = 'left'; g.textBaseline = 'middle'; g.fillText(t, bx + 8, 10.5);
+    }
+  }
+  // km axis
+  if (!compact) {
+    g.font = '11px Roboto, "Segoe UI", Arial, sans-serif'; g.fillStyle = '#9ba7b4'; g.textBaseline = 'alphabetic'; g.textAlign = 'center';
+    const kt = niceStep((x1 - x0) / 1000 / 7) * 1000;
+    for (let v = Math.ceil(x0 / kt) * kt; v <= x1 + 1; v += kt) {
+      const x = X(v);
+      if (x < padL + 10 || x > W - padR - 14) continue;
+      g.fillText(num(v / 1000, kt < 1000 ? 1 : 0), x, H - 3);
+    }
+    g.textAlign = 'right'; g.fillText('km', W - padR, H - 3);
+  }
+}
 
-              e.stopPropagation();
-              e.preventDefault();
-          }
+// ------------------------------------------------------------------ map overlays (rider marker, flags, compass)
+const _win = {}, _ovc = {};
+function place(el, cart) {
+  const p = Cesium.SceneTransforms.worldToWindowCoordinates(scene, cart, _win.p || (_win.p = new Cesium.Cartesian2()));
+  const cp = camera.positionWC, dir = camera.directionWC;
+  const front = (cart.x - cp.x) * dir.x + (cart.y - cp.y) * dir.y + (cart.z - cp.z) * dir.z > 0;
+  if (!p || !front || p.x < -60 || p.y < -60 || p.x > LAYOUT.W + 60 || p.y > LAYOUT.H + 60) { el.style.display = 'none'; return null; }
+  el.style.display = 'block';
+  el.style.transform = 'translate(' + p.x.toFixed(1) + 'px,' + p.y.toFixed(1) + 'px)';
+  return p;
+}
+function groundCart(s, slot, key) {
+  const pt = route.pointAt(s, _ovc[key] || (_ovc[key] = {}));
+  const h = routeGround(s, slot);
+  return Cesium.Cartesian3.fromDegrees(pt.lon, pt.lat, h, undefined, _ovc[key + 'c'] || (_ovc[key + 'c'] = new Cesium.Cartesian3()));
+}
+let lastFlagText = '';
+function updateOverlays() {
+  if (!route) return;
+  place($('flagStart'), groundCart(0, 'fs', 'start'));
+  place($('flagFinish'), groundCart(route.total, 'ff', 'finish'));
+  const sm = route.nextSummit(rider.s == null ? 0 : rider.s);
+  const fsEl = $('flagSummit');
+  if (sm != null && route.total - sm > 30) {
+    place(fsEl, groundCart(sm, 'fk', 'summit'));
+    const t = rider.s == null ? 'Kuppe' : 'Kuppe · ' + num((sm - rider.s) / 1000, 1) + ' km';
+    if (t !== lastFlagText) { fsEl.querySelector('span').textContent = t; lastFlagText = t; }
+  } else fsEl.style.display = 'none';
+  const rEl = $('rider');
+  if (rider.s != null && riderCart.pos) {
+    const marker = Cesium.Cartesian3.fromDegrees(riderCart.lon, riderCart.lat, riderCart.h, undefined, _ovc.m || (_ovc.m = new Cesium.Cartesian3()));
+    const p = place(rEl, marker);
+    rEl.style.opacity = cam.active ? smoothstep(1.2, 3.5, cam.d).toFixed(2) : '1';
+    if (p) {
+      const ahead = route.pointAt(rider.s + Math.max(8, cam.d * 0.1), _ovc.a || (_ovc.a = {}));
+      const q = Cesium.SceneTransforms.worldToWindowCoordinates(scene,
+        Cesium.Cartesian3.fromDegrees(ahead.lon, ahead.lat, riderCart.h, undefined, _ovc.ac || (_ovc.ac = new Cesium.Cartesian3())),
+        _win.q || (_win.q = new Cesium.Cartesian2()));
+      if (q) $('riderArrow').style.transform = 'rotate(' + (Math.atan2(q.x - p.x, p.y - q.y) / DEG).toFixed(1) + 'deg)';
+    }
+  } else rEl.style.display = 'none';
+  $('needle').style.transform = 'rotate(' + (-camera.heading / DEG).toFixed(1) + 'deg)';
+  // zoom slider
+  const th = $('zoomTrack').clientHeight, y = 34 + (1 - cam.t) * (th - 68);
+  $('zoomThumb').style.top = y + 'px';
+  $('zoomFill').style.height = Math.max(0, th - 34 - y) + 'px';
+}
 
-          // Start resizing
-          function startResize(e) {
-              isResizing = true;
-              const coords = getCoordinates(e);
-              startX = coords.x;
-              startY = coords.y;
-              startWidth = container.offsetWidth;
-              startHeight = container.offsetHeight;
+// ------------------------------------------------------------------ map
+function initMap() {
+  let baseLayer, terrain;
+  if (CFG.offline) {
+    baseLayer = Cesium.ImageryLayer.fromProviderAsync(Cesium.TileMapServiceImageryProvider.fromUrl(Cesium.buildModuleUrl('Assets/Textures/NaturalEarthII')));
+  } else {
+    baseLayer = Cesium.ImageryLayer.fromWorldImagery({ style: Cesium.IonWorldImageryStyle.AERIAL });
+    terrain = Cesium.Terrain.fromWorldTerrain({ requestVertexNormals: true });
+  }
+  widget = new Cesium.CesiumWidget($('map'), {
+    baseLayer, terrain, scene3DOnly: true, creditContainer: $('credits'),
+    useBrowserRecommendedResolution: true, targetFrameRate: 60,
+  });
+  scene = widget.scene; camera = scene.camera; globe = scene.globe;
+  terrainReady = new Promise(resolve => {
+    if (!terrain) return resolve(globe.terrainProvider);
+    terrain.readyEvent.addEventListener(p => resolve(p));
+    terrain.errorEvent.addEventListener(e => { console.error(e); status('Das 3D-Gelände konnte nicht geladen werden (Cesium-ion-Schlüssel prüfen).', true); });
+  });
+  if (baseLayer.errorEvent) baseLayer.errorEvent.addEventListener(e => { console.error(e); status('Das Satellitenbild konnte nicht geladen werden (Cesium-ion-Schlüssel prüfen).', true); });
+  globe.enableLighting = true;
+  globe.depthTestAgainstTerrain = true;
+  globe.tileCacheSize = 400;
+  scene.fog.enabled = true;
+  scene.screenSpaceCameraController.enableCollisionDetection = true;
+  camera.frustum.near = 0.5;
+  layout();
+  scene.preUpdate.addEventListener(frame);
+  scene.postRender.addEventListener(() => {
+    updateOverlays();
+    const now = performance.now();
+    if (now - (hud.lastTick || 0) > 250) { hud.lastTick = now; hud.tick(); markButtons(); }
+    if (PROFILE.dirty || (now - PROFILE.lastT > 500 && rider.s != null && Math.abs(rider.s - PROFILE.lastS) > 1)) {
+      PROFILE.dirty = false; PROFILE.lastT = now; PROFILE.lastS = rider.s == null ? -1 : rider.s; drawProfile();
+    }
+  });
+}
 
-              // Add global listeners
-              document.addEventListener('mousemove', handleMove);
-              document.addEventListener('touchmove', handleMove, { passive: false });
-              document.addEventListener('mouseup', endDragOrResize);
-              document.addEventListener('touchend', endDragOrResize);
-              document.addEventListener('touchcancel', endDragOrResize);
+let lastFrame = 0;
+function frame() {
+  const now = performance.now();
+  const dt = lastFrame ? clamp((now - lastFrame) / 1000, 0, 0.1) : 0.016;
+  lastFrame = now;
+  if (!route || !route.ready) return;
+  if (demo) demo.update(dt);
+  rider.update(dt);
+  if (rider.s == null) return;
+  const p = route.pointAt(rider.s, _ovc.rp || (_ovc.rp = {}));
+  const eR = route.eleAt(rider.s);
+  const ter = route.terrainAt(rider.s);
+  const hs = Number.isFinite(ter) ? ter : trusted(surfaceHeight(p.lon, p.lat, 'rider'), refHeight(rider.s), refTol());
+  if (hs != null) riderCart.hOff = riderCart.hOff == null ? hs - eR : follow(riderCart.hOff, hs - eR, dt, 2.0);
+  const hT = hs != null ? hs : refHeight(rider.s);
+  riderCart.h = riderCart.pos ? follow(riderCart.h, hT, dt, 0.2) : hT;
+  riderCart.lon = p.lon; riderCart.lat = p.lat;
+  const h = riderCart.h;
+  riderCart.pos = Cesium.Cartesian3.fromDegrees(p.lon, p.lat, h, undefined, riderCart.pos || new Cesium.Cartesian3());
+  if (!cam.active) startRig();
+  updateCamera(dt, now);
+  if (routeMat) routeMat.uniforms.split = rider.s / route.total;
+}
 
-              e.stopPropagation();
-              e.preventDefault();
-          }
+function startRig() {
+  cam.active = true;
+  scene.screenSpaceCameraController.enableInputs = false;
+  cam.t = 1; cam.tau = 0.9; // fly in from the overview
+  status('');
+  if (!store.get('hint', false)) {
+    store.set('hint', true);
+    setTimeout(() => toast('Wischen ↔ dreht die Ansicht, ↕ zoomt. Oder: Ich · Verfolger · Überblick.', 6500), 2500);
+  }
+}
 
-          // Handle move
-          function handleMove(e) {
-              // Only handle if we're actually dragging or resizing
-              if (!isDragging && !isResizing) {
-                  return;
-              }
+const ROUTE_GLSL = `
+czm_material czm_getMaterial(czm_materialInput materialInput) {
+  czm_material material = czm_getDefaultMaterial(materialInput);
+  vec2 st = materialInput.st;
+  float d = abs(st.t - 0.5) * 2.0;
+  if (st.s < split) {
+    float core = 1.0 - smoothstep(0.40, 0.50, d);
+    material.diffuse = mix(outlineColor.rgb, riddenColor.rgb, core);
+    material.alpha = 1.0 - smoothstep(0.56, 0.68, d);
+  } else {
+    float core = 1.0 - smoothstep(0.62, 0.74, d);
+    material.diffuse = mix(outlineColor.rgb, aheadColor.rgb, core);
+    material.alpha = 1.0 - smoothstep(0.90, 1.0, d);
+  }
+  return material;
+}`;
 
-              const coords = getCoordinates(e);
+function buildRoute() {
+  routeMat = new Cesium.Material({
+    translucent: true,
+    fabric: {
+      type: 'QzRouteLine',
+      uniforms: {
+        aheadColor: Cesium.Color.fromCssColorString('#ff7a1a'),
+        riddenColor: Cesium.Color.fromCssColorString('#f5f7f9'),
+        outlineColor: Cesium.Color.fromCssColorString('#20160f'),
+        split: 0.0,
+      },
+      source: ROUTE_GLSL,
+    },
+  });
+  routePrim = scene.groundPrimitives.add(new Cesium.GroundPolylinePrimitive({
+    geometryInstances: new Cesium.GeometryInstance({ geometry: new Cesium.GroundPolylineGeometry({ positions: route.cart, width: 9.0 }) }),
+    appearance: new Cesium.PolylineMaterialAppearance({ material: routeMat }),
+    classificationType: Cesium.ClassificationType.BOTH,
+    allowPicking: false,
+  }));
+}
 
-              if (isDragging) {
-                  const deltaX = coords.x - startX;
-                  const deltaY = coords.y - startY;
-                  container.style.left = (startLeft + deltaX) + 'px';
-                  container.style.top = (startTop + deltaY) + 'px';
-                  updateChartPosition();
-                  e.stopPropagation();
-                  e.preventDefault();
-              } else if (isResizing) {
-                  const deltaX = coords.x - startX;
-                  const deltaY = coords.y - startY;
-                  const newWidth = Math.max(100, startWidth + deltaX);
-                  const newHeight = Math.max(100, startHeight + deltaY);
-                  container.style.width = newWidth + 'px';
-                  container.style.height = newHeight + 'px';
-                  updateChartPosition();
-                  debouncedUpdateFontSize();
-                  e.stopPropagation();
-                  e.preventDefault();
-              }
-          }
+function loadRoute(text) {
+  try { route = new Route(text); } catch (e) { console.error(e); status(e.message, true); return; }
+  // fixed, friendly daylight: mid-September, 10:00 local solar time at the route
+  const yr = new Date().getUTCFullYear();
+  widget.clock.shouldAnimate = false;
+  widget.clock.currentTime = Cesium.JulianDate.fromDate(new Date(Date.UTC(yr, 8, 15) + (10 - route.lon[0] / 15) * 3600000));
+  buildRoute();
+  $('pname').textContent = (route.name ? route.name + ' · ' : '') + num(route.total / 1000, 1) + ' km';
+  $('m-dist-tot').textContent = '/ ' + num(route.total / 1000, 1) + ' km';
+  $('m-level-max').textContent = '/ ' + CFG.maxLevel;
+  const pts3 = [];
+  for (let i = 0; i < route.n; i += Math.max(1, Math.floor(route.n / 400))) pts3.push(Cesium.Cartesian3.fromDegrees(route.lon[i], route.lat[i], route.eleAt(route.S[i])));
+  const bs = Cesium.BoundingSphere.fromPoints(pts3);
+  camera.flyToBoundingSphere(bs, { duration: 0, offset: new Cesium.HeadingPitchRange(0, -0.85, Math.max(bs.radius * 2.6, 3000)) });
+  PROFILE.dirty = true;
+  sampleRouteTerrain(route);
+  if (!route.hasEle) { status('Höhendaten werden geladen …'); fillElevationFromTerrain().then(() => { if (rider.s == null && !CFG.demo) status('Strecke geladen. Starte das Training, dann geht es los.'); else status(''); }); }
+  else if (!CFG.demo && rider.s == null) status('Strecke geladen. Starte das Training, dann geht es los.');
+}
 
-          // End drag or resize
-          function endDragOrResize(e) {
-              const wasDragging = isDragging;
-              const wasResizing = isResizing;
+// Accurate terrain heights on the profile grid (most detailed tiles), loaded in chunks starting near the rider.
+async function sampleRouteTerrain(r) {
+  let tp;
+  try { tp = await terrainReady; } catch (e) { return; }
+  const m = r.m, T = new Float64Array(m).fill(NaN);
+  r.T = T;
+  const k0 = clamp(Math.floor(((rider.s == null ? 0 : rider.s) - 300) / r.step), 0, m - 1);
+  const order = [];
+  for (let k = k0; k < m; k++) order.push(k);
+  for (let k = 0; k < k0; k++) order.push(k);
+  for (let i = 0; i < order.length && route === r; i += 200) {
+    const ks = order.slice(i, i + 200);
+    const cartos = ks.map(k => { const p = r.pointAt(k * r.step); return Cesium.Cartographic.fromDegrees(p.lon, p.lat); });
+    try {
+      const res = await Cesium.sampleTerrainMostDetailed(tp, cartos);
+      res.forEach((c, j) => { if (c && Number.isFinite(c.height)) T[ks[j]] = c.height; });
+    } catch (e) { console.warn('terrain sampling failed', e); return; }
+  }
+}
 
-              // Always reset state first
-              isDragging = false;
-              isResizing = false;
+async function fillElevationFromTerrain() {
+  try {
+    const tp = await terrainReady;
+    const cartos = [];
+    for (let k = 0; k < route.m; k++) { const p = route.pointAt(k * route.step); cartos.push(Cesium.Cartographic.fromDegrees(p.lon, p.lat)); }
+    const res = await Cesium.sampleTerrain(tp, 12, cartos);
+    route.setElevation(Float64Array.from(res, c => c.height || 0));
+    PROFILE.dirty = true;
+  } catch (e) { console.warn('elevation from terrain failed', e); }
+  route.ready = true;
+}
 
-              // Always remove listeners to prevent leaks
-              document.removeEventListener('mousemove', handleMove);
-              document.removeEventListener('touchmove', handleMove);
-              document.removeEventListener('mouseup', endDragOrResize);
-              document.removeEventListener('touchend', endDragOrResize);
-              document.removeEventListener('touchcancel', endDragOrResize);
+// ------------------------------------------------------------------ 3D photo layer (Google Photorealistic 3D Tiles via Cesium ion)
+let layerBusy = false;
+async function setLayer(l) {
+  if (layerBusy) return;
+  if (l === 'g3d' && !tilesOn) {
+    layerBusy = true;
+    try {
+      if (!tileset) {
+        toast('3D-Fotos werden geladen …', 2500);
+        tileset = await Cesium.createGooglePhotorealistic3DTileset({ onlyUsingWithGoogleGeocoder: true }, { maximumScreenSpaceError: 18 });
+        scene.primitives.add(tileset);
+      }
+      tileset.show = true; globe.show = false; tilesOn = true; surfaceHeight.cache = {};
+    } catch (e) {
+      console.error(e);
+      toast('3D-Fotos nicht verfügbar. Im Cesium-ion-Konto unter „Asset Depot“ das Asset „Google Photorealistic 3D Tiles“ hinzufügen.', 9000);
+    }
+    layerBusy = false;
+  } else if (l === 'sat' && tilesOn) {
+    if (tileset) tileset.show = false;
+    globe.show = true; tilesOn = false;
+  }
+  store.set('layer', tilesOn ? 'g3d' : 'sat');
+  markButtons();
+}
 
-              // Only save state if we were actually dragging/resizing
-              if (wasDragging || wasResizing) {
-                  saveState();
-                  // If we were resizing, clear pending timeout and update immediately
-                  if (wasResizing) {
-                      if (resizeTimeout) {
-                          clearTimeout(resizeTimeout);
-                          resizeTimeout = null;
-                      }
-                      updateFontSize();
-                  }
-              }
-          }
+// ------------------------------------------------------------------ connection to QZ
+const qz = {
+  ws: null,
+  connect() {
+    if (!location.host) return;
+    const parts = location.pathname.split('/'), tpl = parts.length >= 2 ? parts[parts.length - 2] : 'googlemaps';
+    let ws;
+    try { ws = new WebSocket((location.protocol === 'https:' ? 'wss://' : 'ws://') + location.host + '/' + tpl + '-ws'); }
+    catch (e) { setTimeout(() => qz.connect(), 3000); return; }
+    ws.onopen = () => { qz.ws = ws; qz.requestGpx(); };
+    ws.onclose = () => { qz.ws = null; setTimeout(() => qz.connect(), 3000); };
+    ws.onerror = () => { try { ws.close(); } catch (e) { /* ignore */ } };
+    ws.onmessage = ev => { let m; try { m = JSON.parse(ev.data); } catch (e) { return; } qz.onMessage(m); };
+  },
+  send(msg) { if (qz.ws && qz.ws.readyState === 1) qz.ws.send(JSON.stringify({ msg })); },
+  requestGpx() {
+    if (route) return;
+    qz.send('getgpxbase64');
+    clearTimeout(qz.gpxTimer); qz.gpxTimer = setTimeout(() => qz.requestGpx(), 3000);
+  },
+  onMessage(m) {
+    if (m.msg === 'R_getgpxbase64') {
+      const c = m.content;
+      if (route || typeof c !== 'string' || c.indexOf(',') < 0) return;
+      try {
+        const bin = atob(c.slice(c.indexOf(',') + 1)), bytes = new Uint8Array(bin.length);
+        for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
+        loadRoute(new TextDecoder('utf-8').decode(bytes));
+      } catch (e) { console.error(e); }
+    } else if (m.msg === 'workout' && m.content) {
+      const w = m.content;
+      hud.metrics(w);
+      if (route && Number.isFinite(w.latitude) && Number.isFinite(w.longitude) && (w.latitude !== 0 || w.longitude !== 0)) {
+        rider.measure(route.project(w.longitude, w.latitude, rider.s), (+w.speed || 0) / 3.6);
+      }
+    }
+  },
+};
 
-          // Check if touch/click is inside container
-          function isInsideContainer(x, y) {
-              const rect = container.getBoundingClientRect();
-              return (
-                  x >= rect.left &&
-                  x <= rect.right &&
-                  y >= rect.top &&
-                  y <= rect.bottom
-              );
-          }
+// ------------------------------------------------------------------ demo ride (preview without QZ)
+function solveSpeed(P, gPct) {
+  const m = 85, gr = 9.81, crr = 0.005, cda = 0.32, rho = 1.1, th = Math.atan(gPct / 100);
+  const F = m * gr * (Math.sin(th) + crr * Math.cos(th));
+  let lo = 0, hi = 30;
+  for (let i = 0; i < 40; i++) { const v = (lo + hi) / 2; if (v * F + 0.5 * rho * cda * v * v * v > P) hi = v; else lo = v; }
+  return (lo + hi) / 2;
+}
+class Demo {
+  constructor(o) {
+    this.s = clamp((o.startKm || 0) * 1000, 0, route.total);
+    this.speedup = o.speedup || 1; this.tick = 0; this.elapsed = this.s / 4; this.kj = this.elapsed * 0.19;
+  }
+  update(dt) {
+    const sdt = dt * this.speedup, g = route.gradeAt(this.s);
+    const P = clamp(180 + 14 * g, 110, 330), v = Math.min(solveSpeed(P, g), 16.7);
+    this.s = Math.min(route.total, this.s + v * sdt);
+    if (this.s < route.total) { this.elapsed += sdt; this.kj += P * sdt / 1000; }
+    this.tick -= dt;
+    if (this.tick > 0) return;
+    this.tick += 1;
+    const moving = this.s < route.total, el = Math.floor(this.elapsed);
+    rider.measure(this.s + (moving ? (Math.random() - 0.5) * 4 : 0), moving ? v * this.speedup : 0);
+    hud.metrics({
+      speed: moving ? v * 3.6 : 0, watts: moving ? Math.round(P + (Math.random() - 0.5) * 12) : 0,
+      cadence: moving ? Math.round(clamp(84 - g * 1.6, 58, 96) + (Math.random() - 0.5) * 3) : 0,
+      resistance: clamp(Math.round(11.5 + 2 * g), 1, CFG.maxLevel), inclination: g, heart: 0, calories: this.kj,
+      elapsed_h: Math.floor(el / 3600), elapsed_m: Math.floor(el / 60) % 60, elapsed_s: el % 60,
+    });
+  }
+}
 
-          // Add event listeners for dragging/resizing on container
-          container.addEventListener('mousedown', function(e) {
-              const coords = getCoordinates(e);
-              // Double check we're actually inside the container
-              if (!isInsideContainer(coords.x, coords.y)) {
-                  return;
-              }
-              if (isInResizeHandle(coords.x, coords.y)) {
-                  startResize(e);
-              } else {
-                  startDrag(e);
-              }
-          });
-          container.addEventListener('touchstart', function(e) {
-              const coords = getCoordinates(e);
-              // Double check we're actually inside the container
-              if (!isInsideContainer(coords.x, coords.y)) {
-                  return;
-              }
-              if (isInResizeHandle(coords.x, coords.y)) {
-                  startResize(e);
-              } else {
-                  startDrag(e);
-              }
-          }, { passive: false });
+// ------------------------------------------------------------------ boot
+async function boot() {
+  $('profile').classList.toggle('compact', PROFILE.compact);
+  markButtons();
+  status('3D-Karte wird geladen …');
+  try { await loadCesium(); } catch (e) { status('Die 3D-Karte braucht eine Internetverbindung (CesiumJS konnte nicht geladen werden).', true); return; }
+  if (!CFG.offline) { try { await loadScript('cesium-key.js'); } catch (e) { /* not available in previews */ } }
+  if (!CFG.offline && Cesium.Ion.defaultAccessToken === '') status('Im Build fehlt der Cesium-ion-Schlüssel (cesium-key.js), daher kein Gelände/Satellitenbild.', true);
+  try { initMap(); } catch (e) { console.error(e); status('3D-Darstellung nicht möglich: ' + e.message, true); return; }
+  initInput();
+  window.addEventListener('resize', layout);
+  if (window.ResizeObserver) { const ro = new ResizeObserver(() => layout()); ro.observe($('metrics')); ro.observe($('profile')); }
+  if (store.get('layer', 'sat') === 'g3d') setLayer('g3d');
+  if (CFG.demo) {
+    $('demoBadge').style.display = 'block';
+    try {
+      const text = CFG.demo.gpxText || await (await fetch(CFG.demo.gpxUrl)).text();
+      loadRoute(text);
+      if (route) { demo = new Demo(CFG.demo); status(''); }
+    } catch (e) { status('Demo-Strecke konnte nicht geladen werden: ' + e.message, true); }
+  } else {
+    status('Warte auf die GPX-Strecke von QZ …');
+    qz.connect();
+  }
+}
 
-          // Load saved state and set initial font size
-          loadState();
-          updateFontSize();
-          updateChartPosition();
-      })();
-    </script>
-  </body>
+window.qzmap = { cfg: CFG, rider, cam, setZoom, setLayer, PRESETS, riderCart, LAYOUT, get route() { return route; }, get scene() { return scene; }, get widget() { return widget; }, get demo() { return demo; } };
+boot();
+})();
+</script>
+</body>
 </html>
