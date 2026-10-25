@@ -4,6 +4,12 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
 <title>QZ 3D-Karte</title>
+<script>
+  // Progress and errors for the app (GoogleMap.qml reads window.qzmapDiag)
+  window.qzmapDiag = { stage: 'start', status: '', error: '' };
+  window.addEventListener('error', function (e) { window.qzmapDiag.error = String(e.message || e) + (e.filename ? ' @' + e.filename.split('/').pop() + ':' + e.lineno : ''); });
+  window.addEventListener('unhandledrejection', function (e) { window.qzmapDiag.error = 'Promise: ' + String((e.reason && e.reason.message) || e.reason); });
+</script>
 <!--
   3D route view for GPX rides (own build).
   CesiumJS + Cesium ion (Cesium World Terrain, Bing Maps aerial imagery, optional Google Photorealistic 3D Tiles).
@@ -19,10 +25,10 @@ html,body{margin:0;padding:0;width:100%;height:100%;overflow:hidden;background:#
   font-family:Roboto,"Segoe UI",system-ui,-apple-system,"Helvetica Neue",Arial,sans-serif;
   -webkit-user-select:none;user-select:none;-webkit-tap-highlight-color:transparent;-webkit-text-size-adjust:100%}
 button{font:inherit;color:inherit}
-#map{position:absolute;inset:0;touch-action:none}
+#map{position:absolute;top:0;left:0;right:0;bottom:0;touch-action:none}
 .cesium-widget,.cesium-widget canvas{width:100%;height:100%;display:block;touch-action:none;outline:none}
 .cesium-widget{position:relative;overflow:hidden}
-#hud{position:absolute;inset:0;pointer-events:none}
+#hud{position:absolute;top:0;left:0;right:0;bottom:0;pointer-events:none}
 .pe{pointer-events:auto}
 .panel{background:var(--panel);border:1px solid var(--line);border-radius:16px;box-shadow:0 4px 18px rgba(0,0,0,.35)}
 
@@ -222,6 +228,8 @@ async function loadCesium() {
 
 let statusTimer = 0, toastTimer = 0;
 function status(msg, isError) {
+  window.qzmapDiag.status = msg || '';
+  if (isError) window.qzmapDiag.error = msg;
   const el = $('status');
   el.textContent = msg || ''; el.style.display = msg ? 'block' : 'none'; el.classList.toggle('err', !!isError);
   clearTimeout(statusTimer);
@@ -980,6 +988,7 @@ function frame() {
 }
 
 function startRig() {
+  window.qzmapDiag.stage = 'fahrt';
   cam.active = true;
   scene.screenSpaceCameraController.enableInputs = false;
   cam.t = 1; cam.tau = 0.9; // fly in from the overview
@@ -1031,6 +1040,7 @@ function buildRoute() {
 
 function loadRoute(text) {
   try { route = new Route(text); } catch (e) { console.error(e); status(e.message, true); return; }
+  window.qzmapDiag.stage = 'strecke-ok';
   // fixed, friendly daylight: mid-September, 10:00 local solar time at the route
   const yr = new Date().getUTCFullYear();
   widget.clock.shouldAnimate = false;
@@ -1183,10 +1193,13 @@ async function boot() {
   $('profile').classList.toggle('compact', PROFILE.compact);
   markButtons();
   status('3D-Karte wird geladen …');
+  window.qzmapDiag.stage = 'cesium-laden';
   try { await loadCesium(); } catch (e) { status('Die 3D-Karte braucht eine Internetverbindung (CesiumJS konnte nicht geladen werden).', true); return; }
   if (!CFG.offline) { try { await loadScript('cesium-key.js'); } catch (e) { /* not available in previews */ } }
   if (!CFG.offline && Cesium.Ion.defaultAccessToken === '') status('Im Build fehlt der Cesium-ion-Schlüssel (cesium-key.js), daher kein Gelände/Satellitenbild.', true);
+  window.qzmapDiag.stage = 'cesium-ok';
   try { initMap(); } catch (e) { console.error(e); status('3D-Darstellung nicht möglich: ' + e.message, true); return; }
+  window.qzmapDiag.stage = 'karte-ok';
   initInput();
   window.addEventListener('resize', layout);
   if (window.ResizeObserver) { const ro = new ResizeObserver(() => layout()); ro.observe($('metrics')); ro.observe($('profile')); }

@@ -8,37 +8,105 @@ import QtWebView 1.1
 ColumnLayout {
     signal popupclose()
     id: column1
-    spacing: 10
+    spacing: 0
     anchors.fill: parent
     Settings {
         id: settings
         property string maps_type: "3D"
     }
-    WebView {
-        id: webView
-        anchors.fill: parent
-        url: "http://localhost:" + settings.value("template_inner_QZWS_port") + "/" + (settings.value("maps_type") === "3D" ? "googlemaps" : "maps2d") + "/maps.htm"
-        visible: true
-        onLoadingChanged: {
-            if (loadRequest.errorString)
-                console.error(loadRequest.errorString);
+    readonly property string mapUrl: "http://localhost:" + settings.value("template_inner_QZWS_port") + "/" +
+                                     (settings.value("maps_type") === "3D" ? "googlemaps" : "maps2d") + "/maps.htm"
+    property int diagChecks: 0
+
+    // Load state and diagnostics. Kept above the web view: the native web view covers anything on top of it.
+    RowLayout {
+        id: statusBar
+        Layout.fillWidth: true
+        visible: statusLabel.text !== ""
+        spacing: 8
+        Label {
+            id: statusLabel
+            Layout.fillWidth: true
+            Layout.leftMargin: 8
+            wrapMode: Text.WordWrap
+            text: ""
+        }
+        Button {
+            text: qsTr("Neu laden")
+            onClicked: column1.loadMap(true)
         }
     }
 
-    Button {
-        id: closeButton
-        height: 50
-        width: parent.width
-        text: "Close"
-        Layout.alignment: Qt.AlignCenter | Qt.AlignVCenter
-        onClicked: {
-            popupclose();
-        }
-        anchors {
-            bottom: parent.bottom
+    WebView {
+        id: webView
+        Layout.fillWidth: true
+        Layout.fillHeight: true
+        onLoadingChanged: {
+            if (loadRequest.status === WebView.LoadStartedStatus) {
+                statusLabel.text = qsTr("Karte wird geladen …");
+            } else if (loadRequest.status === WebView.LoadSucceededStatus) {
+                statusLabel.text = qsTr("Seite geladen, Karte startet …");
+                column1.diagChecks = 0;
+                diagTimer.restart();
+            } else if (loadRequest.status === WebView.LoadFailedStatus) {
+                statusLabel.text = qsTr("Karte konnte nicht geladen werden: ") + loadRequest.errorString;
+                console.error("map load failed " + loadRequest.errorString + " " + loadRequest.url);
+            }
         }
     }
-     Component.onCompleted: {
-         headerToolbar.visible = true;
-     }
+
+    // Start loading only once the page is on screen: a web view that starts loading while it is still
+    // hidden inside the Loader can stay white on Android. "Neu laden" forces a fresh load.
+    function loadMap(force) {
+        if (webView.url.toString() !== column1.mapUrl) {
+            webView.url = column1.mapUrl;
+        } else if (force) {
+            webView.reload();
+        }
+    }
+
+    Timer {
+        id: loadTimer
+        interval: 300
+        onTriggered: column1.loadMap(false)
+    }
+
+    // Ask the page how far it got (window.qzmapDiag in googlemaps/maps.htm) and show problems in the status line
+    Timer {
+        id: diagTimer
+        interval: 2000
+        repeat: true
+        onTriggered: {
+            column1.diagChecks++;
+            webView.runJavaScript("JSON.stringify(window.qzmapDiag || null)", function(result) {
+                var d = null;
+                try { d = JSON.parse(result); } catch (e) { d = null; }
+                if (!d) {
+                    statusLabel.text = qsTr("Seite geladen, aber das Karten-Skript läuft nicht.");
+                } else if (d.error) {
+                    statusLabel.text = qsTr("Fehler in der Karte: ") + d.error + " (" + d.stage + ")";
+                } else if (column1.diagChecks >= 8) {
+                    statusLabel.text = "";
+                    diagTimer.stop();
+                } else {
+                    statusLabel.text = qsTr("Karte: ") + d.stage + (d.status ? " – " + d.status : "");
+                }
+            });
+            if (column1.diagChecks >= 15)
+                diagTimer.stop();
+        }
+    }
+
+    // Opened again later: load fresh, so a page that stayed white the first time gets another chance
+    StackView.onActivated: {
+        if (webView.url.toString() === column1.mapUrl)
+            webView.reload();
+        else
+            loadTimer.restart();
+    }
+
+    Component.onCompleted: {
+        headerToolbar.visible = true;
+        loadTimer.restart();
+    }
 }
