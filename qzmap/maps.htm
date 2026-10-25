@@ -1271,7 +1271,10 @@ function updateTilesGround(p, now) {
   const hs = surfaceHeight(p.lon, p.lat, 'rider');
   if (hs == null) return;
   const d = hs - e;
-  if (tilesGround.off == null || Math.abs(d - tilesGround.off) > 300) tilesGround.off = d;
+  // ignore samples from tiles that are still loading (they can be kilometres off)
+  const ter = route.terrainAt(rider.s);
+  if (Number.isFinite(ter) ? Math.abs(d - (ter - e)) > 80 : Math.abs(d) > 200) return;
+  if (tilesGround.off == null) tilesGround.off = d;
   else if (d < tilesGround.off) tilesGround.off = follow(tilesGround.off, d, dts, 0.5);
   else tilesGround.off += Math.min(d - tilesGround.off, 0.12 * dts);
   // keep the drawn line in step with the learned offset
