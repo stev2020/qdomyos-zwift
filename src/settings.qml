@@ -1566,7 +1566,7 @@ import AndroidStatusBar 1.0
             // from version 2.13.37
             property bool theme_tile_icon_enabled: true
             property string theme_tile_background_color: "#303030"
-            property string theme_status_bar_background_color: "#800080"
+            property string theme_status_bar_background_color: "#10161e"
 
             // from version 2.13.43
             property string theme_background_color: "#303030"

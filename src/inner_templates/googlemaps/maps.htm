@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
-<title>QZ 3D-Karte</title>
+<title>FunRun Karte bar=1</title>
 <script>
   // Progress and errors for the app (GoogleMap.qml reads window.qzmapDiag)
   window.qzmapDiag = { stage: 'start', status: '', error: '' };
@@ -77,7 +77,7 @@ button{font:inherit;color:inherit}
 #pcanvas{flex:1;width:100%;min-height:0;display:block}
 #profile.compact .pstats .big{font-size:14px}
 @media (max-width:1100px){.legend{display:none}}
-@media (max-width:700px){.val{font-size:20px}.cell{padding:6px 10px}#presets button,#layers button{padding:0 11px;font-size:14px}}
+@media (max-width:700px){.val{font-size:20px}.cell{padding:6px 10px}#presets button,#layers button,#tools button{padding:0 11px;font-size:14px}}
 
 .poi{position:absolute;left:0;top:0;width:0;height:0;will-change:transform;pointer-events:none;display:none}
 #rider .halo{position:absolute;left:-29px;top:-29px;width:58px;height:58px;border-radius:50%;background:rgba(255,122,26,.18);
@@ -103,6 +103,28 @@ button{font:inherit;color:inherit}
 #status.err{border-color:rgba(229,57,53,.6)}
 #toast{position:absolute;left:50%;transform:translateX(-50%);top:46%;padding:12px 18px;font-size:15px;line-height:1.4;max-width:min(560px,90%);
   text-align:center;display:none}
+
+/* switched off by the rider: a tap on the map hides everything but the map (the profile has its own switch) */
+.cell.hide,.hidden{display:none !important}
+body.bare #metrics,body.bare #camBar,body.bare #zoomCol{display:none}
+#profile.off{display:none}
+#tools button{padding:0 12px}
+#tools svg{width:22px;height:22px;display:block}
+#sheet{position:absolute;top:0;left:0;right:0;bottom:0;display:none;align-items:center;justify-content:center;background:rgba(5,8,12,.55);z-index:5}
+#sheet.open{display:flex}
+#sheet .box{width:min(620px,94%);max-height:88%;overflow:auto;padding:14px 18px 16px;-webkit-overflow-scrolling:touch}
+.shead{display:flex;align-items:center;justify-content:space-between;gap:12px}
+.shead b{font-size:18px}
+#sheetDone{appearance:none;-webkit-appearance:none;border:0;background:var(--accent);color:#fff;font-weight:700;font-size:15px;padding:0 18px;
+  min-height:40px;border-radius:10px;cursor:pointer}
+#sheet h3{margin:14px 0 4px;font-size:12px;letter-spacing:.13em;text-transform:uppercase;color:var(--muted);font-weight:600}
+.opts{display:grid;grid-template-columns:repeat(auto-fill,minmax(170px,1fr));gap:0 14px}
+.opts label{display:flex;align-items:center;gap:10px;font-size:16px;min-height:42px;cursor:pointer}
+.opts input{width:22px;height:22px;margin:0;accent-color:var(--accent)}
+.range{display:flex;align-items:center;gap:14px}
+.range input{flex:1;height:34px;margin:0;accent-color:var(--accent)}
+.range span{min-width:80px;text-align:right;font-weight:700;font-variant-numeric:tabular-nums}
+.hint{margin:14px 0 0;font-size:13px;line-height:1.45;color:var(--muted)}
 </style>
 </head>
 <body>
@@ -125,6 +147,11 @@ button{font:inherit;color:inherit}
     </div>
     <div class="seg panel pe" id="layers">
       <button data-l="sat" class="on">Satellit</button><button data-l="g3d">3D-Fotos</button>
+    </div>
+    <div class="seg panel pe" id="tools">
+      <button id="btnProfile" title="Höhenprofil ein/aus"><svg viewBox="0 0 24 24"><path d="M2 18.6h20v1.8H2z" fill="currentColor"/>
+        <path d="M2.6 17l5.3-6.6 3.4 3.7 3.5-5.6 6.6 8.5z" fill="currentColor" opacity=".85"/></svg></button>
+      <button id="btnSettings" title="Anzeige einstellen"><svg viewBox="0 0 24 24"><path fill="currentColor" d="M19.14 12.94c.04-.3.06-.61.06-.94 0-.32-.02-.64-.07-.94l2.03-1.58a.49.49 0 0 0 .12-.61l-1.92-3.32a.49.49 0 0 0-.59-.22l-2.39.96c-.5-.38-1.03-.7-1.62-.94l-.36-2.54a.48.48 0 0 0-.48-.41h-3.84c-.24 0-.43.17-.47.41l-.36 2.54c-.59.24-1.13.57-1.62.94l-2.39-.96a.48.48 0 0 0-.59.22L2.74 8.87a.47.47 0 0 0 .12.61l2.03 1.58c-.05.3-.09.63-.09.94s.02.64.07.94l-2.03 1.58a.49.49 0 0 0-.12.61l1.92 3.32c.12.22.37.29.59.22l2.39-.96c.5.38 1.03.7 1.62.94l.36 2.54c.05.24.24.41.48.41h3.84c.24 0 .44-.17.47-.41l.36-2.54c.59-.24 1.13-.56 1.62-.94l2.39.96c.22.08.47 0 .59-.22l1.92-3.32a.48.48 0 0 0-.12-.61l-2.01-1.58zM12 15.6a3.6 3.6 0 1 1 0-7.2 3.6 3.6 0 0 1 0 7.2z"/></svg></button>
     </div>
     <div id="demoBadge" class="panel">Vorschau · simulierte Fahrt</div>
   </div>
@@ -163,6 +190,20 @@ button{font:inherit;color:inherit}
 
   <div id="status" class="panel"></div>
   <div id="toast" class="panel"></div>
+</div>
+
+<div id="sheet">
+  <div class="box panel">
+    <div class="shead"><b>Anzeige einstellen</b><button id="sheetDone">Fertig</button></div>
+    <h3>Werte oben</h3>
+    <div class="opts" id="optCells"></div>
+    <h3>Verfolger-Abstand</h3>
+    <div class="range"><input type="range" id="followRange" min="10" max="90" step="1"><span id="followLabel"></span></div>
+    <h3>Knöpfe</h3>
+    <div class="opts" id="optButtons"></div>
+    <p class="hint">Tippen auf die Karte blendet alle Anzeigen und die obere Leiste aus und wieder ein.
+      Das Höhenprofil schaltest du extra mit dem Profil-Knopf neben dem Zahnrad.</p>
+  </div>
 </div>
 
 <script>
@@ -560,22 +601,73 @@ let widget, scene, camera, globe, route = null, routeMat = null, routePrim = nul
 let terrainReady = null;
 const riderCart = { pos: null, h: 0, hOff: null, lon: 0, lat: 0 };
 const PROFILE = { mode: store.get('pmode', 'all'), compact: store.get('pcompact', false), dirty: true, lastS: -1, lastT: 0 };
-const LAYOUT = { W: 1, H: 1, freeTop: 0, freeBot: 1 };
+const LAYOUT = { W: 1, H: 1, freeTop: 0, freeBot: 1, tTop: 0, tBot: 1, init: false };
 
 // ------------------------------------------------------------------ camera rig
 // Zoom parameter t in [0,1]: t = 0 first person, t = 1 about 5 km away. Distance grows exponentially.
 const dist = t => 1.97 * (Math.exp(7.84 * t) - 1);
 const tForDist = d => Math.log(d / 1.97 + 1) / 7.84;
-const PRESETS = { ich: 0, verfolger: tForDist(35), ueberblick: tForDist(1800) };
+// follower distance: the rider's choice (menu), by default the middle of the zoom slider (about 100 m)
+const PRESETS = { ich: 0, verfolger: clamp(+store.get('followT', 0.5) || 0.5, 0.1, 0.9), ueberblick: tForDist(1800) };
 const EPS_TAB = [[0, 8], [0.5, 8.5], [1.08, 10], [1.78, 15], [2.48, 23], [3.18, 33], [3.7, 44]]; // camera elevation angle (deg) by log10(distance)
 const FREE_TAB = [[0, 0.86], [1.08, 0.84], [2, 0.76], [3, 0.66], [3.7, 0.6]]; // rider position inside the free map area (0 top .. 1 bottom)
 const cam = { t: 1, tTarget: clamp(+store.get('zoom', PRESETS.verfolger) || 0, 0, 1), tau: 0.5, psi: 0, lastTouch: -1e9, head: null, lift: 0, grad: 0, active: false, d: 0 };
+// a zoom kept from the old, closer follower preset moves to the new one
+if (store.get('followT', null) == null && Math.abs(cam.tTarget - tForDist(35)) < 0.005) cam.tTarget = PRESETS.verfolger;
 const EYE = 1.55;
 const _enu = {}, _v3 = {}, _c3 = {}, _carto = {};
 
 function setZoom(t, tau) {
   cam.tTarget = clamp(t, 0, 1); cam.tau = tau == null ? 0.12 : tau;
   store.set('zoom', cam.tTarget);
+}
+
+// ------------------------------------------------------------------ what is shown (the rider's choice, kept in the page storage)
+const CELL_NAMES = { 'm-grade': 'Steigung', 'm-level': 'Stufe', 'm-speed': 'Tempo', 'm-power': 'Leistung', 'm-cad': 'Trittfrequenz',
+  'm-hr': 'Puls', 'm-time': 'Zeit', 'm-dist': 'Strecke' };
+const BUTTON_NAMES = { presets: 'Ich · Verfolger · Überblick', layers: 'Satellit · 3D-Fotos', zoomTrack: 'Zoom-Regler', compass: 'Kompass' };
+const UI = {
+  bare: false, // after a tap on the map: only the map (and the profile, if switched on)
+  cells: store.get('cells', Object.keys(CELL_NAMES)),
+  buttons: store.get('buttons', Object.keys(BUTTON_NAMES)),
+  profile: store.get('profile', true),
+};
+function updateMetricsPanel() {
+  let any = false;
+  document.querySelectorAll('#metrics .cell').forEach(c => { if (!c.classList.contains('hide') && !c.classList.contains('off')) any = true; });
+  $('metrics').classList.toggle('hidden', !any);
+}
+function applyUI() {
+  for (const id of Object.keys(CELL_NAMES)) $(id).classList.toggle('hide', UI.cells.indexOf(id) < 0);
+  updateMetricsPanel();
+  for (const id of Object.keys(BUTTON_NAMES)) $(id).classList.toggle('hidden', UI.buttons.indexOf(id) < 0);
+  $('profile').classList.toggle('off', !UI.profile);
+  $('btnProfile').classList.toggle('on', UI.profile);
+  document.body.classList.toggle('bare', UI.bare);
+  // the app hides its own top bar together with the displays (GoogleMap.qml reads the title)
+  document.title = 'FunRun Karte bar=' + (UI.bare ? '0' : '1');
+  layout();
+}
+function toggleBare() { UI.bare = !UI.bare; applyUI(); }
+function showFollow() { $('followLabel').textContent = '≈ ' + Math.round(dist(PRESETS.verfolger)).toLocaleString('de-DE') + ' m'; }
+function openSheet() {
+  const add = (box, names, list) => {
+    box.textContent = '';
+    for (const id of Object.keys(names)) {
+      const lab = document.createElement('label'), cb = document.createElement('input');
+      cb.type = 'checkbox'; cb.checked = UI[list].indexOf(id) >= 0;
+      cb.addEventListener('change', () => {
+        UI[list] = cb.checked ? UI[list].concat(id) : UI[list].filter(x => x !== id);
+        store.set(list, UI[list]); applyUI();
+      });
+      lab.appendChild(cb); lab.appendChild(document.createTextNode(names[id])); box.appendChild(lab);
+    }
+  };
+  add($('optCells'), CELL_NAMES, 'cells');
+  add($('optButtons'), BUTTON_NAMES, 'buttons');
+  $('followRange').value = Math.round(PRESETS.verfolger * 100);
+  showFollow();
+  $('sheet').classList.add('open');
 }
 
 function fovy() {
@@ -592,7 +684,8 @@ function surfaceHeight(lonDeg, latDeg, slot) {
   // each sample renders the 3D photos once more from above, so keep it rare (phones)
   if (now - c.t < 400 && c.v != null) return c.v;
   c.t = now;
-  const h = scene.sampleHeightSupported ? scene.sampleHeight(_carto) : undefined;
+  // (our own route line must not count as surface)
+  const h = scene.sampleHeightSupported ? scene.sampleHeight(_carto, tilesRoute ? [tilesRoute] : undefined) : undefined;
   if (h !== undefined) c.v = h;
   return c.v;
 }
@@ -607,6 +700,9 @@ const routeRef = s => { const t = route.terrainAt(s); return Number.isFinite(t) 
 // Ground height as currently rendered (so marker, route line and camera agree while tiles refine),
 // as long as it is plausible compared with the expected height.
 function routeGround(s, slot) {
+  // 3D photos: the photo surface is the tree tops where the road runs under trees, so follow the route
+  // profile lifted by the offset learned on open road (see updateTilesGround)
+  if (tilesOn) return tilesGround.off == null ? routeRef(s) : route.eleAt(s) + tilesGround.off;
   const ref = routeRef(s);
   if (!slot) return ref;
   const pt = route.pointAt(s, routeGround.p || (routeGround.p = {}));
@@ -687,23 +783,47 @@ function gestureMove() {
 }
 function initInput() {
   const el = $('map');
+  // a short tap without moving switches the displays (and the app's top bar) off and on again
+  const tap = { id: null, x: 0, y: 0, t: 0, ok: false };
   el.addEventListener('pointerdown', e => {
+    if (tap.id === null && input.pts.size === 0) { tap.id = e.pointerId; tap.x = e.clientX; tap.y = e.clientY; tap.t = performance.now(); tap.ok = true; }
+    else tap.ok = false; // second finger: a gesture
     if (!cam.active) return;
     try { el.setPointerCapture(e.pointerId); } catch (err) { /* ignore */ }
     input.pts.set(e.pointerId, { x: e.clientX, y: e.clientY });
     input.active = true; cam.lastTouch = performance.now(); gestureStart();
   });
   el.addEventListener('pointermove', e => {
+    if (e.pointerId === tap.id && Math.hypot(e.clientX - tap.x, e.clientY - tap.y) > 12) tap.ok = false;
     const p = input.pts.get(e.pointerId);
     if (!p) return;
     p.x = e.clientX; p.y = e.clientY; cam.lastTouch = performance.now(); gestureMove();
   });
+  el.addEventListener('pointerup', e => {
+    if (e.pointerId !== tap.id) return;
+    if (tap.ok && performance.now() - tap.t < 450) toggleBare();
+    tap.id = null;
+  });
+  el.addEventListener('pointercancel', e => { if (e.pointerId === tap.id) tap.id = null; });
   const end = e => {
     if (!input.pts.delete(e.pointerId)) return;
     cam.lastTouch = performance.now();
     if (input.pts.size) gestureStart(); else { input.active = false; input.mode = null; }
   };
   ['pointerup', 'pointercancel', 'lostpointercapture'].forEach(t => el.addEventListener(t, end));
+  // profile on/off, settings menu
+  $('btnProfile').addEventListener('click', () => { UI.profile = !UI.profile; store.set('profile', UI.profile); applyUI(); });
+  $('btnSettings').addEventListener('click', openSheet);
+  $('sheetDone').addEventListener('click', () => $('sheet').classList.remove('open'));
+  $('sheet').addEventListener('click', e => { if (e.target === $('sheet')) $('sheet').classList.remove('open'); });
+  $('followRange').addEventListener('input', e => {
+    const old = PRESETS.verfolger;
+    PRESETS.verfolger = clamp(+e.target.value / 100, 0.1, 0.9);
+    store.set('followT', PRESETS.verfolger);
+    showFollow();
+    if (Math.abs(cam.tTarget - old) < 0.03) setZoom(PRESETS.verfolger, 0.3); // follower view on: move along
+    layout();
+  });
   el.addEventListener('wheel', e => {
     if (!cam.active) return;
     e.preventDefault();
@@ -738,15 +858,19 @@ function markButtons() {
 // ------------------------------------------------------------------ layout
 function layout() {
   const W = window.innerWidth, H = window.innerHeight;
-  const mr = $('metrics').getBoundingClientRect(), pr = $('profile').getBoundingClientRect();
-  LAYOUT.W = W; LAYOUT.H = H; LAYOUT.freeTop = mr.bottom; LAYOUT.freeBot = pr.top;
-  const top = mr.bottom + 8;
+  // free map area between the values on top and the profile at the bottom (either can be switched off)
+  const shown = el => el.offsetParent !== null;
+  const mBot = shown($('metrics')) ? $('metrics').getBoundingClientRect().bottom : 0;
+  const pTop = shown($('profile')) ? $('profile').getBoundingClientRect().top : H;
+  LAYOUT.W = W; LAYOUT.H = H; LAYOUT.tTop = mBot; LAYOUT.tBot = pTop;
+  if (!LAYOUT.init || !cam.active) { LAYOUT.freeTop = mBot; LAYOUT.freeBot = pTop; LAYOUT.init = true; }
+  const top = mBot ? mBot + 8 : 10;
   $('camBar').style.top = top + 'px';
   $('zoomCol').style.top = top + 'px';
-  const th = clamp(pr.top - top - 8 - 64, 110, 300);
+  const th = clamp(pTop - top - 8 - 64, 110, 300);
   $('zoomTrack').style.height = th + 'px';
   for (const k of ['ueberblick', 'verfolger']) $('tick-' + k).style.top = (34 + (1 - PRESETS[k]) * (th - 68) - 1) + 'px';
-  $('credits').style.bottom = (H - pr.top + 6) + 'px';
+  $('credits').style.bottom = (H - pTop + 6) + 'px';
   if (camera) camera.frustum.fov = (W > H ? 66 : 62) * DEG;
   PROFILE.dirty = true;
 }
@@ -766,7 +890,7 @@ const hud = {
     if (m.cadence != null) setVal('m-cad', String(Math.round(+m.cadence)));
     const hr = +m.heart || 0;
     const hrCell = $('m-hr');
-    if ((hr > 0) === hrCell.classList.contains('off')) { hrCell.classList.toggle('off', !(hr > 0)); layout(); }
+    if ((hr > 0) === hrCell.classList.contains('off')) { hrCell.classList.toggle('off', !(hr > 0)); updateMetricsPanel(); layout(); }
     if (hr > 0) setVal('m-hr', String(Math.round(hr)));
     if (m.elapsed_h != null) setVal('m-time', (+m.elapsed_h || 0) + ':' + pad2(m.elapsed_m) + ':' + pad2(m.elapsed_s));
   },
@@ -976,7 +1100,8 @@ function initMap() {
   }
   widget = new Cesium.CesiumWidget($('map'), {
     baseLayer, terrain, scene3DOnly: true, creditContainer: $('credits'),
-    useBrowserRecommendedResolution: true, targetFrameRate: 60,
+    // 30 frames per second: smooth enough for riding, about half the work (battery) of 60
+    useBrowserRecommendedResolution: true, targetFrameRate: 30,
   });
   scene = widget.scene; camera = scene.camera; globe = scene.globe;
   terrainReady = new Promise(resolve => {
@@ -1018,6 +1143,9 @@ function frame() {
   const now = performance.now();
   const dt = lastFrame ? clamp((now - lastFrame) / 1000, 0, 0.1) : 0.016;
   lastFrame = now;
+  // free map area glides when displays are switched on or off, so the view does not jump
+  LAYOUT.freeTop = follow(LAYOUT.freeTop, LAYOUT.tTop, dt, 0.25);
+  LAYOUT.freeBot = follow(LAYOUT.freeBot, LAYOUT.tBot, dt, 0.25);
   if (!route || !route.ready) return;
   if (demo) demo.update(dt);
   rider.update(dt);
@@ -1025,8 +1153,9 @@ function frame() {
   const p = route.pointAt(rider.s, _ovc.rp || (_ovc.rp = {}));
   const eR = route.eleAt(rider.s);
   const ter = route.terrainAt(rider.s);
-  const hs = Number.isFinite(ter) ? ter : trusted(surfaceHeight(p.lon, p.lat, 'rider'), refHeight(rider.s), refTol());
+  const hs = Number.isFinite(ter) ? ter : tilesOn ? null : trusted(surfaceHeight(p.lon, p.lat, 'rider'), refHeight(rider.s), refTol());
   if (hs != null) riderCart.hOff = riderCart.hOff == null ? hs - eR : follow(riderCart.hOff, hs - eR, dt, 2.0);
+  if (tilesOn) updateTilesGround(p, now);
   const hT = routeGround(rider.s, 'rider');
   riderCart.h = riderCart.pos ? follow(riderCart.h, hT, dt, 0.2) : hT;
   riderCart.lon = p.lon; riderCart.lat = p.lat;
@@ -1034,7 +1163,9 @@ function frame() {
   riderCart.pos = Cesium.Cartesian3.fromDegrees(p.lon, p.lat, h, undefined, riderCart.pos || new Cesium.Cartesian3());
   if (!cam.active) startRig();
   updateCamera(dt, now);
-  if (routeMat) routeMat.uniforms.split = rider.s / route.total;
+  const split = rider.s / route.total;
+  if (routeMat) routeMat.uniforms.split = split;
+  if (tilesRoute) { tilesRoute.matFront.uniforms.split = split; tilesRoute.matBehind.uniforms.split = split; }
 }
 
 function startRig() {
@@ -1043,9 +1174,9 @@ function startRig() {
   scene.screenSpaceCameraController.enableInputs = false;
   cam.t = 1; cam.tau = 0.9; // fly in from the overview
   status('');
-  if (!store.get('hint', false)) {
-    store.set('hint', true);
-    setTimeout(() => toast('Wischen ↔ dreht die Ansicht, ↕ zoomt. Oder: Ich · Verfolger · Überblick.', 6500), 2500);
+  if (!store.get('hint2', false)) {
+    store.set('hint2', true);
+    setTimeout(() => toast('Antippen blendet alle Anzeigen aus und wieder ein. Wischen ↔ dreht die Ansicht, ↕ zoomt. ⚙ stellt die Anzeige ein.', 7500), 2500);
   }
 }
 
@@ -1063,33 +1194,106 @@ czm_material czm_getMaterial(czm_materialInput materialInput) {
     material.diffuse = mix(outlineColor.rgb, aheadColor.rgb, core);
     material.alpha = 1.0 - smoothstep(0.90, 1.0, d);
   }
+  material.alpha *= dim;
   return material;
 }`;
 
-function buildRoute() {
-  routeMat = new Cesium.Material({
+function routeMaterial(type, dim) {
+  return new Cesium.Material({
     translucent: true,
     fabric: {
-      type: 'QzRouteLine',
+      type,
       uniforms: {
         aheadColor: Cesium.Color.fromCssColorString('#ff7a1a'),
         riddenColor: Cesium.Color.fromCssColorString('#f5f7f9'),
         outlineColor: Cesium.Color.fromCssColorString('#20160f'),
         split: 0.0,
+        dim,
       },
       source: ROUTE_GLSL,
     },
   });
+}
+
+function buildRoute() {
+  routeMat = routeMaterial('QzRouteLine', 1.0);
   routePrim = scene.groundPrimitives.add(new Cesium.GroundPolylinePrimitive({
     geometryInstances: new Cesium.GeometryInstance({ geometry: new Cesium.GroundPolylineGeometry({ positions: route.cart, width: 10.0 }) }),
     appearance: new Cesium.PolylineMaterialAppearance({ material: routeMat }),
     classificationType: Cesium.ClassificationType.BOTH,
     allowPicking: false,
   }));
+  routePrim.show = !tilesOn;
+  if (tilesOn) buildTilesRoute();
+}
+
+// With the 3D photos the ground line would lie on the tree tops wherever the road runs under trees. Instead the
+// route is drawn at terrain height (1 m above it), every 10 m along the profile grid (so the line's texture
+// coordinate runs evenly from start to finish, like the rider's progress); where trees or houses cover it,
+// it shows through half transparent.
+let tilesRoute = null;
+function buildTilesRoute() {
+  if (!route || !scene) return;
+  if (tilesRoute) { scene.primitives.remove(tilesRoute); tilesRoute = null; }
+  const r = route, pos = new Array(r.m), p = {};
+  for (let k = 0; k < r.m; k++) {
+    const s = Math.min(k * r.step, r.total);
+    r.pointAt(s, p);
+    pos[k] = Cesium.Cartesian3.fromDegrees(p.lon, p.lat, routeGround(s) + 1.0);
+  }
+  const matFront = routeMaterial('QzRouteLineFront', 1.0), matBehind = routeMaterial('QzRouteLineBehind', 0.45);
+  tilesRoute = scene.primitives.add(new Cesium.Primitive({
+    geometryInstances: new Cesium.GeometryInstance({
+      geometry: new Cesium.PolylineGeometry({ positions: pos, width: 9.0, arcType: Cesium.ArcType.NONE,
+        vertexFormat: Cesium.PolylineMaterialAppearance.VERTEX_FORMAT }),
+    }),
+    appearance: new Cesium.PolylineMaterialAppearance({ material: matFront, translucent: true }),
+    depthFailAppearance: new Cesium.PolylineMaterialAppearance({ material: matBehind, translucent: true }),
+    allowPicking: false,
+  }));
+  tilesRoute.matFront = matFront; tilesRoute.matBehind = matBehind;
+  tilesRoute.show = tilesOn;
+  tilesRoute.off = tilesGround.off; tilesRoute.t = performance.now();
+}
+
+// Height of the road under the 3D photos. The photo surface equals the road where it is open, but lies on the
+// tree tops (or roofs) where something covers it. So the rider follows the route profile (GPX heights), and the
+// offset between profile and photo surface is learned at the rider:
+//  - a lower surface is taken over quickly;
+//  - a sudden step up (more than 4 m between two samples a few metres apart) is something covering the road:
+//    the offset stays until the surface steps down again (or after 800 m, when it must be the road after all;
+//    150 m if the ride starts under it);
+//  - otherwise the offset follows a higher surface gradually (up to 15 cm per metre), because the GPX heights
+//    themselves drift against the real road.
+// Cesium World Terrain gives the start.
+const tilesGround = { off: null, t: 0, s: null, lastD: null, lastS: 0, covered: false, coverS: 0, coverMax: 800 };
+function updateTilesGround(p, now) {
+  if (now - tilesGround.t < 250) return;
+  tilesGround.t = now;
+  const g = tilesGround, s = rider.s, e = route.eleAt(s), ter = route.terrainAt(s);
+  const ds = g.s == null ? 0 : Math.abs(s - g.s);
+  g.s = s;
+  if (g.off == null && Number.isFinite(ter)) g.off = ter - e;
+  if (cam.d > 400) { g.lastD = null; return; } // from far away the photo tiles at the rider are still coarse
+  const hs = surfaceHeight(p.lon, p.lat, 'rider');
+  if (hs == null) return;
+  const d = hs - e;
+  // ignore samples from tiles that are still loading (they can be kilometres off)
+  if (Number.isFinite(ter) ? Math.abs(d - (ter - e)) > 80 : Math.abs(d) > 200) { g.lastD = null; return; }
+  if (g.off == null) { g.off = d; g.lastD = d; g.lastS = s; return; }
+  const jump = g.lastD == null ? (d - g.off > 6 ? 99 : 0) : Math.abs(s - g.lastS) < 20 ? d - g.lastD : 0;
+  g.lastD = d; g.lastS = s;
+  if (!g.covered && jump > 4) { g.covered = true; g.coverS = s; g.coverMax = jump === 99 ? 150 : 800; }
+  if (g.covered && (d < g.off + 3 || jump < -4 || Math.abs(s - g.coverS) > g.coverMax)) g.covered = false;
+  if (d < g.off) g.off = follow(g.off, d, 0.25, 0.4);
+  else if (!g.covered) g.off += Math.min(d - g.off, 0.15 * ds);
+  // keep the drawn line in step with the learned offset
+  if (tilesRoute && (tilesRoute.off == null || Math.abs(tilesGround.off - tilesRoute.off) > 2) && now - tilesRoute.t > 8000) buildTilesRoute();
 }
 
 function loadRoute(text) {
   try { route = new Route(text); } catch (e) { console.error(e); status(e.message, true); return; }
+  Object.assign(tilesGround, { off: null, s: null, lastD: null, covered: false });
   window.qzmapDiag.stage = 'strecke-ok';
   // fixed, friendly daylight: mid-September, 10:00 local solar time at the route
   const yr = new Date().getUTCFullYear();
@@ -1127,6 +1331,8 @@ async function sampleRouteTerrain(r) {
       res.forEach((c, j) => { if (c && Number.isFinite(c.height)) T[ks[j]] = c.height; });
     } catch (e) { console.warn('terrain sampling failed', e); return; }
   }
+  // the 3D-photo route line was drawn with estimated heights so far
+  if (route === r && tilesOn && tilesGround.off == null) buildTilesRoute();
 }
 
 async function fillElevationFromTerrain() {
@@ -1156,7 +1362,7 @@ async function setLayer(l) {
         scene.primitives.add(tileset);
       }
       tileset.show = true; globe.show = false; tilesOn = true; surfaceHeight.cache = {};
-      widget.targetFrameRate = 30; // steady 30 fps leaves time for loading tiles
+      if (route) { buildTilesRoute(); if (routePrim) routePrim.show = false; }
     } catch (e) {
       console.error(e);
       toast('3D-Fotos nicht verfügbar. Im Cesium-ion-Konto unter „Asset Depot“ das Asset „Google Photorealistic 3D Tiles“ hinzufügen.' + errInfo(e), 9000);
@@ -1165,7 +1371,8 @@ async function setLayer(l) {
   } else if (l === 'sat' && tilesOn) {
     if (tileset) tileset.show = false;
     globe.show = true; tilesOn = false;
-    widget.targetFrameRate = 60;
+    if (tilesRoute) tilesRoute.show = false;
+    if (routePrim) routePrim.show = true;
   }
   store.set('layer', tilesOn ? 'g3d' : 'sat');
   markButtons();
@@ -1246,6 +1453,7 @@ class Demo {
 async function boot() {
   $('profile').classList.toggle('compact', PROFILE.compact);
   markButtons();
+  applyUI();
   status('3D-Karte wird geladen …');
   window.qzmapDiag.stage = 'cesium-laden';
   try { await loadCesium(); } catch (e) { status('Die 3D-Karte braucht eine Internetverbindung (CesiumJS konnte nicht geladen werden).', true); return; }

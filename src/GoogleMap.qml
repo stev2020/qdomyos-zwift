@@ -17,6 +17,8 @@ ColumnLayout {
     readonly property string mapUrl: "http://localhost:" + settings.value("template_inner_QZWS_port") + "/" +
                                      (settings.value("maps_type") === "3D" ? "googlemaps" : "maps2d") + "/maps.htm"
     property int diagChecks: 0
+    property int autoReloads: 0
+    property bool pageActive: false
 
     // Load state and diagnostics. Kept above the web view: the native web view covers anything on top of it.
     RowLayout {
@@ -33,7 +35,7 @@ ColumnLayout {
         }
         Button {
             text: qsTr("Neu laden")
-            onClicked: column1.loadMap(true)
+            onClicked: { column1.autoReloads = 0; column1.loadMap(true); }
         }
     }
 
@@ -51,8 +53,17 @@ ColumnLayout {
             } else if (loadRequest.status === WebView.LoadFailedStatus) {
                 statusLabel.text = qsTr("Karte konnte nicht geladen werden: ") + loadRequest.errorString;
                 console.error("map load failed " + loadRequest.errorString + " " + loadRequest.url);
+                column1.retryLater();
             }
         }
+        // The map page hides the app's top bar together with its own displays (tap on the map) and says so
+        // in its title ("bar=0" / "bar=1")
+        onTitleChanged: column1.applyBar(title)
+    }
+
+    function applyBar(pageTitle) {
+        if (column1.pageActive && pageTitle)
+            headerToolbar.visible = pageTitle.indexOf("bar=0") < 0;
     }
 
     // Start loading only once the page is on screen: a web view that starts loading while it is still
@@ -63,6 +74,22 @@ ColumnLayout {
         if (force || webView.url.toString().indexOf(column1.mapUrl) !== 0) {
             webView.url = column1.mapUrl + "?v=" + Date.now();
         }
+    }
+
+    // A page that failed to load, or loaded without its script (white page, e.g. the app's web server was
+    // not ready yet right after the start), gets up to three automatic retries
+    function retryLater() {
+        if (column1.autoReloads < 3) {
+            column1.autoReloads++;
+            statusLabel.text = qsTr("Karte wird neu geladen …");
+            retryTimer.restart();
+        }
+    }
+
+    Timer {
+        id: retryTimer
+        interval: 1500
+        onTriggered: column1.loadMap(true)
     }
 
     Timer {
@@ -82,7 +109,12 @@ ColumnLayout {
                 var d = null;
                 try { d = JSON.parse(result); } catch (e) { d = null; }
                 if (!d) {
-                    statusLabel.text = qsTr("Seite geladen, aber das Karten-Skript läuft nicht.");
+                    if (column1.autoReloads < 3) {
+                        diagTimer.stop();
+                        column1.retryLater();
+                    } else {
+                        statusLabel.text = qsTr("Seite geladen, aber das Karten-Skript läuft nicht.");
+                    }
                 } else if (d.error) {
                     statusLabel.text = qsTr("Fehler in der Karte: ") + d.error + " (" + d.stage + ")";
                 } else if (column1.diagChecks >= 8) {
@@ -97,15 +129,33 @@ ColumnLayout {
         }
     }
 
+    // Fallback in case the web view does not report title changes: read the title once a second
+    Timer {
+        id: barTimer
+        interval: 1000
+        repeat: true
+        running: column1.pageActive
+        onTriggered: webView.runJavaScript("document.title", function(result) { column1.applyBar(result); })
+    }
+
     // Opened again later: load fresh, so a page that stayed white the first time gets another chance
     StackView.onActivated: {
+        column1.pageActive = true;
+        column1.autoReloads = 0;
         if (webView.url.toString().indexOf(column1.mapUrl) === 0)
             column1.loadMap(true);
         else
             loadTimer.restart();
     }
 
+    // Leaving the map: the top bar is always back
+    StackView.onDeactivated: {
+        column1.pageActive = false;
+        headerToolbar.visible = true;
+    }
+
     Component.onCompleted: {
+        column1.pageActive = true;
         headerToolbar.visible = true;
         loadTimer.restart();
     }

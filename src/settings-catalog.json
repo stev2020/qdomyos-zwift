@@ -8132,8 +8132,8 @@
       "qmlType": "string",
       "control": "text",
       "visible": true,
-      "defaultValue": "#800080",
-      "defaultExpression": "\"#800080\"",
+      "defaultValue": "#10161e",
+      "defaultExpression": "\"#10161e\"",
       "options": null,
       "restartRequired": false
     },

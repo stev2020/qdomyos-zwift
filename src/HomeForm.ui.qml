@@ -7,7 +7,7 @@ import QtQml 2.15
 
 Page {
 
-    title: qsTr("QZ Fitness")
+    title: qsTr("FunRun")
     id: page
 
     // VoiceOver accessibility - ignore Page itself, only children are accessible

@@ -168,7 +168,7 @@ ApplicationWindow {
         id: settings
         Component.onCompleted: retakeSettingsSnapshot(settings)
         property string profile_name: "default"        
-        property string theme_status_bar_background_color: "#800080"
+        property string theme_status_bar_background_color: "#10161e"
         property bool volume_change_gears: false
         property string peloton_username: "username"
         property string peloton_password: "password"
@@ -1251,7 +1251,8 @@ ApplicationWindow {
 
     header: ToolBar {
         contentHeight: toolButton.implicitHeight
-        Material.primary: settings.theme_status_bar_background_color
+        // dark like the 3D map's panels; the old purple default (still stored in older settings) is replaced too
+        Material.primary: settings.theme_status_bar_background_color === "#800080" ? "#10161e" : settings.theme_status_bar_background_color
         id: headerToolbar
         // Opacity, not visible: some pages set headerToolbar.visible themselves
         opacity: window.rootReady ? 1 : 0
