@@ -483,12 +483,12 @@ void ftmsbike::updateP12hGradeResistance() {
     const qint64 now = QDateTime::currentMSecsSinceEpoch();
     const double dt = p12hLastGradeUpdate ? qBound(0.0, (now - p12hLastGradeUpdate) / 1000.0, 2.0) : 0.0;
     p12hLastGradeUpdate = now;
-    // GPX rows carry raw point-to-point grades: average them over roughly the last 20 seconds
+    // GPX rows carry raw point-to-point grades: average them over roughly the last 10 seconds
     if (!p12hGradeSmoothedValid) {
         p12hGradeSmoothed = p12hGradeTarget;
         p12hGradeSmoothedValid = true;
     } else {
-        p12hGradeSmoothed += (p12hGradeTarget - p12hGradeSmoothed) * (1.0 - exp(-dt / 10.0));
+        p12hGradeSmoothed += (p12hGradeTarget - p12hGradeSmoothed) * (1.0 - exp(-dt / 5.0));
     }
     const double gears = gearsModifier();
     const double level = qBound(1.0, p12hResistanceForGrade(p12hGradeSmoothed + gears), (double)max_resistance);
@@ -500,9 +500,9 @@ void ftmsbike::updateP12hGradeResistance() {
         p12hLastGears = gears;
         gearsChanged = target != p12hLastLevel;
     }
-    // otherwise write only when the level really changes and at most every 20 seconds (every write makes the bike beep)
+    // otherwise write only when the level really changes and at most every 10 seconds (every write makes the bike beep)
     if (first || gearsChanged ||
-        (target != p12hLastLevel && fabs(level - p12hLastLevelExact) >= 1.0 && now - p12hLastLevelTime >= 20000)) {
+        (target != p12hLastLevel && fabs(level - p12hLastLevelExact) >= 1.0 && now - p12hLastLevelTime >= 10000)) {
         qDebug() << QStringLiteral("P12-H grade") << p12hGradeSmoothed << QStringLiteral("gears") << gearsModifier()
                  << QStringLiteral("-> resistance level") << target;
         init();
