@@ -914,6 +914,11 @@ function initMap() {
   globe.dynamicAtmosphereLighting = true;
   globe.dynamicAtmosphereLightingFromSun = false;
   if (scene.atmosphere && Cesium.DynamicAtmosphereLightingType) scene.atmosphere.dynamicLighting = Cesium.DynamicAtmosphereLightingType.SCENE_LIGHT;
+  // softer shading and slightly brighter imagery (Bing aerials are rather dark in the mountains)
+  globe.lambertDiffuseMultiplier = 0.7;
+  globe.vertexShadowDarkness = 0.45;
+  const base = globe.imageryLayers.length ? globe.imageryLayers.get(0) : null;
+  if (base) { base.brightness = 1.15; base.gamma = 1.15; }
   globe.depthTestAgainstTerrain = true;
   globe.tileCacheSize = 400;
   scene.fog.enabled = true;
