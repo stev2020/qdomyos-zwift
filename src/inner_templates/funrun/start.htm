@@ -159,7 +159,11 @@ function renderOptions() {
   $('windText').textContent = wind ? 'Stärke ' + wind + ' · bis +' + wind * 5 + ' % bei Gegenwind' : 'kein Wind';
   document.querySelectorAll('#ghostSeg button').forEach(b => b.classList.toggle('on', b.dataset.v === ghostMode));
   let gt = 'aus';
-  if (route && ghostMode === 'best') { const b = bestOf(route.key); gt = b ? 'gegen deine Bestzeit ' + FR.time(FR.routeTime(b)) : 'ab der zweiten Fahrt auf dieser Strecke'; }
+  if (route && ghostMode === 'best') {
+    const b = bestOf(route.key);
+    gt = b ? 'gegen deine Bestzeit ' + FR.time(FR.routeTime(b))
+      : lastOf(route.key) ? 'sobald du die Strecke einmal bis ins Ziel gefahren bist' : 'ab der zweiten Fahrt auf dieser Strecke';
+  }
   else if (route && ghostMode === 'last') { const l = lastOf(route.key); gt = l ? 'gegen deine letzte Fahrt (' + FR.when(FR.date(l.start)) + ')' : 'ab der zweiten Fahrt auf dieser Strecke'; }
   $('ghostText').textContent = gt;
 }
