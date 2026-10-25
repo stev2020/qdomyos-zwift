@@ -110,6 +110,11 @@ class TemplateInfoSenderBuilder : public QObject {
     void onAppendActivityDescription(const QJsonValue &msgContent, TemplateInfoSender *tempSender);
     void onGetSessionArray(TemplateInfoSender *tempSender);
     void onGetPreviewSessionArray(TemplateInfoSender *tempSender);
+    // FunRun: kept rides (list, one ride, delete) and closing a FunRun page
+    void onFunRunRides(TemplateInfoSender *tempSender);
+    void onFunRunRide(const QJsonValue &msgContent, TemplateInfoSender *tempSender);
+    void onFunRunDelete(const QJsonValue &msgContent, TemplateInfoSender *tempSender);
+    void onFunRunClose(const QJsonValue &msgContent, TemplateInfoSender *tempSender);
     void onGetLatLon(TemplateInfoSender *tempSender);
     void onNextInclination300Meters(TemplateInfoSender *tempSender);
     void onGetGPXBase64(TemplateInfoSender *tempSender);

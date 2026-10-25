@@ -13,6 +13,7 @@
 #include <QAndroidJniObject>
 #endif
 #include "fitdatabaseprocessor.h"
+#include "funrunstore.h"
 #include <QSqlDatabase>
 #include <QSqlQuery>
 #include "material.h"
@@ -2055,6 +2056,8 @@ void homeform::aboutToQuit() {
         qDebug() << "fit_file_saved_on_quit true";
         fit_save_clicked();
     }
+    // FunRun: a ride that was not stopped is kept too
+    funrunSaveRide();
 
     if (bluetoothManager->device())
         bluetoothManager->device()->disconnectBluetooth();
@@ -6035,6 +6038,8 @@ void homeform::Start_inner(bool send_event_to_device) {
                 bluetoothManager->device()->clearStats();
             }
             Session.clear();
+            funrunWind.clear();
+            funrunLastRide.clear();
             chartImagesFilenames.clear();
             mailSent = false;
 
@@ -6182,6 +6187,9 @@ void homeform::Stop() {
     stopped = true;
 
     emit workoutEventStateChanged(bluetoothdevice::STOPPED);
+
+    // FunRun: keep the ride for the ride end screen, the history and the ghost rider
+    funrunSaveRide();
 
     // Save session as training program only if it's not a Peloton workout
     if (!(pelotonHandler && !pelotonHandler->current_ride_id.isEmpty())) {
@@ -8883,6 +8891,7 @@ void homeform::update() {
                 bluetoothManager->device()->getRRIntervalsAndClear());
 
             Session.append(s);
+            funrunWind.insert(currentElapsedSeconds, (float)bluetoothManager->device()->funrunWindPercent());
 
             if (lapTrigger) {
                 lapTrigger = false;
@@ -9760,6 +9769,24 @@ static void healthConnectWriteWorkout(const QList<SessionLine> &session, bluetoo
         jDeviceName.object<jstring>(), jSamplesJson.object<jstring>());
 }
 #endif
+
+void homeform::funrunSaveRide() {
+    bluetoothdevice *dev = bluetoothManager ? bluetoothManager->device() : nullptr;
+    if (!dev || !funrunLastRide.isEmpty() || Session.isEmpty())
+        return;
+    QSettings settings;
+    FunRunStore::RideInfo info;
+    info.gpxFile = dev->currentGPXFile();
+    info.deviceName = dev->bluetoothDevice.name();
+    info.windStrength = settings.value(QZSettings::funrun_wind_strength, QZSettings::default_funrun_wind_strength).toInt();
+    info.windFrom = dev->funrunWindFrom();
+    info.hrMax = heartRateMax();
+    const QString id = FunRunStore::saveRide(Session, funrunWind, info);
+    if (id.isEmpty())
+        return;
+    funrunLastRide = id;
+    emit funrunRideSaved(id);
+}
 
 void homeform::fit_save_clicked() {
 

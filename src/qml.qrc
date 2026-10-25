@@ -34,6 +34,10 @@
         <file>WorkoutEditor.qml</file>
         <file>SettingsList.qml</file>
         <file>ChartJsTest.qml</file>
+        <file>FunRunPage.qml</file>
+        <file>inner_templates/funrun/ende.htm</file>
+        <file>inner_templates/funrun/funrun.css</file>
+        <file>inner_templates/funrun/funrun.js</file>
         <file>inner_templates/chartjs/.eslintrc.js</file>
         <file>inner_templates/chartjs/.jshintrc</file>
         <file>inner_templates/chartjs/chart.htm</file>

@@ -73,6 +73,33 @@ HomeForm {
         onTrainingProgramIntervalSoundRequested: trainingProgramSegmentSound.play()
     }
 
+    // FunRun: a kept ride opens the ride end screen (stop button, end of the route, stop from the map)
+    property bool stopInProgress: false
+    Connections {
+        target: rootItem
+        ignoreUnknownSignals: true
+        function onFunrunRideSaved(rideId) {
+            // stop button with the RPE question: the end screen follows once it is answered (finish_stop)
+            if (stopInProgress && rootItem.rpeFeelPopupEnabled())
+                return
+            showFunRunPage("ende.htm", rideId, "")
+        }
+    }
+
+    function showFunRunPage(page, rideId, from) {
+        var cur = stackView.currentItem
+        if (cur && cur.objectName === "funrunPage") {
+            cur.open(page, rideId, from)
+            return
+        }
+        var props = { "page": page, "rideId": rideId, "from": from }
+        // after the ride the 3D map is not needed any more: the end screen takes its place
+        if (cur && cur.mapUrl !== undefined)
+            stackView.replace("FunRunPage.qml", props)
+        else
+            stackView.push("FunRunPage.qml", props)
+    }
+
     MessageDialog {
         id: messagePelotonAskStart
         text: qsTr("Peloton Workout in progress")
@@ -302,6 +329,7 @@ HomeForm {
     }
 
     function inner_stop() {
+        stopInProgress = true;
         stop_clicked();
         if (rootItem.rpeFeelPopupEnabled()) {
             rpeFeelPopup.selectedRpe = 5;
@@ -313,7 +341,15 @@ HomeForm {
     }
 
     function finish_stop() {
+        stopInProgress = false;
         rootItem.save_screenshot();
+        // FunRun: a kept ride has its own end screen instead of the charts
+        var rideId = rootItem.funrunLastRideId();
+        if (rideId !== "") {
+            if (!(stackView.currentItem && stackView.currentItem.objectName === "funrunPage"))
+                showFunRunPage("ende.htm", rideId, "");
+            return;
+        }
         if(CHARTJS)
             stackView.push("ChartJsTest.qml")
         else

@@ -442,6 +442,11 @@ class bluetoothdevice : public QObject {
     QString currentGPXBase64() { return gpxBase64; }
 
     /**
+     * @brief currentGPXFile Returns the path of the current GPX file (empty when there is none).
+     */
+    QString currentGPXFile() const { return gpxFileName; }
+
+    /**
      * @brief funrunWindFrom FunRun wind: the direction the wind comes from during this ride. Units: degrees (0 = north).
      * A new random direction is drawn for every ride (new GPX route or a new start after a stop).
      */

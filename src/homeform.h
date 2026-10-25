@@ -21,6 +21,7 @@
 #include <QChart>
 #include <QColor>
 #include <QGraphicsScene>
+#include <QHash>
 #include <QMediaPlayer>
 #include <QNetworkReply>
 #include <QOAuth2AuthorizationCodeFlow>
@@ -244,6 +245,9 @@ class homeform : public QObject {
     QByteArray currentPelotonImage();
     // Maximum heart rate from the age or the override in the settings (bpm)
     double heartRateMax();
+    // FunRun: id of the ride kept when the last workout stopped (empty while riding)
+    Q_INVOKABLE QString funrunLastRideId() const { return funrunLastRide; }
+    void funrunRequestClose(const QString &to) { emit funrunCloseRequested(to); }
     // Status line of the search for the equipment on the home page, with the last device found;
     // empty once it is connected
     Q_INVOKABLE QString bluetoothSearchStatus();
@@ -1023,6 +1027,11 @@ public:
     TemplateInfoSenderBuilder *innerTemplateManager = nullptr;
     QList<QObject *> dataList;
     QList<SessionLine> Session;
+    // FunRun: wind applied by the bike in every second of the session (elapsed seconds -> percent)
+    QHash<quint32, float> funrunWind;
+    // FunRun: id of the ride kept for the current session (empty while riding)
+    QString funrunLastRide;
+    void funrunSaveRide();
     QQmlApplicationEngine *engine;
     trainprogram *trainProgram = nullptr;
     trainprogram *previewTrainProgram = nullptr;
@@ -1367,6 +1376,10 @@ public:
     void changePelotonProvider(QString value);
     void toastRequestedChanged(QString value);
     void restartToApplyRequested(QString message);
+    // FunRun: a ride was kept, the app shows the ride end screen
+    void funrunRideSaved(QString rideId);
+    // FunRun: a FunRun page (web) asks to be closed: to = "home" (back to the start page) or "back" (one page)
+    void funrunCloseRequested(QString to);
     void stravaUploadRequestedChanged(bool value);
     void garminMfaRequestedChanged(bool value);
     void garminWorkoutPromptRequestedChanged(bool value);

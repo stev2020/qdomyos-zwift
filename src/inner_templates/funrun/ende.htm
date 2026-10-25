@@ -1,0 +1,433 @@
+<!doctype html>
+<html lang="de">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
+<title>FunRun – Fahrt beendet</title>
+<!-- Ride end screen: the kept ride (?id=..., otherwise the newest) compared with the best earlier ride of the same route -->
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Barlow:wght@400;500;600;700&amp;family=Barlow+Condensed:wght@600;700&amp;display=swap">
+<link rel="stylesheet" href="funrun.css">
+<style>
+.zbar { display: flex; gap: 2px; height: 14px; border-radius: 4px; overflow: hidden; }
+.zbar div { height: 100%; min-width: 0; }
+.charts { position: relative; display: flex; flex-direction: column; gap: 8px; margin-top: 10px; }
+.ch .lab { display: flex; justify-content: space-between; font-size: 12px; font-weight: 600; color: var(--muted); margin-bottom: 4px; }
+.ch .lab b { color: var(--soft); font-weight: 600; }
+.ch svg { display: block; width: 100%; }
+.xlabels { position: relative; height: 14px; font-size: 11px; font-weight: 600; color: var(--muted); }
+.xlabels span { position: absolute; top: 0; transform: translateX(-50%); white-space: nowrap; }
+.cross { position: absolute; top: 0; bottom: 22px; width: 2px; margin-left: -1px; background: var(--text); opacity: .85; pointer-events: none; display: none; }
+.hits { position: absolute; left: 0; right: 0; top: 0; bottom: 22px; display: flex; }
+.hits button { appearance: none; -webkit-appearance: none; flex: 1; min-width: 0; border: 0; padding: 0; margin: 0; background: transparent; cursor: pointer; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div class="top">
+    <div style="min-width:0">
+      <div class="eyebrow" id="eyebrow">Fahrt beendet</div>
+      <h1 id="title">FunRun</h1>
+      <div class="muted" id="when"></div>
+    </div>
+    <button class="iconbtn" id="btnClose" aria-label="Schließen">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18"/></svg>
+    </button>
+  </div>
+
+  <div class="msg" id="msg">Fahrt wird geladen …</div>
+
+  <div class="cols hidden" id="content">
+    <div class="col">
+      <section class="hero" id="hero"></section>
+      <div class="stats" id="stats"></div>
+      <section class="card hidden" id="hrCard"></section>
+      <section class="card hidden" id="windCard"></section>
+    </div>
+    <div class="col">
+      <section class="card" id="chartCard">
+        <div class="chead"><h2>Verlauf der Fahrt</h2><span class="aside" id="readout">Tippe auf die Kurven</span></div>
+        <div class="charts" id="charts"></div>
+      </section>
+      <section class="card flat rows hidden" id="secCard"></section>
+      <p class="note" id="note">
+        <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="#4cd17a" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12.5l4.5 4.5L19 7.5"/></svg>
+        <span id="noteText">Gespeichert in „Meine Fahrten“</span>
+      </p>
+      <div class="btns">
+        <button class="btn primary" id="btnDone">Fertig</button>
+      </div>
+    </div>
+  </div>
+</div>
+<script src="funrun.js"></script>
+<script>
+(function () {
+'use strict';
+const $ = FR.$;
+const fromHistory = FR.qs.get('from') === 'history';
+const close = () => FR.close(fromHistory ? 'back' : 'home');
+$('btnClose').addEventListener('click', close);
+$('btnDone').addEventListener('click', close);
+
+const TROPHY = '<svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M8 4h8v5a4 4 0 0 1-8 0zM8 6H5a3 3 0 0 0 3 4M16 6h3a3 3 0 0 1-3 4M12 13v4M8.5 20h7M10 17h4"/></svg>';
+const FLAG = '<svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 21V4M6 4h11l-2 4 2 4H6"/></svg>';
+
+function hero(kind, label, time, sub) {
+  const el = $('hero');
+  el.className = 'hero ' + kind;
+  el.innerHTML = '<span class="eyebrow">' + label + '</span><span class="big cond">' + time + '</span><span class="sub">' + sub + '</span>';
+}
+
+function stat(k, v, unit, s) {
+  return '<div class="stat"><span class="k">' + k + '</span><span class="v cond">' + v + (unit ? '<small>' + unit + '</small>' : '') + '</span>' +
+    '<span class="s">' + (s || '&nbsp;') + '</span></div>';
+}
+
+// ------------------------------------------------------------------ samples along the ride
+// x per sample: distance along the route (route rides) or time (free rides); off-route samples drop out
+function series(sum, smp) {
+  const n = smp.t.length, onRoute = !!sum.route, X = [], idx = [];
+  let dmax = -1;
+  for (let i = 0; i < n; i++) {
+    if (onRoute) {
+      const d = smp.d[i];
+      if (!(d >= 0) || d < dmax) continue;
+      dmax = d; X.push(d);
+    } else X.push(smp.t[i]);
+    idx.push(i);
+  }
+  return { X, idx };
+}
+
+// averages of a sample field in `nb` equal parts of [x0, x1] (null where there is nothing)
+function buckets(S, field, x0, x1, nb, keep) {
+  const sum = new Float64Array(nb), cnt = new Uint32Array(nb), out = new Array(nb);
+  for (let j = 0; j < S.X.length; j++) {
+    const v = field[S.idx[j]];
+    if (v == null || !Number.isFinite(v) || (keep && !keep(v))) continue;
+    const b = Math.min(nb - 1, Math.max(0, Math.floor((S.X[j] - x0) / (x1 - x0) * nb)));
+    sum[b] += v; cnt[b]++;
+  }
+  for (let b = 0; b < nb; b++) out[b] = cnt[b] ? sum[b] / cnt[b] : null;
+  return out;
+}
+
+function pathOf(vals, W, H, lo, hi, pad) {
+  pad = pad == null ? 3 : pad;
+  const n = vals.length;
+  let d = '', pen = false;
+  for (let i = 0; i < n; i++) {
+    const v = vals[i];
+    if (v == null) { pen = false; continue; }
+    const x = (i + 0.5) / n * W, y = pad + (1 - (v - lo) / ((hi - lo) || 1)) * (H - 2 * pad);
+    d += (pen ? ' L' : 'M') + x.toFixed(1) + ' ' + y.toFixed(1);
+    pen = true;
+  }
+  return d;
+}
+function areaOf(vals, W, H, lo, hi, base) {
+  const n = vals.length;
+  let d = '', start = null, lastX = 0;
+  const yb = (1 - (base - lo) / ((hi - lo) || 1)) * (H - 6) + 3;
+  const flush = () => { if (start != null) d += ' L' + lastX.toFixed(1) + ' ' + yb.toFixed(1) + ' L' + start.toFixed(1) + ' ' + yb.toFixed(1) + ' Z'; start = null; };
+  for (let i = 0; i < n; i++) {
+    const v = vals[i];
+    if (v == null) { flush(); continue; }
+    const x = (i + 0.5) / n * W, y = 3 + (1 - (v - lo) / ((hi - lo) || 1)) * (H - 6);
+    if (start == null) { d += 'M' + x.toFixed(1) + ' ' + yb.toFixed(1) + ' L' + x.toFixed(1) + ' ' + y.toFixed(1); start = x; }
+    else d += ' L' + x.toFixed(1) + ' ' + y.toFixed(1);
+    lastX = x;
+  }
+  flush();
+  return d;
+}
+const range = (vals, minSpan) => {
+  let lo = Infinity, hi = -Infinity;
+  for (const v of vals) if (v != null) { lo = Math.min(lo, v); hi = Math.max(hi, v); }
+  if (!Number.isFinite(lo)) return [0, 1];
+  if (hi - lo < minSpan) { const m = (hi + lo) / 2; lo = m - minSpan / 2; hi = m + minSpan / 2; }
+  return [lo, hi];
+};
+
+// ------------------------------------------------------------------ the page
+function render(sum, smp, best, bestRide) {
+  const start = FR.date(sum.start), end = FR.date(sum.end);
+  $('eyebrow').textContent = fromHistory ? 'Deine Fahrt' : 'Fahrt beendet';
+  $('title').textContent = FR.title(sum);
+  $('when').textContent = FR.day(start) + ' ' + start.getFullYear() + ' · ' + FR.clock(start) + '–' + FR.clock(end) + ' Uhr';
+
+  // headline
+  const rt = FR.routeTime(sum);
+  if (sum.route && rt != null) {
+    if (best) {
+      const d = rt - best.route.time;
+      if (d < 0) hero('best', TROPHY + 'Neue Bestzeit', FR.time(rt), FR.time(-d) + ' schneller als deine Bestzeit (' + FR.time(best.route.time) + ')');
+      else if (d === 0) hero('plain', FLAG + 'Ziel erreicht', FR.time(rt), 'genau so schnell wie deine Bestzeit');
+      else hero('plain', FLAG + 'Ziel erreicht', FR.time(rt), FR.time(d) + ' langsamer als deine Bestzeit (' + FR.time(best.route.time) + ')');
+    } else hero('best', TROPHY + 'Erste Bestzeit', FR.time(rt), 'Deine erste Zeit auf dieser Strecke – nächstes Mal fährt sie als Geist mit');
+  } else if (sum.route) {
+    hero('plain', FLAG + 'Fahrt beendet', FR.time(sum.duration), FR.km(Math.max(0, sum.route.reached)) + ' von ' + FR.km(sum.route.length) + ' km der Strecke geschafft');
+  } else hero('plain', FLAG + 'Freie Fahrt', FR.time(sum.duration), FR.km(sum.distance) + ' km');
+
+  // numbers
+  let eLo = Infinity, eHi = -Infinity;
+  for (const e of smp.e || []) if (e != null) { eLo = Math.min(eLo, e); eHi = Math.max(eHi, e); }
+  const eRange = Number.isFinite(eLo) && eHi - eLo >= 1 ? FR.num(eLo) + ' → ' + FR.num(eHi) + ' m' : '';
+  $('stats').innerHTML =
+    stat('Strecke', FR.km(sum.distance), 'km', sum.route ? 'Strecke ' + FR.km(sum.route.length) + ' km' : 'Fahrzeit ' + FR.time(sum.duration)) +
+    stat('Höhenmeter', FR.num(sum.ascent), 'm', eRange) +
+    stat('Ø Tempo', FR.num(sum.avgSpeed, 1), 'km/h', 'max ' + FR.num(sum.maxSpeed, 1) + ' km/h') +
+    stat('Ø Leistung', FR.num(sum.avgPower), 'W', 'max ' + FR.num(sum.maxPower) + ' W') +
+    stat('Ø Trittfrequenz', FR.num(sum.avgCadence), 'U/min', 'Ø Stufe ' + FR.num(sum.avgLevel)) +
+    stat('Kalorien', FR.num(sum.kcal), 'kcal', 'Arbeit ' + FR.num(sum.kj) + ' kJ');
+
+  // heart rate
+  if (sum.avgHr > 0 && sum.hrZones) {
+    const z = sum.hrZones;
+    const splat = Math.round((z[3] + z[4]) / 60);
+    let bar = '', leg = '';
+    FR.HR_ZONES.forEach((zone, i) => {
+      if (z[i] > 0) bar += '<div style="flex:' + z[i] + ';background:' + zone.color + '" title="' + zone.name + '"></div>';
+      leg += '<span><i style="background:' + zone.color + '"></i>' + zone.name + ' ' + Math.round(z[i] / 60) + ' Min</span>';
+    });
+    $('hrCard').innerHTML =
+      '<div class="chead"><h2>Puls</h2><span class="aside">Ø ' + sum.avgHr + ' · max ' + sum.maxHr + ' · Maximalpuls ' + sum.hrMax + '</span></div>' +
+      '<div class="zbar" style="margin-top:10px" role="img" aria-label="Zeit in den Pulszonen">' + bar + '</div>' +
+      '<div class="legend" style="margin-top:8px">' + leg + '</div>' +
+      '<div style="margin-top:10px"><span class="chip" style="background:#ff8c1a;color:#1a0f05">' + splat + ' Splat-Punkte</span>' +
+      '<span class="muted" style="font-size:13px;margin-left:8px">Minuten in Orange und Rot</span></div>';
+    $('hrCard').classList.remove('hidden');
+  }
+
+  // wind
+  if (sum.wind) {
+    const w = sum.wind, parts = [['Gegenwind', w.head, '#8fdcff'], ['Seitenwind', w.side, '#4a9fc4'], ['Rückenwind', w.tail, '#2f6a85']];
+    $('windCard').innerHTML =
+      '<div class="chead"><h2>Wind</h2><span class="aside">Stärke ' + w.strength + ' aus ' + FR.compass(w.from) + '</span></div>' +
+      '<div class="zbar" style="margin-top:10px" role="img" aria-label="Anteil der Fahrzeit mit Gegen-, Seiten- und Rückenwind">' +
+      parts.filter(p => p[1] > 0).map(p => '<div style="flex:' + p[1] + ';background:' + p[2] + '"></div>').join('') + '</div>' +
+      '<div class="legend" style="margin-top:8px">' + parts.map(p => '<span><i style="background:' + p[2] + '"></i>' + p[0] + ' ' + p[1] + ' %</span>').join('') + '</div>' +
+      '<p class="muted" style="margin:10px 0 0;font-size:13px">Im Schnitt war es ' + FR.num(w.avgPct, 0) + ' % schwerer als ohne Wind.</p>';
+    $('windCard').classList.remove('hidden');
+  }
+
+  charts(sum, smp, bestRide);
+  sections(sum, smp, best, bestRide);
+  $('noteText').textContent = 'Gespeichert in „Meine Fahrten“' + (FR.routeTime(sum) != null ? ' · fährt nächstes Mal als Geist mit' : '');
+  $('note').classList.toggle('hidden', fromHistory);
+  $('msg').classList.add('hidden');
+  $('content').classList.remove('hidden');
+}
+
+// ------------------------------------------------------------------ charts: elevation, speed, lead on the best ride, heart rate
+let chartData = null;
+function charts(sum, smp, bestRide) {
+  const S = series(sum, smp);
+  const box = $('charts');
+  if (S.X.length < 2) { $('chartCard').classList.add('hidden'); return; }
+  const x0 = S.X[0], x1 = S.X[S.X.length - 1];
+  if (!(x1 > x0)) { $('chartCard').classList.add('hidden'); return; }
+  const NP = 160, NB = 26;
+  const list = [];
+  const ele = buckets(S, smp.e, x0, x1, NP);
+  if (ele.some(v => v != null)) list.push({ key: 'e', title: 'Höhe', unit: ' m', d: 0, H: 56, vals: ele, area: '#2a3542', line: '#9ba7b4', min: 30,
+    info: (() => { const r = range(ele, 30); return FR.num(r[0]) + ' – ' + FR.num(r[1]) + ' m'; })() });
+  const spd = buckets(S, smp.v, x0, x1, NP);
+  list.push({ key: 'v', title: 'Tempo', unit: ' km/h', d: 1, H: 48, vals: spd, line: '#ff7a1a', min: 5, zero: true, info: 'Ø ' + FR.num(sum.avgSpeed, 1) + ' km/h', avg: sum.avgSpeed });
+  let lead = null;
+  if (sum.route && bestRide && bestRide.samples) {
+    const mine = FR.routeTrack(smp), other = FR.routeTrack(bestRide.samples);
+    lead = new Array(NP);
+    for (let i = 0; i < NP; i++) {
+      const x = x0 + (i + 0.5) / NP * (x1 - x0), a = FR.timeAt(mine, x), b = FR.timeAt(other, x);
+      lead[i] = a == null || b == null ? null : b - a;
+    }
+    const fin = FR.routeTime(sum) != null && FR.routeTime(bestRide.summary) != null;
+    let last = fin ? FR.routeTime(bestRide.summary) - FR.routeTime(sum) : null, where = ' im Ziel';
+    if (last == null) {
+      // not to the end: the lead at the farthest point both rides reached
+      const x = Math.min(mine.reached, other.reached), a = FR.timeAt(mine, x), b = FR.timeAt(other, x);
+      if (a != null && b != null) { last = b - a; where = ' bei km ' + FR.num(x / 1000, 1); }
+    }
+    list.push({ key: 'lead', title: 'Vorsprung auf deine Bestzeit', d: 0, H: 48, vals: lead, diverging: true, min: 20,
+      info: last == null ? '' : (last >= 0 ? FR.time(last) + ' vorn' : FR.time(-last) + ' hinten') + where });
+  }
+  if ((smp.h || []).some(v => v > 0)) {
+    const hr = buckets(S, smp.h, x0, x1, NP, v => v > 0);
+    list.push({ key: 'h', title: 'Puls', unit: ' /min', d: 0, H: 48, vals: hr, line: '#ff6b5a', min: 20, info: 'Ø ' + sum.avgHr + ' /min' });
+  }
+
+  // values for tapping: averages in NB parts
+  const inspect = {};
+  inspect.v = buckets(S, smp.v, x0, x1, NB);
+  inspect.e = buckets(S, smp.e, x0, x1, NB);
+  inspect.h = buckets(S, smp.h || [], x0, x1, NB, v => v > 0);
+  inspect.g = buckets(S, smp.g || [], x0, x1, NB);
+  if (lead) { inspect.lead = new Array(NB); for (let b = 0; b < NB; b++) inspect.lead[b] = lead[Math.min(NP - 1, Math.floor((b + 0.5) / NB * NP))]; }
+  chartData = { list, inspect, x0, x1, NB, onRoute: !!sum.route };
+
+  let html = '';
+  for (const c of list) html += '<div class="ch" data-key="' + c.key + '"><div class="lab"><span>' + c.title + '</span><b>' + FR.esc(c.info) + '</b></div><svg height="' + c.H + '"></svg></div>';
+  // x labels: kilometres or minutes
+  html += '<div class="xlabels" id="xlabels"></div><span class="cross" id="cross"></span><div class="hits" id="hits"></div>';
+  box.innerHTML = html;
+  let hits = '';
+  for (let b = 0; b < NB; b++) hits += '<button data-b="' + b + '" aria-label="Werte an dieser Stelle"></button>';
+  $('hits').innerHTML = hits;
+  $('hits').addEventListener('click', e => { const b = e.target && e.target.dataset ? e.target.dataset.b : null; if (b != null) pick(+b); });
+  drawCharts();
+  window.addEventListener('resize', drawCharts);
+}
+
+let picked = -1;
+function drawCharts() {
+  if (!chartData) return;
+  const W = $('charts').clientWidth || 320;
+  for (const c of chartData.list) {
+    const svg = document.querySelector('.ch[data-key="' + c.key + '"] svg');
+    svg.setAttribute('viewBox', '0 0 ' + W + ' ' + c.H);
+    let lo, hi, body = '';
+    if (c.diverging) {
+      const r = range(c.vals, c.min), m = Math.max(Math.abs(r[0]), Math.abs(r[1]), c.min / 2);
+      lo = -m; hi = m;
+      const pos = c.vals.map(v => (v == null ? null : Math.max(0, v))), neg = c.vals.map(v => (v == null ? null : Math.min(0, v)));
+      const y0 = (3 + (1 - (0 - lo) / (hi - lo)) * (c.H - 6)).toFixed(1);
+      body += '<line x1="0" x2="' + W + '" y1="' + y0 + '" y2="' + y0 + '" stroke="#9ba7b4" stroke-opacity=".45" stroke-dasharray="3 4"/>';
+      body += '<path d="' + areaOf(pos, W, c.H, lo, hi, 0) + '" fill="#6fd3ff" fill-opacity=".22"/>';
+      body += '<path d="' + areaOf(neg, W, c.H, lo, hi, 0) + '" fill="#ff6b5a" fill-opacity=".22"/>';
+      body += '<path d="' + pathOf(c.vals, W, c.H, lo, hi) + '" fill="none" stroke="#6fd3ff" stroke-width="2" stroke-linejoin="round"/>';
+    } else {
+      const r = range(c.vals, c.min);
+      lo = c.zero ? 0 : r[0] - (r[1] - r[0]) * 0.08; hi = r[1] + (r[1] - r[0]) * 0.08;
+      if (c.area) body += '<path d="' + areaOf(c.vals, W, c.H, lo, hi, lo) + '" fill="' + c.area + '"/>';
+      if (c.avg != null) {
+        const y = (3 + (1 - (c.avg - lo) / ((hi - lo) || 1)) * (c.H - 6)).toFixed(1);
+        body += '<line x1="0" x2="' + W + '" y1="' + y + '" y2="' + y + '" stroke="#9ba7b4" stroke-opacity=".5" stroke-dasharray="4 4"/>';
+      }
+      body += '<path d="' + pathOf(c.vals, W, c.H, lo, hi) + '" fill="none" stroke="' + c.line + '" stroke-width="' + (c.area ? 1.5 : 2) + '" stroke-linejoin="round"/>';
+    }
+    svg.innerHTML = body;
+  }
+  // x labels
+  const span = chartData.x1 - chartData.x0, labs = [];
+  let unit = ' km';
+  if (chartData.onRoute) {
+    const stepKm = span > 60000 ? 20 : span > 30000 ? 10 : span > 12000 ? 5 : span > 5000 ? 2 : 1;
+    for (let k = Math.ceil(chartData.x0 / 1000 / stepKm) * stepKm; k * 1000 <= chartData.x1; k += stepKm) labs.push([(k * 1000 - chartData.x0) / span, String(k)]);
+  } else {
+    unit = ' Min';
+    const stepMin = span > 7200 ? 30 : span > 3600 ? 15 : span > 1200 ? 10 : 5;
+    for (let m = Math.ceil(chartData.x0 / 60 / stepMin) * stepMin; m * 60 <= chartData.x1; m += stepMin) labs.push([(m * 60 - chartData.x0) / span, String(m)]);
+  }
+  // (the unit goes with the first label that is shown)
+  $('xlabels').innerHTML = labs.filter(l => l[0] > 0.04 && l[0] < 0.96)
+    .map((l, i) => '<span style="left:' + (l[0] * 100).toFixed(2) + '%">' + l[1] + (i === 0 ? unit : '') + '</span>').join('');
+  if (picked >= 0) pick(picked, true);
+}
+
+function pick(b, keep) {
+  const D = chartData, cross = $('cross');
+  if (!keep && b === picked) { picked = -1; cross.style.display = 'none'; restoreInfo(); return; }
+  picked = b;
+  const W = $('charts').clientWidth || 320;
+  cross.style.left = ((b + 0.5) / D.NB * W).toFixed(1) + 'px';
+  cross.style.display = 'block';
+  const x = D.x0 + (b + 0.5) / D.NB * (D.x1 - D.x0);
+  const g = D.inspect.g[b];
+  $('readout').textContent = (D.onRoute ? 'km ' + FR.num(x / 1000, 1) : 'nach ' + FR.time(x)) + (g != null ? ' · ' + FR.num(g, 0) + ' % Steigung' : '');
+  $('readout').style.color = 'var(--text)';
+  for (const c of D.list) {
+    const el = document.querySelector('.ch[data-key="' + c.key + '"] .lab b');
+    const v = D.inspect[c.key] ? D.inspect[c.key][b] : null;
+    el.textContent = v == null ? '–' : c.key === 'lead' ? (v >= 0 ? FR.time(v) + ' vorn' : FR.time(-v) + ' hinten') : FR.num(v, c.d) + c.unit;
+  }
+}
+function restoreInfo() {
+  $('readout').textContent = 'Tippe auf die Kurven';
+  $('readout').style.color = '';
+  for (const c of chartData.list) document.querySelector('.ch[data-key="' + c.key + '"] .lab b').textContent = c.info;
+}
+
+// ------------------------------------------------------------------ sections of the route, compared with the best ride
+function sections(sum, smp, best, bestRide) {
+  if (!sum.route) return;
+  const L = sum.route.length, n = Math.max(2, Math.min(6, Math.round(L / 5000)));
+  const mine = FR.routeTrack(smp), other = bestRide && bestRide.samples ? FR.routeTrack(bestRide.samples) : null;
+  // elevation and climbing along the route: from this ride where it got, beyond that from the best ride
+  const profile = s => {
+    const E = [], DX = [];
+    let dmax = -1;
+    if (s && s.e) for (let i = 0; i < s.t.length; i++) if (s.d[i] >= 0 && s.d[i] >= dmax && s.e[i] != null) { dmax = s.d[i]; DX.push(s.d[i]); E.push(s.e[i]); }
+    return { E, DX, reached: dmax };
+  };
+  const profs = [profile(smp), profile(bestRide && bestRide.samples)];
+  const profFor = b => profs.find(p => p.DX.length && p.reached >= b - 30) || null;
+  const eleAt = (P, x) => {
+    let k = 0;
+    while (k < P.DX.length - 1 && P.DX[k + 1] <= x) k++;
+    return P.E[k];
+  };
+  const gainBetween = (P, a, b) => {
+    let g = 0, prev = null;
+    for (let i = 0; i < P.DX.length; i++) {
+      if (P.DX[i] < a || P.DX[i] > b) continue;
+      if (prev != null && P.E[i] > prev) g += P.E[i] - prev;
+      prev = P.E[i];
+    }
+    return g;
+  };
+  let html = '<div class="chead" style="padding:14px 16px 10px"><h2>Abschnitte</h2><span class="aside">' + (other ? 'Zeit · gegen deine Bestzeit' : 'Zeit') + '</span></div>';
+  for (let k = 0; k < n; k++) {
+    const a = L * k / n, b = L * (k + 1) / n;
+    const ta = FR.timeAt(mine, a), tb = FR.timeAt(mine, b);
+    const t = ta != null && tb != null ? tb - ta : null;
+    let delta = '', color = 'var(--muted)';
+    if (t != null && other) {
+      const oa = FR.timeAt(other, a), ob = FR.timeAt(other, b);
+      if (oa != null && ob != null) {
+        const d = Math.round(t - (ob - oa));
+        delta = d === 0 ? '±0:00' : FR.diff(d);
+        color = d < 0 ? 'var(--good)' : d > 0 ? 'var(--bad)' : 'var(--muted)';
+      }
+    }
+    const P = profFor(b);
+    const meta = FR.num((b - a) / 1000, 1) + ' km' +
+      (P ? ' · ↑ ' + FR.num(gainBetween(P, a, b)) + ' m · Ø ' + FR.num((eleAt(P, b) - eleAt(P, a)) / (b - a) * 100, 1) + ' %' : '');
+    html += '<div class="row"><div class="l"><span class="n">km ' + FR.num(a / 1000, 1) + ' – ' + FR.num(b / 1000, 1) + '</span>' +
+      '<span class="m">' + meta + '</span></div>' +
+      '<div class="r"><span class="t cond">' + (t != null ? FR.time(t) : '–') + '</span>' + (other ? '<span class="d" style="color:' + color + '">' + (delta || '–') + '</span>' : '') + '</div></div>';
+  }
+  $('secCard').innerHTML = html;
+  $('secCard').classList.remove('hidden');
+}
+
+// ------------------------------------------------------------------ start
+(async function () {
+  let list, ride;
+  try {
+    list = await FR.rides();
+    const id = FR.qs.get('id') || (list[0] && list[0].id);
+    if (!id) throw new Error('Noch keine Fahrt gespeichert.');
+    ride = await FR.ride(id);
+    if (!ride || !ride.summary) throw new Error('Diese Fahrt wurde nicht gefunden.');
+  } catch (e) {
+    $('msg').textContent = e.message;
+    return;
+  }
+  const sum = ride.summary;
+  // best earlier ride of the same route
+  let best = null;
+  if (sum.route) {
+    for (const r of list) {
+      if (r.id === sum.id || !r.route || r.route.key !== sum.route.key || !r.route.finished || r.start >= sum.start) continue;
+      if (!best || r.route.time < best.route.time) best = r;
+    }
+  }
+  let bestRide = null;
+  if (best) { try { bestRide = await FR.ride(best.id); } catch (e) { bestRide = null; } }
+  try { render(sum, ride.samples, best, bestRide); } catch (e) { console.error(e); $('msg').textContent = 'Die Fahrt kann nicht angezeigt werden: ' + e.message; }
+})();
+})();
+</script>
+</body>
+</html>

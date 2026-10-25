@@ -113,6 +113,7 @@ SOURCES += \
     $$PWD/devices/technogymbike/technogymbike.cpp \
     $$PWD/devices/trxappgateusbelliptical/trxappgateusbelliptical.cpp \
     $$PWD/fitdatabaseprocessor.cpp \
+    $$PWD/funrunstore.cpp \
     $$PWD/devices/trxappgateusbrower/trxappgateusbrower.cpp \
     $$PWD/logwriter.cpp \
     $$PWD/fitbackupwriter.cpp \
@@ -416,6 +417,7 @@ HEADERS += \
     $$PWD/devices/trxappgateusbrower/trxappgateusbrower.h \
     $$PWD/ergtable.h \
     $$PWD/fitdatabaseprocessor.h \
+    $$PWD/funrunstore.h \
     $$PWD/inclinationresistancetable.h \
     $$PWD/logwriter.h \
     $$PWD/fitbackupwriter.h \

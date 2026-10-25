@@ -1,4 +1,5 @@
 #include "templateinfosenderbuilder.h"
+#include "funrunstore.h"
 #include "webtranslation.h"
 #include "devices/bike.h"
 #include "treadmill.h"
@@ -1556,6 +1557,43 @@ void TemplateInfoSenderBuilder::onGetPelotonImage(const QJsonValue &msgContent, 
     tempSender->send(out.toJson());
 }
 
+void TemplateInfoSenderBuilder::onFunRunRides(TemplateInfoSender *tempSender) {
+    QJsonObject main;
+    main[QStringLiteral("msg")] = QStringLiteral("R_funrun_rides");
+    main[QStringLiteral("content")] = FunRunStore::listRides();
+    tempSender->send(QJsonDocument(main).toJson(QJsonDocument::Compact));
+}
+
+void TemplateInfoSenderBuilder::onFunRunRide(const QJsonValue &msgContent, TemplateInfoSender *tempSender) {
+    const QString id = msgContent.toObject().value(QStringLiteral("id")).toString();
+    QJsonObject content;
+    content[QStringLiteral("id")] = id;
+    content[QStringLiteral("ride")] = FunRunStore::loadRide(id);
+    QJsonObject main;
+    main[QStringLiteral("msg")] = QStringLiteral("R_funrun_ride");
+    main[QStringLiteral("content")] = content;
+    tempSender->send(QJsonDocument(main).toJson(QJsonDocument::Compact));
+}
+
+void TemplateInfoSenderBuilder::onFunRunDelete(const QJsonValue &msgContent, TemplateInfoSender *tempSender) {
+    const QString id = msgContent.toObject().value(QStringLiteral("id")).toString();
+    QJsonObject content;
+    content[QStringLiteral("id")] = id;
+    content[QStringLiteral("ok")] = FunRunStore::deleteRide(id);
+    QJsonObject main;
+    main[QStringLiteral("msg")] = QStringLiteral("R_funrun_delete");
+    main[QStringLiteral("content")] = content;
+    tempSender->send(QJsonDocument(main).toJson(QJsonDocument::Compact));
+}
+
+void TemplateInfoSenderBuilder::onFunRunClose(const QJsonValue &msgContent, TemplateInfoSender *tempSender) {
+    if (homeform::singleton())
+        homeform::singleton()->funrunRequestClose(msgContent.toObject().value(QStringLiteral("to")).toString());
+    QJsonObject main;
+    main[QStringLiteral("msg")] = QStringLiteral("R_funrun_close");
+    tempSender->send(QJsonDocument(main).toJson(QJsonDocument::Compact));
+}
+
 void TemplateInfoSenderBuilder::onDataReceived(const QByteArray &data) {
     TemplateInfoSender *sender = qobject_cast<TemplateInfoSender *>(this->sender());
     if (!sender) {
@@ -1696,6 +1734,18 @@ void TemplateInfoSenderBuilder::onDataReceived(const QByteArray &data) {
                     return;
                 } else if (msg == QStringLiteral("getpreviewsessionarray")) {
                     onGetPreviewSessionArray(sender);
+                    return;
+                } else if (msg == QStringLiteral("funrun_rides")) {
+                    onFunRunRides(sender);
+                    return;
+                } else if (msg == QStringLiteral("funrun_ride")) {
+                    onFunRunRide(jsonObject[QStringLiteral("content")], sender);
+                    return;
+                } else if (msg == QStringLiteral("funrun_delete")) {
+                    onFunRunDelete(jsonObject[QStringLiteral("content")], sender);
+                    return;
+                } else if (msg == QStringLiteral("funrun_close")) {
+                    onFunRunClose(jsonObject[QStringLiteral("content")], sender);
                     return;
                 }
                 if (msg == QStringLiteral("start")) {
