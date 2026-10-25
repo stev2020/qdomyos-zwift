@@ -543,13 +543,16 @@ surfaceHeight.cache = {};
 const trusted = (h, ref, tol) => (h != null && Math.abs(h - ref) <= tol ? h : null);
 const refHeight = s => (CFG.offline ? 0 : route.eleAt(s) + (riderCart.hOff == null ? 0 : riderCart.hOff)); // offline test globe is flat
 const refTol = () => (riderCart.hOff == null ? 400 : 150);
-// ground height on the route: sampled terrain if available, else rendered tiles (if plausible), else GPX + offset
+// Expected ground height on the route: sampled terrain if available, else GPX elevation + learned offset.
+const routeRef = s => { const t = route.terrainAt(s); return Number.isFinite(t) ? t : refHeight(s); };
+// Ground height as currently rendered (so marker, route line and camera agree while tiles refine),
+// as long as it is plausible compared with the expected height.
 function routeGround(s, slot) {
-  const t = route.terrainAt(s);
-  if (Number.isFinite(t)) return t;
+  const ref = routeRef(s);
+  if (!slot) return ref;
   const pt = route.pointAt(s, routeGround.p || (routeGround.p = {}));
-  const h = slot ? trusted(surfaceHeight(pt.lon, pt.lat, slot), refHeight(s), refTol()) : null;
-  return h == null ? refHeight(s) : h;
+  const h = trusted(surfaceHeight(pt.lon, pt.lat, slot), ref, Number.isFinite(route.terrainAt(s)) ? 60 : refTol());
+  return h == null ? ref : h;
 }
 
 function updateCamera(dt, now) {
@@ -575,7 +578,7 @@ function updateCamera(dt, now) {
     let need = hs == null ? -Infinity : hs + 1.2 + 0.03 * d;
     if (hor < 300 && Math.abs(cam.psi) < 0.5) need = Math.max(need, routeGround(s - hor * 0.95) + 1.2 + 0.03 * d);
     const liftT = Math.max(0, need - cg.height);
-    cam.lift = liftT > cam.lift ? follow(cam.lift, liftT, dt, 0.08) : follow(cam.lift, liftT, dt, 0.9);
+    cam.lift = liftT > cam.lift + 2 ? liftT : liftT > cam.lift ? follow(cam.lift, liftT, dt, 0.08) : follow(cam.lift, liftT, dt, 0.9);
   }
   local.z = oz + cam.lift;
   const dest = Cesium.Matrix4.multiplyByPoint(enu, local, _c3.b || (_c3.b = new Cesium.Cartesian3()));
@@ -931,7 +934,7 @@ function frame() {
   const ter = route.terrainAt(rider.s);
   const hs = Number.isFinite(ter) ? ter : trusted(surfaceHeight(p.lon, p.lat, 'rider'), refHeight(rider.s), refTol());
   if (hs != null) riderCart.hOff = riderCart.hOff == null ? hs - eR : follow(riderCart.hOff, hs - eR, dt, 2.0);
-  const hT = hs != null ? hs : refHeight(rider.s);
+  const hT = routeGround(rider.s, 'rider');
   riderCart.h = riderCart.pos ? follow(riderCart.h, hT, dt, 0.2) : hT;
   riderCart.lon = p.lon; riderCart.lat = p.lat;
   const h = riderCart.h;
