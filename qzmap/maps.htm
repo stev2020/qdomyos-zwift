@@ -684,7 +684,8 @@ function surfaceHeight(lonDeg, latDeg, slot) {
   // each sample renders the 3D photos once more from above, so keep it rare (phones)
   if (now - c.t < 400 && c.v != null) return c.v;
   c.t = now;
-  const h = scene.sampleHeightSupported ? scene.sampleHeight(_carto) : undefined;
+  // (our own route line must not count as surface)
+  const h = scene.sampleHeightSupported ? scene.sampleHeight(_carto, tilesRoute ? [tilesRoute] : undefined) : undefined;
   if (h !== undefined) c.v = h;
   return c.v;
 }
@@ -699,9 +700,11 @@ const routeRef = s => { const t = route.terrainAt(s); return Number.isFinite(t) 
 // Ground height as currently rendered (so marker, route line and camera agree while tiles refine),
 // as long as it is plausible compared with the expected height.
 function routeGround(s, slot) {
+  // 3D photos: the photo surface is the tree tops where the road runs under trees, so follow the route
+  // profile lifted by the offset learned on open road (see updateTilesGround)
+  if (tilesOn) return tilesGround.off == null ? routeRef(s) : route.eleAt(s) + tilesGround.off;
   const ref = routeRef(s);
-  // with the 3D photos the surface is the tree tops where the road runs under trees: stay on the terrain
-  if (!slot || tilesOn) return ref;
+  if (!slot) return ref;
   const pt = route.pointAt(s, routeGround.p || (routeGround.p = {}));
   const h = trusted(surfaceHeight(pt.lon, pt.lat, slot), ref, Number.isFinite(route.terrainAt(s)) ? 60 : refTol());
   return h == null ? ref : h;
@@ -1152,6 +1155,7 @@ function frame() {
   const ter = route.terrainAt(rider.s);
   const hs = Number.isFinite(ter) ? ter : tilesOn ? null : trusted(surfaceHeight(p.lon, p.lat, 'rider'), refHeight(rider.s), refTol());
   if (hs != null) riderCart.hOff = riderCart.hOff == null ? hs - eR : follow(riderCart.hOff, hs - eR, dt, 2.0);
+  if (tilesOn) updateTilesGround(p, now);
   const hT = routeGround(rider.s, 'rider');
   riderCart.h = riderCart.pos ? follow(riderCart.h, hT, dt, 0.2) : hT;
   riderCart.lon = p.lon; riderCart.lat = p.lat;
@@ -1235,7 +1239,7 @@ function buildTilesRoute() {
   for (let k = 0; k < r.m; k++) {
     const s = Math.min(k * r.step, r.total);
     r.pointAt(s, p);
-    pos[k] = Cesium.Cartesian3.fromDegrees(p.lon, p.lat, routeRef(s) + 1.0);
+    pos[k] = Cesium.Cartesian3.fromDegrees(p.lon, p.lat, routeGround(s) + 1.0);
   }
   const matFront = routeMaterial('QzRouteLineFront', 1.0), matBehind = routeMaterial('QzRouteLineBehind', 0.45);
   tilesRoute = scene.primitives.add(new Cesium.Primitive({
@@ -1249,10 +1253,34 @@ function buildTilesRoute() {
   }));
   tilesRoute.matFront = matFront; tilesRoute.matBehind = matBehind;
   tilesRoute.show = tilesOn;
+  tilesRoute.off = tilesGround.off; tilesRoute.t = performance.now();
+}
+
+// Height of the road under the 3D photos. The photo surface equals the road where it is open, but lies on the
+// tree tops (or roofs) where something covers it. So the rider follows the route profile, and the offset
+// between profile and photo surface is learned at the rider: it drops at once to a lower surface but rises
+// only slowly, which keeps trees over the road from lifting the rider. Cesium World Terrain gives the start.
+const tilesGround = { off: null, t: 0 };
+function updateTilesGround(p, now) {
+  if (now - tilesGround.t < 250) return;
+  const dts = tilesGround.t ? Math.min((now - tilesGround.t) / 1000, 1) : 0.25;
+  tilesGround.t = now;
+  const e = route.eleAt(rider.s);
+  if (tilesGround.off == null) { const ter = route.terrainAt(rider.s); if (Number.isFinite(ter)) tilesGround.off = ter - e; }
+  if (cam.d > 400) return; // from far away the photo tiles at the rider are still coarse
+  const hs = surfaceHeight(p.lon, p.lat, 'rider');
+  if (hs == null) return;
+  const d = hs - e;
+  if (tilesGround.off == null || Math.abs(d - tilesGround.off) > 300) tilesGround.off = d;
+  else if (d < tilesGround.off) tilesGround.off = follow(tilesGround.off, d, dts, 0.5);
+  else tilesGround.off += Math.min(d - tilesGround.off, 0.12 * dts);
+  // keep the drawn line in step with the learned offset
+  if (tilesRoute && (tilesRoute.off == null || Math.abs(tilesGround.off - tilesRoute.off) > 1.5) && now - tilesRoute.t > 4000) buildTilesRoute();
 }
 
 function loadRoute(text) {
   try { route = new Route(text); } catch (e) { console.error(e); status(e.message, true); return; }
+  tilesGround.off = null;
   window.qzmapDiag.stage = 'strecke-ok';
   // fixed, friendly daylight: mid-September, 10:00 local solar time at the route
   const yr = new Date().getUTCFullYear();
@@ -1291,7 +1319,7 @@ async function sampleRouteTerrain(r) {
     } catch (e) { console.warn('terrain sampling failed', e); return; }
   }
   // the 3D-photo route line was drawn with estimated heights so far
-  if (route === r && tilesOn) buildTilesRoute();
+  if (route === r && tilesOn && tilesGround.off == null) buildTilesRoute();
 }
 
 async function fillElevationFromTerrain() {
