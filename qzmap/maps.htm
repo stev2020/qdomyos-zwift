@@ -317,6 +317,7 @@ class Route {
     let known = 0;
     for (let i = 0; i < n0; i++) if (Number.isFinite(P[i].ele)) known++;
     this.hasEle = known >= Math.max(2, n0 * 0.5);
+    this.ready = this.hasEle; // without GPX elevations we wait for terrain samples (fillElevationFromTerrain)
     if (this.hasEle) {
       let prev = -1;
       for (let i = 0; i < n0; i++) {
@@ -530,6 +531,11 @@ function surfaceHeight(lonDeg, latDeg, slot) {
   return c.v;
 }
 surfaceHeight.cache = {};
+// Heights from coarse (not yet refined) terrain tiles can be kilometres off. Only accept a sampled height
+// when it is close to the expected one (GPX elevation + learned offset), otherwise fall back to the estimate.
+const trusted = (h, ref, tol) => (h != null && Math.abs(h - ref) <= tol ? h : null);
+const refHeight = s => route.eleAt(s) + (riderCart.hOff == null ? 0 : riderCart.hOff);
+const refTol = () => (riderCart.hOff == null ? 400 : 150);
 
 function updateCamera(dt, now) {
   cam.t = follow(cam.t, cam.tTarget, dt, cam.tau);
@@ -550,7 +556,7 @@ function updateCamera(dt, now) {
   const p0 = Cesium.Matrix4.multiplyByPoint(enu, local, _c3.a || (_c3.a = new Cesium.Cartesian3()));
   const cg = Cesium.Cartographic.fromCartesian(p0, undefined, _carto.c || (_carto.c = new Cesium.Cartographic()));
   if (cg) {
-    const hs = surfaceHeight(cg.longitude / DEG, cg.latitude / DEG, 'cam');
+    const hs = trusted(surfaceHeight(cg.longitude / DEG, cg.latitude / DEG, 'cam'), riderCart.h, 1500);
     const need = hs == null ? -Infinity : hs + 1.2 + 0.03 * d;
     const liftT = Math.max(0, need - cg.height);
     cam.lift = liftT > cam.lift ? follow(cam.lift, liftT, dt, 0.08) : follow(cam.lift, liftT, dt, 0.9);
@@ -565,8 +571,8 @@ function updateCamera(dt, now) {
   // first person: look along the road gradient, horizon at ~38 % of the free area
   const la = 25;
   const pa = route.pointAt(s + la, _carto.pa || (_carto.pa = {}));
-  let ha = surfaceHeight(pa.lon, pa.lat, 'ahead');
-  if (ha == null) ha = route.eleAt(s + la) + (riderCart.hOff || 0);
+  let ha = trusted(surfaceHeight(pa.lon, pa.lat, 'ahead'), refHeight(s + la), refTol());
+  if (ha == null) ha = refHeight(s + la);
   cam.grad = follow(cam.grad, Math.atan2(ha - riderCart.h, la), dt, 0.6);
   const pitchFp = cam.grad + Math.atan((2 * freeFrac(0.38) - 1) * tanH);
   const pitch = clamp(lerp(pitchFp, pitchChase, smoothstep(0.4, 3.0, d)), -89 * DEG, 30 * DEG);
@@ -824,8 +830,8 @@ function place(el, cart) {
 }
 function groundCart(s, slot, key) {
   const pt = route.pointAt(s, _ovc[key] || (_ovc[key] = {}));
-  let h = surfaceHeight(pt.lon, pt.lat, slot);
-  if (h == null) h = route.eleAt(s) + (riderCart.hOff || 0);
+  let h = trusted(surfaceHeight(pt.lon, pt.lat, slot), refHeight(s), refTol());
+  if (h == null) h = refHeight(s);
   return Cesium.Cartesian3.fromDegrees(pt.lon, pt.lat, h, undefined, _ovc[key + 'c'] || (_ovc[key + 'c'] = new Cesium.Cartesian3()));
 }
 let lastFlagText = '';
@@ -903,16 +909,18 @@ function frame() {
   const now = performance.now();
   const dt = lastFrame ? clamp((now - lastFrame) / 1000, 0, 0.1) : 0.016;
   lastFrame = now;
-  if (!route) return;
+  if (!route || !route.ready) return;
   if (demo) demo.update(dt);
   rider.update(dt);
   if (rider.s == null) return;
   const p = route.pointAt(rider.s, _ovc.rp || (_ovc.rp = {}));
   const eR = route.eleAt(rider.s);
-  let h = surfaceHeight(p.lon, p.lat, 'rider');
-  if (h != null) riderCart.hOff = riderCart.hOff == null ? h - eR : follow(riderCart.hOff, h - eR, dt, 1.0);
-  else h = eR + (riderCart.hOff || 0);
-  riderCart.lon = p.lon; riderCart.lat = p.lat; riderCart.h = h;
+  const hs = trusted(surfaceHeight(p.lon, p.lat, 'rider'), refHeight(rider.s), refTol());
+  if (hs != null) riderCart.hOff = riderCart.hOff == null ? hs - eR : follow(riderCart.hOff, hs - eR, dt, 2.0);
+  const hT = hs != null ? hs : refHeight(rider.s);
+  riderCart.h = riderCart.pos ? follow(riderCart.h, hT, dt, 0.2) : hT;
+  riderCart.lon = p.lon; riderCart.lat = p.lat;
+  const h = riderCart.h;
   riderCart.pos = Cesium.Cartesian3.fromDegrees(p.lon, p.lat, h, undefined, riderCart.pos || new Cesium.Cartesian3());
   if (!cam.active) startRig();
   updateCamera(dt, now);
@@ -979,11 +987,13 @@ function loadRoute(text) {
   $('pname').textContent = (route.name ? route.name + ' · ' : '') + num(route.total / 1000, 1) + ' km';
   $('m-dist-tot').textContent = '/ ' + num(route.total / 1000, 1) + ' km';
   $('m-level-max').textContent = '/ ' + CFG.maxLevel;
-  const bs = Cesium.BoundingSphere.fromPoints(route.cart);
-  camera.flyToBoundingSphere(bs, { duration: 0, offset: new Cesium.HeadingPitchRange(0, -0.85, Math.max(bs.radius * 2.6, 2500)) });
+  const pts3 = [];
+  for (let i = 0; i < route.n; i += Math.max(1, Math.floor(route.n / 400))) pts3.push(Cesium.Cartesian3.fromDegrees(route.lon[i], route.lat[i], route.eleAt(route.S[i])));
+  const bs = Cesium.BoundingSphere.fromPoints(pts3);
+  camera.flyToBoundingSphere(bs, { duration: 0, offset: new Cesium.HeadingPitchRange(0, -0.85, Math.max(bs.radius * 2.6, 3000)) });
   PROFILE.dirty = true;
-  if (!route.hasEle) fillElevationFromTerrain();
-  if (!CFG.demo && rider.s == null) status('Strecke geladen. Starte das Training, dann geht es los.');
+  if (!route.hasEle) { status('Höhendaten werden geladen …'); fillElevationFromTerrain().then(() => { if (rider.s == null && !CFG.demo) status('Strecke geladen. Starte das Training, dann geht es los.'); else status(''); }); }
+  else if (!CFG.demo && rider.s == null) status('Strecke geladen. Starte das Training, dann geht es los.');
 }
 
 async function fillElevationFromTerrain() {
@@ -991,10 +1001,11 @@ async function fillElevationFromTerrain() {
     const tp = await terrainReady;
     const cartos = [];
     for (let k = 0; k < route.m; k++) { const p = route.pointAt(k * route.step); cartos.push(Cesium.Cartographic.fromDegrees(p.lon, p.lat)); }
-    const res = await Cesium.sampleTerrainMostDetailed(tp, cartos);
+    const res = await Cesium.sampleTerrain(tp, 12, cartos);
     route.setElevation(Float64Array.from(res, c => c.height || 0));
     PROFILE.dirty = true;
   } catch (e) { console.warn('elevation from terrain failed', e); }
+  route.ready = true;
 }
 
 // ------------------------------------------------------------------ 3D photo layer (Google Photorealistic 3D Tiles via Cesium ion)
@@ -1120,7 +1131,7 @@ async function boot() {
   }
 }
 
-window.qzmap = { cfg: CFG, rider, cam, setZoom, setLayer, PRESETS, get route() { return route; }, get scene() { return scene; }, get demo() { return demo; } };
+window.qzmap = { cfg: CFG, rider, cam, setZoom, setLayer, PRESETS, riderCart, LAYOUT, get route() { return route; }, get scene() { return scene; }, get demo() { return demo; } };
 boot();
 })();
 </script>
