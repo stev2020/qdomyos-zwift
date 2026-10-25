@@ -203,6 +203,29 @@ jobs:
             echo "::warning::Secret CESIUM_TOKEN is missing or empty, the 3D map uses Cesium's evaluation key."
           fi
 
+      - name: Check Cesium key
+        continue-on-error: true
+        env:
+          CESIUM_TOKEN: ${{ secrets.CESIUM_TOKEN }}
+        run: |
+          # Ask Cesium ion whether the key may use terrain (1), aerial imagery (2) and Google 3D tiles (2275207),
+          # once plain and once with the origin the app's web view sends. Only status and ion's message are logged.
+          cesium_token=$(printf '%s' "$CESIUM_TOKEN" | tr -d " \t\r\n\"'")
+          if [ -z "$cesium_token" ]; then
+            exit 0
+          fi
+          echo "::add-mask::$cesium_token"
+          ion_check() {
+            code=$(curl -s -o ion.json -w "%{http_code}" "$@")
+            info=$(python3 -c "import json; d = json.load(open('ion.json')); print(d.get('type') or d.get('message') or d.get('code') or '')" 2>/dev/null || true)
+            echo "HTTP $code $info"
+          }
+          for asset in 1 2 2275207; do
+            url="https://api.cesium.com/v1/assets/$asset/endpoint?access_token=$cesium_token"
+            echo "::notice::Cesium ion asset $asset: $(ion_check "$url") | with origin localhost: $(ion_check -H "Origin: http://localhost:8080" "$url")"
+          done
+          rm -f ion.json
+
       - name: Build qthttpserver for Android
         run: |
           cd src/qthttpserver

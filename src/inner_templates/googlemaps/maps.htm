@@ -226,6 +226,55 @@ async function loadCesium() {
   throw new Error('CesiumJS konnte nicht geladen werden');
 }
 
+// Ask Cesium ion whether a key may use an asset (1 = World Terrain, 2 = aerial imagery).
+// Returns the HTTP status (0 = no connection) and ion's message.
+async function ionCheck(token, assetId) {
+  try {
+    const r = await fetch('https://api.cesium.com/v1/assets/' + assetId + '/endpoint?access_token=' + encodeURIComponent(token));
+    if (r.ok) return { status: r.status, msg: '' };
+    let msg = '';
+    try { const j = await r.json(); msg = j.message || j.code || ''; } catch (e) { /* no JSON body */ }
+    return { status: r.status, msg };
+  } catch (e) {
+    return { status: 0, msg: e.message };
+  }
+}
+// Check the key before the map asks for terrain and imagery. If ion turns the own key down, switch to
+// CesiumJS's evaluation key and say why, so the map still works.
+async function checkIonKey(builtinToken) {
+  const own = Cesium.Ion.defaultAccessToken !== builtinToken;
+  const terrainRes = await ionCheck(Cesium.Ion.defaultAccessToken, 1);
+  const imageryRes = await ionCheck(Cesium.Ion.defaultAccessToken, 2);
+  window.qzmapDiag.ion = 'Gelände ' + terrainRes.status + ', Satellitenbild ' + imageryRes.status;
+  if (terrainRes.status === 200 && imageryRes.status === 200) {
+    if (!own) toast('Kein eigener Cesium-Schlüssel im Build – die Karte nutzt vorerst den Testschlüssel von Cesium.', 6000);
+    return;
+  }
+  const failed = terrainRes.status !== 200 ? ['Gelände', terrainRes] : ['Satellitenbild', imageryRes];
+  if (failed[1].status === 0) {
+    status('Keine Verbindung zu Cesium ion (' + failed[1].msg + '). Ist das Gerät online?', true);
+    return;
+  }
+  const reason = failed[0] + ': HTTP ' + failed[1].status + (failed[1].msg ? ' – ' + failed[1].msg : '');
+  if (own && (await ionCheck(builtinToken, 1)).status === 200) {
+    Cesium.Ion.defaultAccessToken = builtinToken;
+    window.qzmapDiag.key = 'cesium-test, eigener abgelehnt (' + reason + ')';
+    toast('Cesium lehnt deinen Schlüssel ab (' + reason + '). Die Karte nutzt vorerst den Testschlüssel von Cesium.', 15000);
+    return;
+  }
+  status('Cesium ion lehnt den Schlüssel ab (' + reason + ').', true);
+}
+// Short reason from a failed Cesium request, e.g. " [HTTP 401: Invalid access token]"
+function errInfo(e) {
+  if (!e) return '';
+  let msg = e.statusCode ? 'HTTP ' + e.statusCode : '';
+  let body = e.response;
+  if (typeof body === 'string') { try { body = JSON.parse(body); } catch (x) { /* plain text */ } }
+  if (body && body.message) msg += (msg ? ': ' : '') + body.message;
+  if (!msg && e.message) msg = e.message;
+  return msg ? ' [' + msg + ']' : '';
+}
+
 let statusTimer = 0, toastTimer = 0;
 function status(msg, isError) {
   window.qzmapDiag.status = msg || '';
@@ -932,9 +981,9 @@ function initMap() {
   terrainReady = new Promise(resolve => {
     if (!terrain) return resolve(globe.terrainProvider);
     terrain.readyEvent.addEventListener(p => resolve(p));
-    terrain.errorEvent.addEventListener(e => { console.error(e); status('Das 3D-Gelände konnte nicht geladen werden (Cesium-ion-Schlüssel prüfen).', true); });
+    terrain.errorEvent.addEventListener(e => { console.error(e); status('Das 3D-Gelände konnte nicht geladen werden (Cesium-ion-Schlüssel prüfen).' + errInfo(e), true); });
   });
-  if (baseLayer.errorEvent) baseLayer.errorEvent.addEventListener(e => { console.error(e); status('Das Satellitenbild konnte nicht geladen werden (Cesium-ion-Schlüssel prüfen).', true); });
+  if (baseLayer.errorEvent) baseLayer.errorEvent.addEventListener(e => { console.error(e); status('Das Satellitenbild konnte nicht geladen werden (Cesium-ion-Schlüssel prüfen).' + errInfo(e), true); });
   globe.enableLighting = true;
   // light from behind the camera (sun 40 degrees high), so the view is never backlit; updated in updateCamera()
   scene.light = new Cesium.DirectionalLight({ direction: new Cesium.Cartesian3(0, 0, -1), intensity: 2.0 });
@@ -1106,7 +1155,7 @@ async function setLayer(l) {
       tileset.show = true; globe.show = false; tilesOn = true; surfaceHeight.cache = {};
     } catch (e) {
       console.error(e);
-      toast('3D-Fotos nicht verfügbar. Im Cesium-ion-Konto unter „Asset Depot“ das Asset „Google Photorealistic 3D Tiles“ hinzufügen.', 9000);
+      toast('3D-Fotos nicht verfügbar. Im Cesium-ion-Konto unter „Asset Depot“ das Asset „Google Photorealistic 3D Tiles“ hinzufügen.' + errInfo(e), 9000);
     }
     layerBusy = false;
   } else if (l === 'sat' && tilesOn) {
@@ -1201,7 +1250,7 @@ async function boot() {
   if (!CFG.offline) { try { await loadScript('cesium-key.js'); } catch (e) { /* not available in previews */ } }
   if (!Cesium.Ion.defaultAccessToken) Cesium.Ion.defaultAccessToken = builtinToken;
   window.qzmapDiag.key = Cesium.Ion.defaultAccessToken === builtinToken ? 'cesium-test' : 'eigener';
-  if (!CFG.offline && window.qzmapDiag.key === 'cesium-test') toast('Kein eigener Cesium-Schlüssel im Build – die Karte nutzt vorerst den Testschlüssel von Cesium.', 6000);
+  if (!CFG.offline) await checkIonKey(builtinToken);
   window.qzmapDiag.stage = 'cesium-ok';
   try { initMap(); } catch (e) { console.error(e); status('3D-Darstellung nicht möglich: ' + e.message, true); return; }
   window.qzmapDiag.stage = 'karte-ok';
