@@ -1258,27 +1258,28 @@ function buildTilesRoute() {
 
 // Height of the road under the 3D photos. The photo surface equals the road where it is open, but lies on the
 // tree tops (or roofs) where something covers it. So the rider follows the route profile, and the offset
-// between profile and photo surface is learned at the rider: it drops at once to a lower surface but rises
-// only slowly, which keeps trees over the road from lifting the rider. Cesium World Terrain gives the start.
-const tilesGround = { off: null, t: 0 };
+// between profile and photo surface is learned at the rider: it drops quickly to a lower surface but rises by
+// at most 4 cm per metre ridden, which keeps trees over the road from lifting the rider while still following
+// slow differences between the GPX heights and the real road. Cesium World Terrain gives the start.
+const tilesGround = { off: null, t: 0, s: null };
 function updateTilesGround(p, now) {
   if (now - tilesGround.t < 250) return;
-  const dts = tilesGround.t ? Math.min((now - tilesGround.t) / 1000, 1) : 0.25;
   tilesGround.t = now;
-  const e = route.eleAt(rider.s);
-  if (tilesGround.off == null) { const ter = route.terrainAt(rider.s); if (Number.isFinite(ter)) tilesGround.off = ter - e; }
+  const s = rider.s, e = route.eleAt(s), ter = route.terrainAt(s);
+  const ds = tilesGround.s == null ? 0 : Math.abs(s - tilesGround.s);
+  tilesGround.s = s;
+  if (tilesGround.off == null && Number.isFinite(ter)) tilesGround.off = ter - e;
   if (cam.d > 400) return; // from far away the photo tiles at the rider are still coarse
   const hs = surfaceHeight(p.lon, p.lat, 'rider');
   if (hs == null) return;
   const d = hs - e;
   // ignore samples from tiles that are still loading (they can be kilometres off)
-  const ter = route.terrainAt(rider.s);
   if (Number.isFinite(ter) ? Math.abs(d - (ter - e)) > 80 : Math.abs(d) > 200) return;
   if (tilesGround.off == null) tilesGround.off = d;
-  else if (d < tilesGround.off) tilesGround.off = follow(tilesGround.off, d, dts, 0.5);
-  else tilesGround.off += Math.min(d - tilesGround.off, 0.12 * dts);
+  else if (d < tilesGround.off) tilesGround.off = follow(tilesGround.off, d, 0.25, 0.4);
+  else tilesGround.off += Math.min(d - tilesGround.off, 0.04 * ds);
   // keep the drawn line in step with the learned offset
-  if (tilesRoute && (tilesRoute.off == null || Math.abs(tilesGround.off - tilesRoute.off) > 1.5) && now - tilesRoute.t > 4000) buildTilesRoute();
+  if (tilesRoute && (tilesRoute.off == null || Math.abs(tilesGround.off - tilesRoute.off) > 2) && now - tilesRoute.t > 8000) buildTilesRoute();
 }
 
 function loadRoute(text) {
