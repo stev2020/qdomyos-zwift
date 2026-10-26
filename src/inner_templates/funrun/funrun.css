@@ -98,3 +98,7 @@ body.withtabs .wrap { padding-bottom: 96px; }
   min-height: 54px; padding: 0 16px; color: var(--text); font-size: 16px; font-weight: 500; text-align: left; cursor: pointer; }
 .link + .link { border-top: 1px solid var(--line); }
 .link svg { width: 20px; height: 20px; flex: none; color: var(--muted); }
+
+/* progress bar (month goal, long routes) */
+.bar { height: 10px; border-radius: 5px; background: var(--line2); overflow: hidden; }
+.bar i { display: block; height: 100%; width: 0; background: var(--accent); border-radius: 5px; }

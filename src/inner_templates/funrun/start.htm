@@ -46,7 +46,7 @@
       <section class="card route hidden" id="routeCard">
         <div class="rhead">
           <div style="min-width:0">
-            <div class="eyebrow">Ausgewählte Strecke</div>
+            <div class="eyebrow" id="rEyebrow">Ausgewählte Strecke</div>
             <h2 id="rName"></h2>
             <div class="muted" id="rMeta"></div>
           </div>
@@ -87,13 +87,20 @@
         <svg viewBox="0 0 24 24" width="22" height="22" aria-hidden="true"><path d="M8 5v14l11-7z" fill="currentColor"/></svg><span id="goText">Fahrt starten</span>
       </button>
       <p class="note hidden" id="goNote" style="margin-top:-4px"></p>
+      <p class="note hidden" id="longNote" style="margin-top:-4px">Sehr lange Strecke: Unter „Strecken“ kannst du sie in Etappen teilen.</p>
     </div>
 
     <div class="col">
+      <section class="card hidden" id="goalCard" style="display:flex;flex-direction:column;gap:8px">
+        <div class="chead"><h2 id="goalTitle"></h2><span class="aside" id="goalAside"></span></div>
+        <div class="bar" role="img" id="goalBarBox"><i id="goalBar"></i></div>
+        <div class="muted" style="font-size:14px" id="goalText"></div>
+      </section>
       <section class="card flat">
         <button class="link" id="lnkRoutes">Andere Strecke wählen<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="m9 6 6 6-6 6"/></svg></button>
         <button class="link" id="lnkFree">Freie Fahrt ohne Strecke<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="m9 6 6 6-6 6"/></svg></button>
         <button class="link" id="lnkProgram">Trainingsprogramm laden<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="m9 6 6 6-6 6"/></svg></button>
+        <button class="link hidden" id="lnkGoal">Monatsziel festlegen<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="m9 6 6 6-6 6"/></svg></button>
       </section>
       <section class="card hidden" id="lastCard">
         <div class="chead"><h2>Letzte Fahrt</h2><span class="aside" id="lastWhen"></span></div>
@@ -106,13 +113,14 @@
   </div>
 </div>
 <script src="funrun.js"></script>
+<script src="funrun-routes.js"></script>
 <script>
 (function () {
 'use strict';
 const $ = FR.$;
 FR.tabs('start.htm');
 
-let routes = [], rides = [], route = null, wind = 0, ghostMode = 'best';
+let routes = [], rides = [], route = null, wind = 0, ghostMode = 'best', goal = 0, params = { flat: 25, climb: 700 }, projects = [];
 
 // ------------------------------------------------------------------ drawing
 function thumbSvg(shape) {
@@ -146,7 +154,17 @@ function renderRoute() {
   if (!route) return;
   $('rName').textContent = route.name;
   const best = bestOf(route.key);
-  $('rMeta').textContent = FR.km(route.length) + ' km · ' + FR.num(route.ascent) + ' Hm' + (best ? ' · Bestzeit ' + FR.time(FR.routeTime(best)) : '');
+  const long = route.length > 150000;
+  $('rMeta').textContent = FR.km(route.length) + ' km · ' + FR.num(route.ascent) + ' Hm' +
+    (long ? '' : ' · ' + window.FRR.duration(window.FRR.estimate(route.length, route.profile, params))) + (best ? ' · Bestzeit ' + FR.time(FR.routeTime(best)) : '');
+  // a stage of a long route: which one, and how far the whole route is done
+  let eyebrow = 'Ausgewählte Strecke';
+  for (const p of projects) {
+    const st = (p.stages || []).find(x => x.file === route.file);
+    if (st) { const pr = window.FRR.projectProgress(p, rides); eyebrow = p.name + ' · Etappe ' + st.n + ' von ' + p.stages.length + ' · ' + FR.num(pr.km) + ' von ' + FR.num(p.length / 1000) + ' km'; }
+  }
+  $('rEyebrow').textContent = eyebrow;
+  $('longNote').classList.toggle('hidden', !long);
   $('rThumb').innerHTML = thumbSvg(route.shape);
   $('rProf').innerHTML = profileSvg(route.profile || [0, 0], 320, 64);
   $('pLo').textContent = FR.num(route.profile ? route.profile[0] : 0) + ' m';
@@ -166,6 +184,22 @@ function renderOptions() {
   }
   else if (route && ghostMode === 'last') { const l = lastOf(route.key); gt = l ? 'gegen deine letzte Fahrt (' + FR.when(FR.date(l.start)) + ')' : 'ab der zweiten Fahrt auf dieser Strecke'; }
   $('ghostText').textContent = gt;
+}
+// goal for the month: km so far, what is left per day
+function renderGoal() {
+  $('goalCard').classList.toggle('hidden', !(goal > 0));
+  $('lnkGoal').classList.toggle('hidden', goal > 0);
+  if (!(goal > 0)) return;
+  const now = new Date(), from = new Date(now.getFullYear(), now.getMonth(), 1);
+  const days = new Date(now.getFullYear(), now.getMonth() + 1, 0).getDate(), left = days - now.getDate() + 1;
+  const km = rides.filter(r => FR.date(r.start) >= from).reduce((x, r) => x + (r.distance || 0), 0) / 1000;
+  const pct = Math.min(100, km / goal * 100);
+  $('goalTitle').textContent = 'Ziel im ' + FR.months[now.getMonth()];
+  $('goalAside').textContent = FR.num(km, km < 100 ? 1 : 0) + ' von ' + FR.num(goal) + ' km';
+  $('goalBar').style.width = pct.toFixed(1) + '%';
+  $('goalBarBox').setAttribute('aria-label', Math.round(pct) + ' Prozent des Monatsziels');
+  $('goalText').textContent = km >= goal ? 'Geschafft! Alles weitere ist Zugabe.'
+    : 'Noch ' + FR.num(goal - km) + ' km in ' + (left === 1 ? '1 Tag' : left + ' Tagen') + ' · etwa ' + FR.num((goal - km) / left) + ' km pro Tag';
 }
 function renderWeek() {
   const now = new Date(), wd = (now.getDay() + 6) % 7, from = new Date(now.getFullYear(), now.getMonth(), now.getDate() - wd);
@@ -226,12 +260,16 @@ $('lnkRoutes').addEventListener('click', () => FR.go('strecken.htm'));
 $('lnkFree').addEventListener('click', () => FR.open('tiles'));
 $('lnkProgram').addEventListener('click', () => FR.open('trainingprograms'));
 $('btnImport').addEventListener('click', () => FR.open('gpx'));
+$('lnkGoal').addEventListener('click', () => FR.go('einstellungen.htm'));
 
 // ------------------------------------------------------------------ data
 async function load() {
   try {
-    const [rs, rd, st] = await Promise.all([FR.routes(), FR.rides(), FR.getSettings(['funrun_selected_route', 'funrun_wind_strength', 'funrun_ghost_mode'])]);
-    routes = rs; rides = rd.slice().sort((a, b) => (a.start < b.start ? 1 : -1));
+    const [rs, rd, st, pj] = await Promise.all([FR.routes(), FR.rides(), FR.getSettings(['funrun_selected_route', 'funrun_wind_strength', 'funrun_ghost_mode', 'funrun_month_goal']),
+      FR.ultraList().catch(() => [])]);
+    routes = rs; rides = rd.slice().sort((a, b) => (a.start < b.start ? 1 : -1)); projects = pj || [];
+    goal = Math.max(0, +st.funrun_month_goal || 0);
+    params = await FR.speedParams(rides);
     wind = Math.max(0, Math.min(4, +st.funrun_wind_strength || 0));
     ghostMode = st.funrun_ghost_mode || 'best';
     // the chosen route, otherwise the route of the last ride, otherwise the first one
@@ -242,6 +280,7 @@ async function load() {
   }
   renderRoute();
   renderWeek();
+  renderGoal();
 }
 FR.onRefresh(load);
 load();

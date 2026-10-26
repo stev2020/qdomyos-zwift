@@ -65,6 +65,10 @@
           <button class="nav" id="next" aria-label="Später">›</button>
         </div>
         <dl class="sums" id="sums"></dl>
+        <div class="hidden" id="goalBox" style="margin-top:12px;display:flex;flex-direction:column;gap:6px">
+          <div class="chead"><span class="muted" style="font-size:13px;font-weight:600">Monatsziel</span><span style="font-size:14px;font-weight:600" id="goalVal"></span></div>
+          <div class="bar" role="img" id="goalBarBox"><i id="goalBar"></i></div>
+        </div>
         <div style="height:1px;background:var(--line);margin:14px 0 10px"></div>
         <div class="chead"><span class="muted" style="font-size:13px;font-weight:600" id="barTitle"></span><span style="font-size:14px;font-weight:600" id="barSel"></span></div>
         <div class="bars" id="bars"></div>
@@ -95,7 +99,7 @@ const ROUTE_ICON = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" s
 const BIKE_ICON = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="5.5" cy="16.5" r="3.5"/><circle cx="18.5" cy="16.5" r="3.5"/><path d="M5.5 16.5 9 9h6.5l3 7.5M9 9l3.5 7.5M14 5.5h2.5l-1 3.5"/></svg>';
 const GHOST_ICON = '<svg viewBox="0 0 34 42" aria-hidden="true"><path d="M4 40V17a13 13 0 0 1 26 0v23l-4.3-3.2-4.4 3.2-4.3-3.2-4.3 3.2-4.4-3.2z" fill="none" stroke="#6fd3ff" stroke-width="2.6" stroke-linejoin="round"/><circle cx="12.5" cy="17" r="2.3" fill="#6fd3ff"/><circle cx="21.5" cy="17" r="2.3" fill="#6fd3ff"/></svg>';
 
-let rides = [];
+let rides = [], goal = 0;
 let range = 'week', offset = 0, sel = -1, shown = 12;
 // best ride per route (route key -> ride) and their ids, for the badge in the list
 const bestByRoute = new Map(), bestIds = new Set();
@@ -152,6 +156,15 @@ function renderPeriod() {
     '<div><dt>Höhenmeter</dt><dd class="cond">' + FR.num(up) + '<small>m</small></dd></div>' +
     '<div><dt>Kalorien</dt><dd class="cond">' + FR.num(kcal) + '<small>kcal</small></dd></div>';
   $('next').disabled = offset >= 0;
+  // goal of the month (the same goal for every month)
+  const showGoal = range === 'month' && goal > 0;
+  $('goalBox').classList.toggle('hidden', !showGoal);
+  if (showGoal) {
+    const km = dist / 1000, pct = Math.min(100, km / goal * 100);
+    $('goalVal').textContent = km >= goal ? 'geschafft · ' + FR.num(km) + ' von ' + FR.num(goal) + ' km' : FR.num(km, km < 100 ? 1 : 0) + ' von ' + FR.num(goal) + ' km (' + Math.round(pct) + ' %)';
+    $('goalBar').style.width = pct.toFixed(1) + '%';
+    $('goalBarBox').setAttribute('aria-label', Math.round(pct) + ' Prozent des Monatsziels');
+  }
   // bars
   const vals = P.buckets.map(b => inP.reduce((s, r) => { const d = FR.date(r.start); return d >= b.a && d < b.b ? s + (r.distance || 0) / 1000 : s; }, 0));
   const max = Math.max(...vals, 0.001);
@@ -223,7 +236,10 @@ document.addEventListener('click', e => {
 });
 
 async function load() {
-  try { rides = await FR.rides(); } catch (e) { $('msg').textContent = e.message; return; }
+  try {
+    const [rd, st] = await Promise.all([FR.rides(), FR.getSettings(['funrun_month_goal'])]);
+    rides = rd; goal = Math.max(0, +st.funrun_month_goal || 0);
+  } catch (e) { $('msg').textContent = e.message; return; }
   rides.sort((a, b) => (a.start < b.start ? 1 : -1));
   computeBests();
   renderPeriod();

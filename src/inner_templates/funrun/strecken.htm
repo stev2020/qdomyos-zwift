@@ -4,7 +4,9 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
 <title>FunRun – Strecken</title>
-<!-- FunRun routes: the GPX files of the app with outline, profile and best time; a tap chooses the route -->
+<!-- FunRun routes: the app's GPX routes and long routes in stages ("Meine"); new routes to load ("Entdecken"):
+     famous climbs (katalog.json, routed with BRouter), signposted cycle routes of OpenStreetMap around a place,
+     ultra races (public routes of the organisers) -->
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Barlow:wght@400;500;600;700&amp;family=Barlow+Condensed:wght@600;700&amp;display=swap">
 <link rel="stylesheet" href="funrun.css">
 <style>
@@ -12,26 +14,70 @@
 .search svg { width: 20px; height: 20px; flex: none; }
 .search input { flex: 1; min-width: 0; height: 100%; background: transparent; border: 0; outline: none; color: var(--text); font: inherit; font-size: 16px; }
 .search input::placeholder { color: #7d8996; }
+.search .go2 { appearance: none; -webkit-appearance: none; flex: none; height: 34px; padding: 0 14px; border-radius: 9px; border: 0; background: var(--accent); color: var(--accent-dark); font-weight: 700; font-size: 14px; cursor: pointer; }
 .chips { display: flex; gap: 8px; flex-wrap: wrap; }
-.chips button { appearance: none; -webkit-appearance: none; height: 38px; padding: 0 16px; border-radius: 999px; font-size: 14px; font-weight: 600; cursor: pointer;
-  border: 1px solid var(--line); background: var(--panel); color: var(--soft); }
+.chips button { appearance: none; -webkit-appearance: none; height: 38px; padding: 0 14px; border-radius: 999px; font-size: 14px; font-weight: 600; cursor: pointer;
+  border: 1px solid var(--line); background: var(--panel); color: var(--soft); white-space: nowrap; }
 .chips button.on { background: var(--accent); border-color: var(--accent); color: var(--accent-dark); }
+.chips.small button { height: 32px; padding: 0 12px; font-size: 13px; }
+/* phones: long chip rows scroll sideways instead of taking several lines */
+@media (max-width: 700px) {
+  .chips.scroll { flex-wrap: nowrap; overflow-x: auto; margin: 0 -16px; padding: 0 16px; scrollbar-width: none; -webkit-overflow-scrolling: touch; }
+  .chips.scroll::-webkit-scrollbar { display: none; }
+  .chips.scroll button { flex: none; }
+}
+.flabel { font-size: 12px; letter-spacing: .1em; text-transform: uppercase; color: var(--muted); font-weight: 600; margin: 2px 0 -4px 2px; }
+.viewseg { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 4px; padding: 4px; border-radius: 12px; background: var(--panel); border: 1px solid var(--line); }
+.viewseg button { appearance: none; -webkit-appearance: none; border: 0; height: 40px; border-radius: 9px; font-size: 16px; font-weight: 700; cursor: pointer; background: transparent; color: var(--soft); }
+.viewseg button.on { background: var(--accent); color: var(--accent-dark); }
 .list { display: grid; grid-template-columns: minmax(0, 1fr); gap: 10px; }
 @media (min-width: 760px) { .list { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
 .rc { appearance: none; -webkit-appearance: none; width: 100%; text-align: left; display: flex; flex-direction: column; gap: 10px; padding: 12px; border-radius: 16px;
   background: var(--panel); border: 1px solid var(--line); color: var(--text); cursor: pointer; }
 .rc.sel { border-color: var(--accent); }
 .rc .h { display: flex; gap: 12px; align-items: center; }
-.rc .th { width: 56px; height: 56px; flex: none; border-radius: 12px; background: var(--bg); border: 1px solid var(--line); }
-.rc .th svg { width: 100%; height: 100%; display: block; }
+.th { width: 56px; height: 56px; flex: none; border-radius: 12px; background: var(--bg); border: 1px solid var(--line); display: flex; align-items: center; justify-content: center; color: var(--muted); }
+.th svg { width: 100%; height: 100%; display: block; }
 .rc .tx { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 3px; }
 .rc .n { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
 .rc .n b { font-size: 17px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.rc .lv { flex: none; font-size: 12px; font-weight: 700; padding: 3px 9px; border-radius: 999px; border: 1px solid currentColor; }
-.rc .m { font-size: 14px; color: var(--muted); }
-.rc svg.pf { display: block; width: 100%; height: 36px; }
-.rc .f { display: flex; justify-content: space-between; font-size: 13px; color: var(--soft); }
-.rc .f span:last-child { color: var(--accent); font-weight: 600; }
+.lv { flex: none; font-size: 12px; font-weight: 700; padding: 3px 9px; border-radius: 999px; border: 1px solid currentColor; }
+.rc .m { font-size: 14px; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.rc .w { font-size: 13px; color: var(--soft); }
+svg.pf { display: block; width: 100%; height: 36px; }
+.rc .f { display: flex; justify-content: space-between; align-items: center; gap: 8px; font-size: 13px; color: var(--soft); }
+.rc .f .act { color: var(--accent); font-weight: 600; white-space: nowrap; }
+.rc .f .tm { display: inline-flex; align-items: center; gap: 5px; }
+.rc .f .tm svg { width: 15px; height: 15px; }
+.nopf { height: 36px; display: flex; align-items: center; font-size: 13px; color: var(--muted); }
+.proj { display: flex; flex-direction: column; gap: 10px; }
+.proj .row2 { display: flex; justify-content: space-between; gap: 10px; font-size: 14px; color: var(--soft); }
+.proj .btns2 { display: flex; gap: 8px; }
+.proj .btns2 .btn { min-height: 46px; font-size: 15px; flex: 1; }
+.attr { font-size: 12px; color: var(--muted); margin: 0; }
+.attr a { color: inherit; }
+/* sheet: details and loading of a route */
+.sheet { position: fixed; inset: 0; z-index: 20; background: rgba(5, 8, 12, .62); display: none; align-items: flex-end; justify-content: center; }
+.sheet.open { display: flex; }
+.sheet .box { width: min(640px, 100%); max-height: 92vh; overflow: auto; background: var(--panel); border: 1px solid var(--line); border-bottom: 0;
+  border-radius: 20px 20px 0 0; padding: 16px 16px calc(18px + env(safe-area-inset-bottom)); display: flex; flex-direction: column; gap: 12px; }
+@media (min-width: 760px) { .sheet { align-items: center; } .sheet .box { border-radius: 20px; border-bottom: 1px solid var(--line); } }
+.sheet h2 { margin: 0; font-size: 22px; line-height: 1.2; }
+.sheet .sub { color: var(--muted); font-size: 14px; }
+.sheet .big svg { display: block; width: 100%; height: 90px; }
+.kv { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
+@media (min-width: 520px) { .kv { grid-template-columns: repeat(4, minmax(0, 1fr)); } }
+.kv div { background: var(--bg); border: 1px solid var(--line); border-radius: 12px; padding: 8px 10px; display: flex; flex-direction: column; gap: 2px; }
+.kv span { font-size: 12px; color: var(--muted); font-weight: 600; }
+.kv b { font-size: 20px; font-family: "Barlow Condensed", Barlow, sans-serif; }
+.state { font-size: 14px; color: var(--soft); min-height: 20px; }
+.state.err { color: var(--bad); }
+.stlist { display: flex; flex-direction: column; border: 1px solid var(--line); border-radius: 12px; overflow: hidden; }
+.stlist button { appearance: none; -webkit-appearance: none; display: flex; justify-content: space-between; align-items: center; gap: 10px; min-height: 48px; padding: 6px 12px;
+  border: 0; border-top: 1px solid var(--line); background: transparent; color: var(--text); text-align: left; font-size: 14px; cursor: pointer; }
+.stlist button:first-child { border-top: 0; }
+.stlist .ok { color: var(--good); font-weight: 700; }
+.stlist .nx { color: var(--accent); font-weight: 700; }
 </style>
 </head>
 <body>
@@ -42,7 +88,11 @@
       <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 4v11M7 10l5 5 5-5M5 20h14"/></svg>GPX importieren
     </button>
   </div>
-  <div style="display:flex;flex-direction:column;gap:12px">
+  <div class="viewseg" id="viewSeg" role="tablist" aria-label="Ansicht"><button data-v="mine" class="on">Meine</button><button data-v="discover">Entdecken</button></div>
+
+  <!-- the app's routes -->
+  <div id="mine" style="display:flex;flex-direction:column;gap:12px;margin-top:12px">
+    <div id="projects" style="display:flex;flex-direction:column;gap:10px"></div>
     <label class="search">
       <svg viewBox="0 0 24 24" fill="none" stroke="#9ba7b4" stroke-width="2" stroke-linecap="round" aria-hidden="true"><circle cx="11" cy="11" r="6.5"/><path d="m16 16 4.5 4.5"/></svg>
       <input type="search" id="q" placeholder="Strecke suchen" aria-label="Strecke suchen">
@@ -53,15 +103,52 @@
     <div class="msg" id="msg">Strecken werden geladen …</div>
     <div class="list" id="list"></div>
   </div>
+
+  <!-- new routes -->
+  <div id="discover" class="hidden" style="display:flex;flex-direction:column;gap:12px;margin-top:12px">
+    <div class="chips scroll" id="srcChips" role="group" aria-label="Quelle">
+      <button data-s="cat" class="on">Anstiege &amp; Klassiker</button><button data-s="near">Radrouten in der Nähe</button><button data-s="ultra">Ultra-Rennen</button>
+    </div>
+    <div id="catFilters" style="display:flex;flex-direction:column;gap:10px">
+      <div class="chips small scroll" id="countryChips"></div>
+    </div>
+    <div id="nearFilters" class="hidden" style="display:flex;flex-direction:column;gap:10px">
+      <form class="search" id="placeForm">
+        <svg viewBox="0 0 24 24" fill="none" stroke="#9ba7b4" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 21s-6.5-5.6-6.5-11a6.5 6.5 0 0 1 13 0C18.5 15.4 12 21 12 21z"/><circle cx="12" cy="10" r="2.4"/></svg>
+        <input type="search" id="place" placeholder="Ort, z. B. Lübeck" aria-label="Ort" autocomplete="off">
+        <button class="go2" type="submit">Suchen</button>
+      </form>
+      <div class="chips small" id="radiusChips"><button data-r="10">10 km</button><button data-r="25" class="on">25 km</button><button data-r="50">50 km</button></div>
+    </div>
+    <div class="chips small scroll" id="lenChips"><button data-l="all" class="on">Jede Länge</button><button data-l="s">bis 30 km</button><button data-l="m">30–60 km</button><button data-l="l">über 60 km</button></div>
+    <div class="msg hidden" id="dmsg"></div>
+    <div class="list" id="dlist"></div>
+    <p class="attr" id="attr"></p>
+  </div>
 </div>
+
+<div class="sheet" id="sheet" role="dialog" aria-modal="true"><div class="box" id="sheetBox"></div></div>
+
 <script src="funrun.js"></script>
+<script src="funrun-routes.js"></script>
 <script>
 (function () {
 'use strict';
-const $ = FR.$;
+const $ = FR.$, RT = window.FRR;
 FR.tabs('strecken.htm');
-let routes = [], rides = [], selected = '', filter = 'all';
 
+const COUNTRIES = { FR: 'Frankreich', IT: 'Italien', CH: 'Schweiz', AT: 'Österreich', ES: 'Spanien', DE: 'Deutschland', KG: 'Kirgistan', MA: 'Marokko', GB: 'Großbritannien', US: 'USA', NO: 'Norwegen' };
+const STAGE_LENGTHS = [30, 50, 80, 100];
+const ls = {
+  get(k, d) { try { const v = localStorage.getItem('funrun.' + k); return v === null ? d : JSON.parse(v); } catch (e) { return d; } },
+  set(k, v) { try { localStorage.setItem('funrun.' + k, JSON.stringify(v)); } catch (e) { /* not available */ } },
+};
+
+let routes = [], rides = [], selected = '', projects = [], params = { flat: 25, climb: 700 }, catalog = null;
+let view = FR.qs.get('view') === 'mine' ? 'mine' : ls.get('view', 'mine'), src = ls.get('src', 'cat'), filter = 'all', lenFilter = 'all', country = 'all';
+const near = { place: ls.get('place', { name: 'Lübeck', lat: 53.8655, lon: 10.6866 }), radius: ls.get('radius', 25), items: null, loading: false, token: 0 };
+
+// ------------------------------------------------------------------ drawing helpers
 const avgGrade = r => (r.length > 0 ? r.ascent / r.length * 100 : 0);
 const isClimb = r => avgGrade(r) >= 3 || r.ascent >= 500;
 function level(r) {
@@ -75,16 +162,48 @@ function thumb(shape) {
   const p = shape.map(([x, y]) => (5 + x * 46).toFixed(1) + ' ' + (5 + y * 46).toFixed(1));
   return '<svg viewBox="0 0 56 56" fill="none" stroke="#ff7a1a" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M' + p.join(' L') + '"/></svg>';
 }
-function profile(prof) {
+function profile(prof, h) {
   if (!prof || prof.length < 2) return '';
+  h = h || 44;
   let lo = Math.min(...prof), hi = Math.max(...prof);
   if (hi - lo < 40) { const m = (hi + lo) / 2; lo = m - 20; hi = m + 20; }
-  const pts = prof.map((e, i) => (i / (prof.length - 1) * 300).toFixed(1) + ' ' + (2 + (1 - (e - lo) / (hi - lo)) * 40).toFixed(1));
-  return '<svg class="pf" viewBox="0 0 300 44" preserveAspectRatio="none" aria-hidden="true"><path d="M' + pts.join(' L') + ' L300 44 L0 44 Z" fill="#ff7a1a" fill-opacity=".16"/>' +
+  const pts = prof.map((e, i) => (i / (prof.length - 1) * 300).toFixed(1) + ' ' + (2 + (1 - (e - lo) / (hi - lo)) * (h - 4)).toFixed(1));
+  return '<svg class="pf" viewBox="0 0 300 ' + h + '" preserveAspectRatio="none" aria-hidden="true"><path d="M' + pts.join(' L') + ' L300 ' + h + ' L0 ' + h + ' Z" fill="#ff7a1a" fill-opacity=".16"/>' +
     '<path d="M' + pts.join(' L') + '" fill="none" stroke="#ff7a1a" stroke-width="1.6" stroke-linejoin="round" vector-effect="non-scaling-stroke"/></svg>';
 }
-function render() {
-  const q = $('q').value.trim().toLowerCase();
+const CLOCK = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><circle cx="12" cy="12" r="8.5"/><path d="M12 7.5V12l3 2"/></svg>';
+const time = (len, prof) => RT.duration(RT.estimate(len, prof, params));
+const meta = r => FR.km(r.length) + ' km · ' + FR.num(r.ascent) + ' Hm · Ø ' + FR.num(avgGrade(r), 1) + ' %';
+const lenOk = len => lenFilter === 'all' || (lenFilter === 's' && len <= 30000) || (lenFilter === 'm' && len > 30000 && len <= 60000) || (lenFilter === 'l' && len > 60000);
+// a route card; o: { key, cls, thumbHtml, name, lv, meta, sub, prof, time, left, act }
+function card(o) {
+  return '<button class="rc' + (o.cls || '') + '" data-key="' + FR.esc(o.key) + '">' +
+    '<span class="h"><span class="th">' + (o.thumbHtml || '') + '</span><span class="tx"><span class="n"><b>' + FR.esc(o.name) + '</b>' +
+    (o.lv ? '<span class="lv" style="color:' + o.lv[1] + '">' + o.lv[0] + '</span>' : '') + '</span>' +
+    '<span class="m">' + o.meta + '</span>' + (o.sub ? '<span class="w">' + o.sub + '</span>' : '') + '</span></span>' +
+    (o.prof ? profile(o.prof) : '<span class="nopf">' + (o.noProf || '') + '</span>') +
+    '<span class="f"><span class="tm">' + (o.time ? CLOCK + o.time : '') + (o.left ? (o.time ? ' · ' : '') + o.left : '') + '</span>' +
+    '<span class="act">' + (o.act || '') + '</span></span></button>';
+}
+
+// ------------------------------------------------------------------ "Meine": long routes and the app's routes
+const stageFiles = () => new Set([].concat(...projects.map(p => (p.stages || []).filter(s => s.file).map(s => s.file))));
+function renderProjects() {
+  $('projects').innerHTML = projects.map(p => {
+    const pr = RT.projectProgress(p, rides), st = pr.next, total = p.length / 1000;
+    const pct = Math.min(100, Math.round(pr.km / Math.max(1, total) * 100));
+    return '<section class="card proj" data-id="' + FR.esc(p.id) + '">' +
+      '<div class="chead"><h2>' + FR.esc(p.name) + '</h2><span class="aside">' + (COUNTRIES[p.country] || p.region || 'Langstrecke') + '</span></div>' +
+      '<div class="row2"><span>' + (pr.km > 0 ? FR.num(pr.km, pr.km < 100 ? 1 : 0) : '0') + ' von ' + FR.num(total) + ' km</span><span>' + pr.done.size + ' von ' + p.stages.length + ' Etappen</span></div>' +
+      '<div class="bar" role="img" aria-label="' + pct + ' Prozent geschafft"><i style="width:' + pct + '%"></i></div>' +
+      (st ? '<div class="muted" style="font-size:14px">Nächste: <b style="color:var(--text)">Etappe ' + st.n + '</b> · ' + FR.km(st.length) + ' km · ' + FR.num(st.ascent) + ' Hm · ' + RT.duration(RT.estimateAscent(st.length, st.ascent, params)) + '</div>'
+          : '<div style="font-size:15px;font-weight:700;color:var(--good)">Alle Etappen geschafft!</div>') +
+      '<div class="btns2">' + (st ? '<button class="btn primary" data-act="next">Etappe ' + st.n + ' fahren</button>' : '') +
+      '<button class="btn" data-act="stages">Etappen</button></div></section>';
+  }).join('');
+}
+function renderMine() {
+  const q = $('q').value.trim().toLowerCase(), hidden = stageFiles();
   const best = new Map(), ridden = new Set();
   for (const r of rides) {
     if (!r.route) continue;
@@ -92,43 +211,409 @@ function render() {
     const t = FR.routeTime(r);
     if (t != null && (!best.has(r.route.key) || t < best.get(r.route.key))) best.set(r.route.key, t);
   }
-  const list = routes.filter(r => (!q || r.name.toLowerCase().includes(q)) &&
+  const list = routes.filter(r => !hidden.has(r.file) && (!q || r.name.toLowerCase().includes(q)) &&
     (filter === 'all' || (filter === 'climb' && isClimb(r)) || (filter === 'flat' && !isClimb(r)) || (filter === 'ridden' && ridden.has(r.key))));
   $('msg').classList.toggle('hidden', list.length > 0);
-  $('msg').textContent = routes.length ? 'Keine Strecke passt.' : 'Noch keine Strecke. Importiere eine GPX-Datei, z. B. von Komoot, Strava oder gpxstudio.github.io.';
+  $('msg').textContent = routes.length ? 'Keine Strecke passt.' : 'Noch keine Strecke. Unter „Entdecken“ findest du Anstiege, Radrouten und Ultra-Rennen.';
   $('list').innerHTML = list.map(r => {
-    const lv = level(r), b = best.get(r.key);
-    return '<button class="rc' + (r.file === selected ? ' sel' : '') + '" data-file="' + FR.esc(r.file) + '">' +
-      '<span class="h"><span class="th">' + thumb(r.shape) + '</span><span class="tx"><span class="n"><b>' + FR.esc(r.name) + '</b>' +
-      '<span class="lv" style="color:' + lv[1] + '">' + lv[0] + '</span></span>' +
-      '<span class="m">' + FR.km(r.length) + ' km · ' + FR.num(r.ascent) + ' Hm · Ø ' + FR.num(avgGrade(r), 1) + ' %</span></span></span>' +
-      profile(r.profile) +
-      '<span class="f"><span>' + (b != null ? 'Bestzeit ' + FR.time(b) : ridden.has(r.key) ? 'noch nicht bis ins Ziel' : 'noch nicht gefahren') + '</span>' +
-      '<span>' + (r.file === selected ? 'Ausgewählt' : 'Auswählen') + '</span></span></button>';
+    const b = best.get(r.key), long = r.length > 150000;
+    return card({ key: 'r:' + r.file, cls: r.file === selected ? ' sel' : '', thumbHtml: thumb(r.shape), name: r.name, lv: level(r), meta: meta(r),
+      prof: r.profile, time: long ? '' : time(r.length, r.profile),
+      left: b != null ? 'Bestzeit ' + FR.time(b) : long ? 'sehr lang' : ridden.has(r.key) ? 'nicht bis ins Ziel' : '',
+      act: long ? 'In Etappen fahren' : r.file === selected ? 'Ausgewählt' : 'Auswählen' });
   }).join('');
 }
 
-$('q').addEventListener('input', render);
+// ------------------------------------------------------------------ "Entdecken"
+function setMsg(t) { $('dmsg').textContent = t || ''; $('dmsg').classList.toggle('hidden', !t); }
+const haveRoute = name => { const k = RT.routeKey(RT.fileName(name) + '.gpx'); return routes.find(r => r.key === k) || null; };
+function renderCatalog() {
+  const items = ((catalog && catalog.climbs) || []).filter(c => (country === 'all' || c.country === country) && lenOk(c.length));
+  setMsg(catalog ? (items.length ? '' : 'Keine Strecke passt.') : 'Liste wird geladen …');
+  $('dlist').innerHTML = items.map(c => card({ key: 'c:' + c.id, thumbHtml: thumb(c.shape), name: c.name, lv: level(c), meta: meta(c),
+    sub: 'ab ' + FR.esc(c.from) + ' · ' + FR.esc(c.region) + ', ' + (COUNTRIES[c.country] || c.country), prof: c.profile, time: time(c.length, c.profile),
+    act: haveRoute(catalogName(c)) ? 'Geladen' : 'Ansehen' })).join('');
+  $('attr').innerHTML = 'Strecken: © OpenStreetMap-Mitwirkende (ODbL), berechnet mit BRouter; Höhen: SRTM, geglättet.';
+}
+const catalogName = c => c.name + ' (' + c.from + ')';
+function renderUltra() {
+  const items = ((catalog && catalog.ultras) || []).filter(u => lenOk(u.length));
+  setMsg(catalog ? (items.length ? '' : 'Kein Rennen passt.') : 'Liste wird geladen …');
+  $('dlist').innerHTML = items.map(u => {
+    const proj = projects.find(p => p.source === 'ultra:' + u.id);
+    return card({ key: 'u:' + u.id, thumbHtml: '<svg viewBox="0 0 24 24" width="28" height="28" fill="none" stroke="#ff7a1a" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 21V4M5 4h11l-2 4 2 4H5"/></svg>',
+      name: u.name, meta: FR.num(u.length / 1000) + ' km · ' + FR.num(u.ascent) + ' Hm' + (u.unpaved ? ' · ' + u.unpaved + ' % Schotter' : ''),
+      sub: FR.esc(u.start + (u.finish && u.finish !== u.start ? ' – ' + u.finish : ' (Runde)')) + ' · ' + FR.esc(u.region) + (u.when ? ' · ' + FR.esc(u.when) : ''),
+      noProf: FR.esc(u.note || ''), left: 'Etappen ab 30 km',
+      act: proj ? 'Angelegt' : u.rwgps ? 'Ansehen' : 'Zur Website' });
+  }).join('');
+  $('attr').innerHTML = 'Strecken der Veranstalter (öffentlich bei RideWithGPS) oder zum Herunterladen auf ihren Websites.';
+}
+function renderNear() {
+  const it = near.items;
+  if (near.loading && !it) { setMsg('Radrouten um ' + near.place.name + ' werden gesucht …'); $('dlist').innerHTML = ''; }
+  else if (!it) { setMsg('Ort eingeben und „Suchen“ tippen.'); $('dlist').innerHTML = ''; }
+  else {
+    const items = it.filter(x => lenOk(x.len));
+    setMsg(items.length ? (near.loading ? 'Weitere Strecken werden geprüft …' : '') : near.loading ? 'Radrouten werden geprüft …' : 'Keine Radroute passt.');
+    $('dlist').innerHTML = items.map(x => {
+      const q = x.quick;
+      return card({ key: 'n:' + x.key, thumbHtml: q ? thumb(q.shape) : '', name: x.title, lv: q ? level(q) : null,
+        meta: q ? meta(q) : FR.km(x.len) + ' km', sub: FR.esc(x.sub), prof: q ? q.profile : null, noProf: q ? '' : 'Höhen werden geladen …',
+        time: q ? time(q.length, q.profile) : '', act: haveRoute(x.title) ? 'Geladen' : 'Ansehen' });
+    }).join('');
+  }
+  $('attr').innerHTML = 'Radrouten: © OpenStreetMap-Mitwirkende (ODbL), über Waymarked Trails; Höhen: Terrain Tiles (Mapzen, AWS Open Data).';
+}
+function renderDiscover() {
+  document.querySelectorAll('#srcChips button').forEach(b => b.classList.toggle('on', b.dataset.s === src));
+  $('catFilters').classList.toggle('hidden', src !== 'cat');
+  $('nearFilters').classList.toggle('hidden', src !== 'near');
+  if (src === 'cat') renderCatalog(); else if (src === 'ultra') renderUltra(); else renderNear();
+}
+function render() {
+  document.querySelectorAll('#viewSeg button').forEach(b => b.classList.toggle('on', b.dataset.v === view));
+  $('mine').classList.toggle('hidden', view !== 'mine');
+  $('discover').classList.toggle('hidden', view !== 'discover');
+  if (view === 'mine') { renderProjects(); renderMine(); } else renderDiscover();
+}
+
+// ------------------------------------------------------------------ OpenStreetMap routes around a place
+async function searchNear() {
+  const token = ++near.token;
+  near.loading = true; near.items = null; render();
+  try {
+    const list = await RT.osmList(near.place.lat, near.place.lon, near.radius);
+    if (token !== near.token) return;
+    const place = [near.place.lat, near.place.lon], items = [];
+    // details (length, shape) of the routes; long ones as a stage from the point nearest to the place
+    await RT.pool(list, 4, async r => {
+      let d;
+      try { d = await RT.osmRoute(r.id); } catch (e) { return; }
+      if (token !== near.token) return;
+      const stages = RT.osmStages(d, place, 50000);
+      for (const st of stages) {
+        const len = RT.cum(st.pts)[st.pts.length - 1];
+        if (len < 8000 || st.off > near.radius * 1000 * 1.5) continue;
+        const towards = st.whole ? '' : st.dir > 0 ? (d.itinerary[d.itinerary.length - 1] || '') : (d.itinerary[0] || '');
+        const title = st.whole ? d.name : d.name + ' ab ' + near.place.name + (towards ? ' Richtung ' + towards : st.dir > 0 ? ' (vorwärts)' : ' (rückwärts)');
+        const sub = (d.roundtrip && st.whole ? 'Rundtour · ' : st.whole ? '' : 'Etappe eines Fernwegs · ') +
+          (st.off < 1000 ? 'beginnt am Ort' : FR.km(st.off) + ' km entfernt');
+        items.push({ key: d.id + ':' + Math.round(st.from) + ':' + st.dir, id: d.id, route: d, stage: st, len, title, sub, off: st.off, quick: null });
+      }
+    });
+    if (token !== near.token) return;
+    items.sort((a, b) => a.off - b.off || a.len - b.len);
+    near.items = items;
+    render();
+    // heights for the list, a few at a time (the terrain tiles are shared between the routes)
+    await RT.pool(items, 2, async x => {
+      if (token !== near.token) return;
+      try { x.quick = await RT.quickProfile(x.stage.pts); } catch (e) { x.quick = null; }
+      if (token === near.token && view === 'discover' && src === 'near') renderNear();
+    });
+  } catch (e) {
+    if (token === near.token) { near.items = []; setMsg('Radrouten konnten nicht geladen werden (' + e.message + ').'); }
+  }
+  if (token === near.token) { near.loading = false; if (view === 'discover' && src === 'near') renderNear(); }
+}
+
+// ------------------------------------------------------------------ sheet: details and loading
+let sheetBusy = false;
+function openSheet(html) { $('sheetBox').innerHTML = html; $('sheet').classList.add('open'); }
+function closeSheet() { if (!sheetBusy) $('sheet').classList.remove('open'); }
+$('sheet').addEventListener('click', e => { if (e.target === $('sheet')) closeSheet(); });
+const kv = pairs => '<div class="kv">' + pairs.map(([k, v]) => '<div><span>' + k + '</span><b>' + v + '</b></div>').join('') + '</div>';
+const state = (t, err) => { const el = $('sheetState'); if (el) { el.textContent = t; el.classList.toggle('err', !!err); } };
+function doneButtons() {
+  return '<div class="btns"><button class="btn primary" id="sRide">Jetzt fahren</button><button class="btn" id="sClose">Fertig</button></div>';
+}
+function wireDone(file) {
+  $('sRide').onclick = () => { FR.start(file); closeSheet(); };
+  $('sClose').onclick = () => { closeSheet(); };
+}
+// saves a route made in the page and chooses it
+async function saveRoute(name, desc, pts) {
+  const info = RT.describe(pts);
+  state('Strecke wird gespeichert …');
+  const res = await FR.saveGpx(RT.fileName(name), RT.gpx(name, desc, pts), info);
+  if (!res || !res.ok) throw new Error('Speichern ging nicht');
+  FR.setSettings({ funrun_selected_route: res.file });
+  selected = res.file;
+  return { file: res.file, info };
+}
+function routeSheet(o) {
+  // o: { title, sub, prof, length, ascent, eleMin, eleMax, gmax, note, source, load: async () => pts, name, desc, existing }
+  openSheet('<h2>' + FR.esc(o.title) + '</h2><div class="sub">' + o.sub + '</div>' +
+    (o.prof ? '<div class="big">' + profile(o.prof, 90).replace('class="pf"', '') + '</div>' : '') +
+    kv([['Länge', FR.km(o.length) + ' km'], ['Bergauf', FR.num(o.ascent) + ' Hm'], ['Höchster Punkt', o.eleMax != null ? FR.num(o.eleMax) + ' m' : '–'],
+        ['Fahrzeit', o.prof ? time(o.length, o.prof) : '–']]) +
+    (o.note ? '<p class="muted" style="margin:0">' + FR.esc(o.note) + '</p>' : '') +
+    '<p class="attr">' + o.source + '</p><div class="state" id="sheetState"></div>' +
+    (o.existing ? '<div class="btns"><button class="btn primary" id="sPick">Auswählen</button><button class="btn" id="sClose">Schließen</button></div>'
+      : '<div class="btns"><button class="btn primary" id="sLoad">Strecke laden</button><button class="btn" id="sClose">Schließen</button></div>'));
+  $('sClose').onclick = closeSheet;
+  if (o.existing) {
+    $('sPick').onclick = () => { FR.setSettings({ funrun_selected_route: o.existing.file }); selected = o.existing.file; closeSheet(); render(); };
+    state('Diese Strecke ist schon in deinen Strecken.');
+    return;
+  }
+  $('sLoad').onclick = async () => {
+    if (sheetBusy) return;
+    sheetBusy = true; $('sLoad').disabled = true;
+    try {
+      state(o.loadingText || 'Strecke wird geladen …');
+      const pts = await o.load();
+      const res = await saveRoute(o.name, o.desc, pts);
+      routes = await FR.routes();
+      state('Gespeichert und ausgewählt: ' + FR.km(res.info.length) + ' km, ' + FR.num(res.info.ascent) + ' Hm.');
+      $('sLoad').closest('.btns').outerHTML = doneButtons();
+      wireDone(res.file);
+    } catch (e) {
+      state('Das hat nicht geklappt: ' + e.message, true);
+      $('sLoad').disabled = false;
+    }
+    sheetBusy = false;
+    render();
+  };
+}
+function openCatalog(c) {
+  const name = catalogName(c);
+  routeSheet({ title: c.name, sub: 'ab ' + FR.esc(c.from) + ' · ' + FR.esc(c.region) + ', ' + (COUNTRIES[c.country] || c.country) + (c.gmax ? ' · bis ' + FR.num(c.gmax) + ' % steil' : ''),
+    prof: c.profile, length: c.length, ascent: c.ascent, eleMax: c.eleMax, note: c.note, existing: haveRoute(name),
+    source: 'Strecke aus OpenStreetMap, berechnet mit BRouter (brouter.de); Höhen SRTM, geglättet.',
+    loadingText: 'Strecke wird bei BRouter berechnet …', name,
+    desc: c.from + ' – ' + c.name + '. ' + c.note + '. Strecke © OpenStreetMap-Mitwirkende (ODbL), berechnet mit BRouter; Höhen aus BRouter (SRTM), geglättet.',
+    load: () => RT.catalogTrack(c) });
+}
+function openNear(x) {
+  const q = x.quick || {};
+  routeSheet({ title: x.title, sub: FR.esc(x.sub) + (x.route.operator ? ' · ' + FR.esc(x.route.operator) : ''), prof: q.profile, length: q.length || x.len,
+    ascent: q.ascent || 0, eleMax: q.eleMax, existing: haveRoute(x.title),
+    source: 'Radroute aus OpenStreetMap (© OpenStreetMap-Mitwirkende, ODbL) über Waymarked Trails; Höhen: Terrain Tiles (Mapzen, AWS Open Data), geglättet.',
+    loadingText: 'Höhen werden geladen …', name: x.title,
+    desc: x.title + '. Radroute © OpenStreetMap-Mitwirkende (ODbL), über Waymarked Trails; Höhen: Terrain Tiles (Mapzen, AWS Open Data), geglättet.',
+    load: () => RT.addHeights(x.stage.pts, { spans: x.stage.spans }) });
+}
+function stageChooser(def) {
+  return '<div class="flabel">Etappenlänge</div><div class="chips small" id="stLen">' +
+    STAGE_LENGTHS.map(l => '<button data-l="' + l + '"' + (l === def ? ' class="on"' : '') + '>' + l + ' km</button>').join('') + '</div>';
+}
+function wireStageChooser() {
+  let len = ls.get('stageLen', 50);
+  if (STAGE_LENGTHS.indexOf(len) < 0) len = 50;
+  document.querySelectorAll('#stLen button').forEach(b => b.classList.toggle('on', +b.dataset.l === len));
+  $('stLen').onclick = e => { const b = e.target.closest('button'); if (!b) return; len = +b.dataset.l; ls.set('stageLen', len);
+    document.querySelectorAll('#stLen button').forEach(x => x.classList.toggle('on', x === b)); if (window.funrunStageInfo) window.funrunStageInfo(len); };
+  return () => len;
+}
+function openUltra(u) {
+  const proj = projects.find(p => p.source === 'ultra:' + u.id);
+  openSheet('<h2>' + FR.esc(u.name) + '</h2><div class="sub">' + FR.esc(u.region) + ' · ' + FR.esc(u.start + (u.finish && u.finish !== u.start ? ' – ' + u.finish : ' (Runde)')) +
+    (u.when ? ' · ' + FR.esc(u.when) : '') + '</div>' +
+    kv([['Länge', FR.num(u.length / 1000) + ' km'], ['Bergauf', FR.num(u.ascent) + ' Hm'], ['Schotter', u.unpaved ? u.unpaved + ' %' : '–'], ['Etappen', '<i id="stCount" style="font-style:normal"></i>']]) +
+    '<p class="muted" style="margin:0">' + FR.esc(u.note || '') + '</p>' +
+    (proj ? '<div class="state">Schon als Langstrecke angelegt – du findest sie unter „Meine“.</div>'
+      : (u.rwgps ? stageChooser(50) + '<p class="attr">Die App teilt das Rennen in Etappen. Jede Etappe fährst du wie eine Strecke; der Fortschritt zählt übers ganze Rennen.</p>'
+                 : '<p class="attr">Die Strecke gibt es auf der Website des Veranstalters. Lade dort die GPX herunter und importiere sie hier („GPX importieren“); unter „Meine“ kannst du sie dann in Etappen fahren.</p>')) +
+    '<div class="state" id="sheetState"></div>' +
+    '<div class="btns">' + (proj ? '' : u.rwgps ? '<button class="btn primary" id="sMake">Als Langstrecke anlegen</button>' : '') +
+    '<button class="btn" id="sWeb">Website des Rennens</button><button class="btn" id="sClose">Schließen</button></div>');
+  $('sClose').onclick = closeSheet;
+  $('sWeb').onclick = () => FR.openUrl(u.url);
+  const count = len => { const el = $('stCount'); if (el) el.textContent = Math.max(1, Math.round(u.length / (len * 1000))) + ' × ~' + len + ' km'; };
+  if (proj || !u.rwgps) { $('stCount').textContent = proj ? proj.stages.length + '' : '–'; return; }
+  const getLen = wireStageChooser();
+  window.funrunStageInfo = count; count(getLen());
+  $('sMake').onclick = async () => {
+    if (sheetBusy) return;
+    sheetBusy = true; $('sMake').disabled = true;
+    try {
+      state('Strecke wird geladen …');
+      const r = await RT.rwgpsRoute(u.rwgps);
+      state('Etappen werden eingeteilt …');
+      const p = RT.makeProject({ id: RT.projectId(u.name), name: u.name, source: 'ultra:' + u.id, url: u.url, country: u.country, region: u.region,
+        start: u.start, finish: u.finish }, r.pts, getLen() * 1000);
+      const res = await FR.ultraSave(p);
+      if (!res || res.ok === false) throw new Error('Speichern ging nicht');
+      projects = await loadProjects();
+      sheetBusy = false;
+      closeSheet();
+      view = 'mine'; ls.set('view', view); render();
+      window.scrollTo(0, 0);
+    } catch (e) { state('Das hat nicht geklappt: ' + e.message, true); $('sMake').disabled = false; }
+    sheetBusy = false;
+  };
+}
+// a long route of the app (imported GPX) as a project of stages
+function openLongRoute(r) {
+  openSheet('<h2>' + FR.esc(r.name) + '</h2><div class="sub">' + FR.km(r.length) + ' km · ' + FR.num(r.ascent) + ' Hm</div>' +
+    stageChooser(50) + '<p class="attr">Die Strecke wird in Etappen geteilt; die Datei wandert in den Ordner der Langstrecke. Jede Etappe fährst du wie eine Strecke.</p>' +
+    '<div class="state" id="sheetState"></div><div class="btns"><button class="btn primary" id="sMake">In Etappen teilen</button><button class="btn" id="sClose">Schließen</button></div>');
+  $('sClose').onclick = closeSheet;
+  const getLen = wireStageChooser();
+  window.funrunStageInfo = len => state(Math.max(1, Math.round(r.length / (len * 1000))) + ' Etappen zu etwa ' + len + ' km');
+  window.funrunStageInfo(getLen());
+  $('sMake').onclick = async () => {
+    if (sheetBusy) return;
+    sheetBusy = true; $('sMake').disabled = true;
+    try {
+      state('Strecke wird gelesen …');
+      const g = RT.parseGpx(await FR.readGpx(r.file));
+      if (g.pts.length < 2) throw new Error('keine Punkte in der Datei');
+      const id = RT.projectId(r.name);
+      state('Etappen werden eingeteilt …');
+      const p = RT.makeProject({ id, name: r.name, source: 'file' }, g.pts, getLen() * 1000);
+      const ad = await FR.ultraAdopt(r.file, id);
+      if (ad && ad.ok) p.original = ad.file;
+      const res = await FR.ultraSave(p);
+      if (!res || res.ok === false) throw new Error('Speichern ging nicht');
+      [routes, projects] = await Promise.all([FR.routes(), loadProjects()]);
+      sheetBusy = false;
+      closeSheet(); render(); window.scrollTo(0, 0);
+    } catch (e) { state('Das hat nicht geklappt: ' + e.message, true); $('sMake').disabled = false; }
+    sheetBusy = false;
+  };
+}
+// the GPX file of stage n (made now if it is not there yet); returns its path
+async function stageFile(p, n) {
+  const st = p.stages[n - 1];
+  if (st.file && routes.some(r => r.file === st.file)) return st.file;
+  const full = await FR.ultraGet(p.id);
+  if (!full || !full.track) throw new Error('Langstrecke nicht gefunden');
+  const pts = await RT.stageTrack(full, n);
+  const name = p.name + ' · Etappe ' + String(n).padStart(2, '0') + ' von ' + p.stages.length;
+  const desc = p.name + ', Etappe ' + n + ' von ' + p.stages.length + ' (km ' + FR.num(st.from / 1000) + '–' + FR.num(st.to / 1000) + ').' +
+    (p.source && p.source.indexOf('ultra:') === 0 ? ' Strecke des Veranstalters.' : '');
+  const res = await FR.saveGpx(RT.fileName(name), RT.gpx(name, desc, pts), RT.describe(pts));
+  if (!res || !res.ok) throw new Error('Speichern ging nicht');
+  full.stages[n - 1].file = res.file;
+  await FR.ultraSave(full);
+  return res.file;
+}
+async function rideStage(p, n, btn) {
+  if (sheetBusy) return;
+  sheetBusy = true;
+  const old = btn ? btn.textContent : '';
+  if (btn) { btn.disabled = true; btn.textContent = 'Etappe wird vorbereitet …'; }
+  try {
+    const file = await stageFile(p, n);
+    FR.setSettings({ funrun_selected_route: file });
+    await FR.start(file);
+  } catch (e) {
+    if (btn) btn.textContent = 'Fehler: ' + e.message;
+    setTimeout(() => { if (btn) { btn.textContent = old; btn.disabled = false; } }, 4000);
+    sheetBusy = false;
+    return;
+  }
+  sheetBusy = false;
+  if (btn) setTimeout(() => { btn.textContent = old; btn.disabled = false; }, 3000);
+  load();
+}
+function openStages(p) {
+  const pr = RT.projectProgress(p, rides);
+  openSheet('<h2>' + FR.esc(p.name) + '</h2><div class="sub">' + FR.num(p.length / 1000) + ' km · ' + FR.num(p.ascent) + ' Hm · ' + p.stages.length + ' Etappen</div>' +
+    '<div class="stlist">' + p.stages.map(st => '<button data-n="' + st.n + '"><span>Etappe ' + st.n + ' · km ' + FR.num(st.from / 1000) + '–' + FR.num(st.to / 1000) +
+      ' · ' + FR.num(st.ascent) + ' Hm</span>' + (pr.done.has(st.n) ? '<span class="ok">geschafft</span>' : pr.next && pr.next.n === st.n ? '<span class="nx">nächste</span>' : '<span class="muted">fahren</span>') + '</button>').join('') + '</div>' +
+    (p.url ? '<button class="link" id="sWeb" style="padding:0">Website des Rennens<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="m9 6 6 6-6 6"/></svg></button>' : '') +
+    '<div class="state" id="sheetState"></div><div class="btns"><button class="btn" id="sDel">Langstrecke löschen</button><button class="btn" id="sClose">Schließen</button></div>');
+  $('sClose').onclick = closeSheet;
+  if (p.url) $('sWeb').onclick = () => FR.openUrl(p.url);
+  $('sheetBox').querySelector('.stlist').onclick = e => { const b = e.target.closest('button'); if (b) { closeSheet(); rideStage(p, +b.dataset.n, null); } };
+  let armed = false;
+  $('sDel').onclick = async () => {
+    if (!armed) { armed = true; $('sDel').textContent = 'Wirklich löschen?'; $('sDel').style.color = 'var(--bad)'; state('Die Etappen-Dateien werden mitgelöscht, deine Fahrten bleiben.'); return; }
+    await FR.ultraDelete(p.id);
+    [routes, projects] = await Promise.all([FR.routes(), loadProjects()]);
+    closeSheet(); render();
+  };
+}
+
+// ------------------------------------------------------------------ input
+$('viewSeg').addEventListener('click', e => { const b = e.target.closest('button'); if (!b) return; view = b.dataset.v; ls.set('view', view); render(); });
+$('q').addEventListener('input', renderMine);
 $('chips').addEventListener('click', e => {
   const b = e.target.closest('button'); if (!b) return;
   filter = b.dataset.f;
   document.querySelectorAll('#chips button').forEach(x => x.classList.toggle('on', x === b));
-  render();
+  renderMine();
 });
 $('list').addEventListener('click', e => {
   const b = e.target.closest('.rc'); if (!b) return;
-  FR.setSettings({ funrun_selected_route: b.dataset.file });
+  const file = b.dataset.key.slice(2), r = routes.find(x => x.file === file);
+  if (r && r.length > 150000) { openLongRoute(r); return; }
+  FR.setSettings({ funrun_selected_route: file });
   FR.go('start.htm');
 });
+$('projects').addEventListener('click', e => {
+  const b = e.target.closest('button[data-act]'); if (!b) return;
+  const p = projects.find(x => x.id === b.closest('.proj').dataset.id); if (!p) return;
+  if (b.dataset.act === 'next') { const pr = RT.projectProgress(p, rides); if (pr.next) rideStage(p, pr.next.n, b); }
+  else openStages(p);
+});
+$('srcChips').addEventListener('click', e => {
+  const b = e.target.closest('button'); if (!b) return;
+  src = b.dataset.s; ls.set('src', src); renderDiscover();
+  if (src === 'near' && !near.items && !near.loading) searchNear();
+});
+$('countryChips').addEventListener('click', e => { const b = e.target.closest('button'); if (!b) return; country = b.dataset.c; renderCountries(); renderCatalog(); });
+$('lenChips').addEventListener('click', e => {
+  const b = e.target.closest('button'); if (!b) return;
+  lenFilter = b.dataset.l;
+  document.querySelectorAll('#lenChips button').forEach(x => x.classList.toggle('on', x === b));
+  renderDiscover();
+});
+$('radiusChips').addEventListener('click', e => {
+  const b = e.target.closest('button'); if (!b) return;
+  near.radius = +b.dataset.r; ls.set('radius', near.radius);
+  document.querySelectorAll('#radiusChips button').forEach(x => x.classList.toggle('on', x === b));
+  searchNear();
+});
+$('placeForm').addEventListener('submit', async e => {
+  e.preventDefault();
+  const q = $('place').value.trim();
+  if (!q) return;
+  $('place').blur();
+  setMsg('Ort wird gesucht …');
+  try {
+    const found = await RT.geocode(q);
+    if (!found.length) { setMsg('Diesen Ort kenne ich nicht.'); return; }
+    near.place = { name: found[0].name, lat: found[0].lat, lon: found[0].lon };
+    ls.set('place', near.place);
+    $('place').value = near.place.name;
+    searchNear();
+  } catch (err) { setMsg('Ortssuche ging nicht (' + err.message + ').'); }
+});
+$('dlist').addEventListener('click', e => {
+  const b = e.target.closest('.rc'); if (!b) return;
+  const key = b.dataset.key, kind = key.slice(0, 1), id = key.slice(2);
+  if (kind === 'c') { const c = catalog.climbs.find(x => x.id === id); if (c) openCatalog(c); }
+  else if (kind === 'u') { const u = catalog.ultras.find(x => x.id === id); if (u) openUltra(u); }
+  else if (kind === 'n') { const x = (near.items || []).find(i => i.key === id); if (x) openNear(x); }
+});
 $('btnImport').addEventListener('click', () => FR.open('gpx'));
+function renderCountries() {
+  const have = new Set(((catalog && catalog.climbs) || []).map(c => c.country));
+  const list = ['all'].concat(Object.keys(COUNTRIES).filter(c => have.has(c)));
+  $('countryChips').innerHTML = list.map(c => '<button data-c="' + c + '"' + (c === country ? ' class="on"' : '') + '>' + (c === 'all' ? 'Alle Länder' : COUNTRIES[c]) + '</button>').join('');
+}
 
+// ------------------------------------------------------------------ data
+async function loadProjects() { try { return (await FR.ultraList()) || []; } catch (e) { return []; } }
 async function load() {
   try {
-    const [rs, rd, st] = await Promise.all([FR.routes(), FR.rides(), FR.getSettings(['funrun_selected_route'])]);
-    routes = rs; rides = rd; selected = st.funrun_selected_route || '';
-  } catch (e) { $('msg').textContent = e.message; return; }
+    const [rs, rd, st, pj] = await Promise.all([FR.routes(), FR.rides(), FR.getSettings(['funrun_selected_route']), loadProjects()]);
+    routes = rs; rides = rd; selected = st.funrun_selected_route || ''; projects = pj;
+    params = await FR.speedParams(rides);
+  } catch (e) { $('msg').textContent = e.message; }
+  if (!catalog) {
+    try { catalog = await (await fetch('katalog.json?v=' + Date.now())).json(); } catch (e) { catalog = { climbs: [], ultras: [] }; }
+    renderCountries();
+  }
   render();
 }
+$('place').value = near.place.name;
+document.querySelectorAll('#radiusChips button').forEach(b => b.classList.toggle('on', +b.dataset.r === near.radius));
 FR.onRefresh(load);
 load();
 })();

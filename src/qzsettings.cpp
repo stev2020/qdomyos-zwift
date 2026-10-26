@@ -1342,8 +1342,12 @@ const QString QZSettings::funrun_flat_level = QStringLiteral("funrun_flat_level"
 const QString QZSettings::funrun_level_per_percent = QStringLiteral("funrun_level_per_percent");
 const QString QZSettings::funrun_level_interval = QStringLiteral("funrun_level_interval");
 const QString QZSettings::funrun_start_page = QStringLiteral("funrun_start_page");
+const QString QZSettings::funrun_month_goal = QStringLiteral("funrun_month_goal");
+const QString QZSettings::funrun_flat_speed = QStringLiteral("funrun_flat_speed");
+const QString QZSettings::funrun_climb_rate = QStringLiteral("funrun_climb_rate");
+const QString QZSettings::funrun_speed_adaptive = QStringLiteral("funrun_speed_adaptive");
 
-const uint32_t allSettingsCount = 1037;
+const uint32_t allSettingsCount = 1041;
 
 QVariant allSettings[allSettingsCount][2] = {
     {QZSettings::cryptoKeySettingsProfiles, QZSettings::default_cryptoKeySettingsProfiles},
@@ -2407,6 +2411,10 @@ QVariant allSettings[allSettingsCount][2] = {
     {QZSettings::funrun_level_per_percent, QZSettings::default_funrun_level_per_percent},
     {QZSettings::funrun_level_interval, QZSettings::default_funrun_level_interval},
     {QZSettings::funrun_start_page, QZSettings::default_funrun_start_page},
+    {QZSettings::funrun_month_goal, QZSettings::default_funrun_month_goal},
+    {QZSettings::funrun_flat_speed, QZSettings::default_funrun_flat_speed},
+    {QZSettings::funrun_climb_rate, QZSettings::default_funrun_climb_rate},
+    {QZSettings::funrun_speed_adaptive, QZSettings::default_funrun_speed_adaptive},
 };
 
 void QZSettings::qDebugAllSettings(bool showDefaults) {

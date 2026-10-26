@@ -17,6 +17,8 @@
 .step { display: flex; align-items: center; gap: 4px; flex: none; }
 .step button { appearance: none; -webkit-appearance: none; width: 42px; height: 42px; border-radius: 10px; border: 1px solid var(--line2); background: var(--bg); color: var(--text); font-size: 22px; font-weight: 600; cursor: pointer; }
 .step b { min-width: 52px; text-align: center; font-size: 24px; }
+.step b small { font-family: Barlow, Roboto, Arial, sans-serif; font-size: 13px; font-weight: 600; color: var(--muted); margin-left: 2px; }
+#fixedBox .line:first-child { border-top: 1px solid var(--line); }
 .example { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin: 4px 0 12px; padding: 10px 12px; border-radius: 12px; background: var(--bg); border: 1px solid var(--line); }
 .dirs { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; margin: 0 0 8px; }
 .dirs div { display: flex; flex-direction: column; gap: 2px; padding: 8px 10px; border-radius: 12px; background: var(--bg); border: 1px solid var(--line); }
@@ -66,6 +68,23 @@
             <div class="segs" id="windSeg"><button data-v="0">Aus</button><button data-v="1">1</button><button data-v="2">2</button><button data-v="3">3</button><button data-v="4">4</button></div></div>
           <div class="dirs" id="dirs"></div>
           <p class="hint">Die Richtung wird bei jeder Fahrt neu ausgelost. Gegenwind zählt voll, Seitenwind halb, Rückenwind gar nicht.</p>
+        </div>
+      </section>
+
+      <section class="sec">
+        <h2>Ziel &amp; Fahrzeit</h2>
+        <div class="card">
+          <div class="line"><div class="l"><span class="n">Monatsziel</span><span class="m">Kilometer pro Monat</span></div>
+            <div class="step"><button data-k="goal" data-d="-25" aria-label="weniger">−</button><b class="cond" id="goal" style="min-width:64px"></b><button data-k="goal" data-d="25" aria-label="mehr">+</button></div></div>
+          <div class="line"><div class="l"><span class="n">Aus meinen Fahrten lernen</span><span class="m">Tempo und Bergauf-Leistung der letzten 10 Fahrten</span></div>
+            <button class="switch" id="adaptive" aria-label="Fahrzeit aus den Fahrten lernen"><span></span></button></div>
+          <div id="fixedBox">
+            <div class="line"><div class="l"><span class="n">Tempo flach</span><span class="m">für die Fahrzeit</span></div>
+              <div class="step"><button data-k="speed" data-d="-1" aria-label="langsamer">−</button><b class="cond" id="flatSpeed" style="min-width:64px"></b><button data-k="speed" data-d="1" aria-label="schneller">+</button></div></div>
+            <div class="line"><div class="l"><span class="n">Bergauf</span><span class="m">Höhenmeter pro Stunde</span></div>
+              <div class="step"><button data-k="climb" data-d="-50" aria-label="weniger">−</button><b class="cond" id="climbRate" style="min-width:64px"></b><button data-k="climb" data-d="50" aria-label="mehr">+</button></div></div>
+          </div>
+          <p class="hint" id="speedInfo" style="margin-top:4px"></p>
         </div>
       </section>
 
@@ -121,6 +140,7 @@
   </div>
 </div>
 <script src="funrun.js"></script>
+<script src="funrun-routes.js"></script>
 <script>
 (function () {
 'use strict';
@@ -135,7 +155,9 @@ const mapStore = {
 const dist = t => 1.97 * (Math.exp(7.84 * t) - 1);
 const OVERVIEW = Math.log(1800 / 1.97 + 1) / 7.84;
 
-const S = { auto: true, flat: 12, per: 1.5, interval: 10, wind: 0, ghost: 'best', hrMax: 190, belt: '', startPage: true };
+const S = { auto: true, flat: 12, per: 1.5, interval: 10, wind: 0, ghost: 'best', hrMax: 190, belt: '', startPage: true,
+  goal: 0, flatSpeed: 25, climbRate: 700, adaptive: false };
+let rides = [];
 const bool = v => v === true || v === 'true' || v === 1 || v === '1';
 const numOr = (v, d) => (v === null || v === undefined || v === '' || !Number.isFinite(+v) ? d : +v);
 
@@ -167,6 +189,22 @@ function render() {
   const z = p => Math.round(S.hrMax * p / 100);
   $('zoneText').textContent = 'Grau bis ' + (z(61) - 1) + ', Blau bis ' + (z(71) - 1) + ', Grün bis ' + (z(84) - 1) + ', Orange bis ' + (z(92) - 1) + ', Rot ab ' + z(92) + ' /min';
   $('startPage').classList.toggle('on', S.startPage);
+  // goal and ride time
+  $('goal').innerHTML = S.goal > 0 ? FR.num(S.goal) + '<small>km</small>' : 'aus';
+  $('adaptive').classList.toggle('on', S.adaptive);
+  $('flatSpeed').innerHTML = FR.num(S.flatSpeed) + '<small>km/h</small>';
+  $('climbRate').innerHTML = FR.num(S.climbRate) + '<small>Hm/h</small>';
+  const RT = window.FRR, p = RT.speedParams({ flat: S.flatSpeed, climb: S.climbRate, adaptive: S.adaptive }, rides);
+  // examples: 50 km on the flat; Alpe d'Huez (14.7 km, 1,105 m up)
+  const alpe = [], n = 59;
+  for (let i = 0; i <= n; i++) alpe.push(717 + 1105 * i / n);
+  const ex = '50 km flach ' + RT.duration(RT.estimate(50000, null, p)) + ' · Alpe d\'Huez ' + RT.duration(RT.estimate(14676, alpe, p));
+  let info;
+  if (!S.adaptive) info = 'Beispiele: ' + ex + '.';
+  else if (!p.learned) info = 'Noch keine passenden Fahrten: Bis dahin gelten ' + FR.num(S.flatSpeed) + ' km/h und ' + FR.num(S.climbRate) + ' Hm/h. Beispiele: ' + ex + '.';
+  else info = 'Gelernt' + (p.rides ? ' aus ' + (p.rides === 1 ? '1 Fahrt' : p.rides + ' Fahrten') : '') + ': ' + FR.num(p.flat, 1) + ' km/h in der Ebene' +
+    (p.flatLearned ? '' : ' (Einstellung)') + ', ' + FR.num(p.climb) + ' Hm/h bergauf' + (p.climbLearned ? '' : ' (Einstellung)') + '. Beispiele: ' + ex + '.';
+  $('speedInfo').textContent = info;
 }
 
 // ------------------------------------------------------------------ input
@@ -177,6 +215,9 @@ document.addEventListener('click', e => {
   if (b.dataset.k === 'flat') { S.flat = Math.max(1, Math.min(32, S.flat + d)); FR.setSettings({ funrun_flat_level: S.flat }); }
   else if (b.dataset.k === 'per') { S.per = Math.max(0.5, Math.min(3, Math.round((S.per + d) * 2) / 2)); FR.setSettings({ funrun_level_per_percent: S.per }); }
   else if (b.dataset.k === 'hr') { S.hrMax = Math.max(120, Math.min(220, S.hrMax + d)); FR.setSettings({ heart_max_override_enable: true, heart_max_override_value: S.hrMax }); }
+  else if (b.dataset.k === 'goal') { S.goal = Math.max(0, Math.min(5000, S.goal + d)); FR.setSettings({ funrun_month_goal: S.goal }); }
+  else if (b.dataset.k === 'speed') { S.flatSpeed = Math.max(10, Math.min(45, S.flatSpeed + d)); FR.setSettings({ funrun_flat_speed: S.flatSpeed }); }
+  else if (b.dataset.k === 'climb') { S.climbRate = Math.max(200, Math.min(2000, S.climbRate + d)); FR.setSettings({ funrun_climb_rate: S.climbRate }); }
   render();
 });
 $('intSeg').addEventListener('click', e => { const b = e.target.closest('button'); if (!b) return; S.interval = +b.dataset.v; FR.setSettings({ funrun_level_interval: S.interval }); render(); });
@@ -197,6 +238,7 @@ $('follow').addEventListener('input', e => {
 });
 $('btnBelt').addEventListener('click', () => FR.open('settings'));
 $('startPage').addEventListener('click', () => { S.startPage = !S.startPage; FR.setSettings({ funrun_start_page: S.startPage }); render(); });
+$('adaptive').addEventListener('click', () => { S.adaptive = !S.adaptive; FR.setSettings({ funrun_speed_adaptive: S.adaptive }); render(); });
 $('lnkSettings').addEventListener('click', () => FR.open('settings'));
 $('lnkTiles').addEventListener('click', () => FR.open('tiles'));
 $('lnkMenu').addEventListener('click', () => FR.open('menu'));
@@ -205,7 +247,8 @@ FR.onWorkout(w => { if (w.autoresistance != null && bool(w.autoresistance) !== S
 async function load() {
   try {
     const st = await FR.getSettings(['funrun_flat_level', 'funrun_level_per_percent', 'funrun_level_interval', 'funrun_wind_strength', 'funrun_ghost_mode',
-      'heart_rate_belt_name', 'age', 'heart_max_override_enable', 'heart_max_override_value', 'funrun_start_page']);
+      'heart_rate_belt_name', 'age', 'heart_max_override_enable', 'heart_max_override_value', 'funrun_start_page',
+      'funrun_month_goal', 'funrun_flat_speed', 'funrun_climb_rate', 'funrun_speed_adaptive']);
     S.flat = numOr(st.funrun_flat_level, 12);
     S.per = numOr(st.funrun_level_per_percent, 1.5);
     S.interval = numOr(st.funrun_level_interval, 10);
@@ -214,6 +257,11 @@ async function load() {
     S.belt = st.heart_rate_belt_name || '';
     S.hrMax = Math.round(bool(st.heart_max_override_enable) ? numOr(st.heart_max_override_value, 195) : 220 - numOr(st.age, 35));
     S.startPage = st.funrun_start_page === null || st.funrun_start_page === undefined ? true : bool(st.funrun_start_page);
+    S.goal = Math.max(0, numOr(st.funrun_month_goal, 0));
+    S.flatSpeed = numOr(st.funrun_flat_speed, 25);
+    S.climbRate = numOr(st.funrun_climb_rate, 700);
+    S.adaptive = bool(st.funrun_speed_adaptive);
+    rides = await FR.rides();
   } catch (e) { /* defaults */ }
   if (FR.workout && FR.workout.autoresistance != null) S.auto = bool(FR.workout.autoresistance);
   render();

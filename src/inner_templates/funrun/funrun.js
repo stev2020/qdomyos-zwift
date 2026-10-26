@@ -95,11 +95,55 @@
   // closes this page in the app: 'home' goes back to the start page, 'back' one page back
   FR.close = to => FR.send('funrun_close', { to: to || 'home' });
   // GPX routes of the app (name, length, ascent, outline, profile)
-  FR.routes = async () => (demo ? (await demoJson('routes.json')).routes || [] : (await request('funrun_routes')) || []);
+  FR.routes = async () => {
+    if (!demo) return (await request('funrun_routes')) || [];
+    let saved = [];
+    try { saved = JSON.parse(sessionStorage.getItem('funrunDemoRoutes') || '[]') || []; } catch (e) { /* none */ }
+    return ((await demoJson('routes.json')).routes || []).concat(saved);
+  };
   // starts a route: the app loads it, starts the ride and shows the 3D map
   FR.start = file => (demo ? Promise.resolve({ ok: true }) : request('funrun_start', { file }));
   // pages of the app: 'settings', 'menu', 'tiles', 'trainingprograms', 'gpxlist', 'gpx' (import)
   FR.open = what => FR.send('funrun_open', { what });
+  // a web page in the browser of the device (https only)
+  FR.openUrl = url => (demo ? window.open(url, '_blank') : FR.send('funrun_open', { what: 'url', url }));
+
+  // demo: what the pages "saved" (routes, long route projects), kept in the tab's storage
+  const demoStore = key => { try { return JSON.parse(sessionStorage.getItem(key) || 'null'); } catch (e) { return null; } };
+  const demoKeep = (key, v) => { try { sessionStorage.setItem(key, JSON.stringify(v)); } catch (e) { /* not available */ } };
+  let tagCounter = 0;
+  // a new route in the app's gpx folder: { ok, file } (demo: info is the route's description for the list)
+  FR.saveGpx = async (name, gpx, info) => {
+    if (demo) {
+      const file = '/demo/gpx/' + name + '.gpx', saved = demoStore('funrunDemoRoutes') || [];
+      if (info) saved.push(Object.assign({}, info, { name, file, key: name.toLowerCase() }));
+      demoKeep('funrunDemoRoutes', saved);
+      return { ok: true, file };
+    }
+    const tag = 't' + Date.now() + '-' + (++tagCounter);
+    return request('funrun_save_gpx', { name, gpx, tag }, c => c && c.tag === tag);
+  };
+  // text of a route file of the app
+  FR.readGpx = async file => {
+    if (demo) { const r = await fetch(file); return r.ok ? r.text() : ''; }
+    const c = await request('funrun_read_gpx', { file }, x => x && x.file === file);
+    return c && c.ok ? c.text : '';
+  };
+  // long routes in stages
+  FR.ultraList = async () => (demo ? Object.values(demoStore('funrunDemoUltra') || {}).map(p => Object.assign({}, p, { track: undefined }))
+    : (await request('funrun_ultra_list')) || []);
+  FR.ultraGet = async id => (demo ? (demoStore('funrunDemoUltra') || {})[id] || null
+    : ((await request('funrun_ultra_get', { id }, c => c && c.id === id)) || {}).project || null);
+  FR.ultraSave = async project => {
+    if (demo) { const all = demoStore('funrunDemoUltra') || {}; all[project.id] = project; demoKeep('funrunDemoUltra', all); return { ok: true }; }
+    return request('funrun_ultra_save', { project }, c => c && c.id === project.id);
+  };
+  FR.ultraDelete = async id => {
+    if (demo) { const all = demoStore('funrunDemoUltra') || {}; delete all[id]; demoKeep('funrunDemoUltra', all); return { ok: true }; }
+    return request('funrun_ultra_delete', { id }, c => c && c.id === id);
+  };
+  // moves an imported route file into the long route's folder (it is no longer listed as one route)
+  FR.ultraAdopt = async (file, id) => (demo ? { ok: true, file } : request('funrun_ultra_adopt', { file, id }, c => c && c.id === id));
   // app settings
   // (demo: kept in the tab's storage, so a choice survives going to another FunRun page)
   let demoSettings = {};
@@ -112,6 +156,14 @@
     if (!demo) { FR.send('setsettings', obj); return; }
     Object.assign(demoSettings, obj);
     try { sessionStorage.setItem('funrunDemoSettings', JSON.stringify(demoSettings)); } catch (e) { /* not available */ }
+  };
+  // ride time estimate of routes: speed on the flat and climbing rate, fixed or learned from the rides
+  // (pages that use it load funrun-routes.js)
+  FR.speedParams = async rides => {
+    const st = await FR.getSettings(['funrun_flat_speed', 'funrun_climb_rate', 'funrun_speed_adaptive']);
+    const on = v => v === true || v === 'true' || v === 1 || v === '1';
+    return window.FRR.speedParams({ flat: +st.funrun_flat_speed || 25, climb: +st.funrun_climb_rate || 700,
+      adaptive: on(st.funrun_speed_adaptive) }, rides || []);
   };
   // live values of the app (every second): bike, heart rate, auto resistance ...
   FR.workout = null;

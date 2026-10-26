@@ -3434,6 +3434,19 @@ class QZSettings {
     static const QString funrun_start_page;
     static constexpr bool default_funrun_start_page = true;
 
+    // FunRun: goal for the month in km (0: no goal)
+    static const QString funrun_month_goal;
+    static constexpr int default_funrun_month_goal = 0;
+
+    // FunRun ride time estimate of routes: speed on the flat (km/h), metres up per hour on climbs,
+    // or both learned from the last 10 rides
+    static const QString funrun_flat_speed;
+    static constexpr double default_funrun_flat_speed = 25.0;
+    static const QString funrun_climb_rate;
+    static constexpr int default_funrun_climb_rate = 700;
+    static const QString funrun_speed_adaptive;
+    static constexpr bool default_funrun_speed_adaptive = false;
+
     /**
      * @brief Write the QSettings values using the constants from this namespace.
      * @param showDefaults Optionally indicates if the default should be shown with the key.

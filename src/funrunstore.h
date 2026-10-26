@@ -64,10 +64,27 @@ class FunRunStore {
     static QString routeKey(const QString &gpxFile);
     // GPX routes in the app's gpx folder (described by FunRunRoute::describe, cached in funrun/routes.json)
     static QJsonArray listRoutes();
+    // A new route from the FunRun pages ("Entdecken"): written to the gpx folder as <name>.gpx (another number when
+    // a different file has that name). Returns the path, empty when the text is no GPX or cannot be written.
+    static QString saveGpx(const QString &name, const QByteArray &gpx);
+    // Text of a GPX file in the gpx folder or in funrun/ultra (nothing from other places), empty otherwise
+    static QByteArray readGpx(const QString &file);
+
+    // Long routes ridden in stages ("Langstrecken", e.g. ultra races): one JSON file each in funrun/ultra
+    // (meta data, the track and the stages); the list leaves the tracks out
+    static QJsonArray listUltra();
+    static QJsonObject loadUltra(const QString &id);
+    static bool saveUltra(const QJsonObject &project);
+    // removes the project with its original GPX and the stage files it made in the gpx folder
+    static bool deleteUltra(const QString &id);
+    // moves a GPX of the gpx folder to funrun/ultra/<id>.gpx (the long route is not listed as one route). Returns the
+    // new path, empty on failure
+    static QString adoptUltraGpx(const QString &file, const QString &id);
 
   private:
     static QString folder();
     static bool validId(const QString &id);
+    static bool validUltraId(const QString &id);
     static void writeIndex(const QJsonArray &rides);
 };
 

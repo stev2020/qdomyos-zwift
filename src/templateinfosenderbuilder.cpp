@@ -12,6 +12,7 @@
 #include <QJsonObject>
 #include <QGuiApplication>
 #include <QClipboard>
+#include <QDesktopServices>
 #include <QRegularExpression>
 #include <QNetworkInterface>
 #include <QStandardPaths>
@@ -1617,10 +1618,73 @@ void TemplateInfoSenderBuilder::onFunRunStart(const QJsonValue &msgContent, Temp
 }
 
 void TemplateInfoSenderBuilder::onFunRunOpen(const QJsonValue &msgContent, TemplateInfoSender *tempSender) {
-    if (homeform::singleton())
-        homeform::singleton()->funrunRequestOpen(msgContent.toObject().value(QStringLiteral("what")).toString());
+    const QString what = msgContent.toObject().value(QStringLiteral("what")).toString();
+    if (what == QStringLiteral("url")) {
+        // a web page (e.g. the official route of a race) in the browser of the device
+        const QUrl url(msgContent.toObject().value(QStringLiteral("url")).toString());
+        if (url.isValid() && url.scheme() == QStringLiteral("https"))
+            QDesktopServices::openUrl(url);
+    } else if (homeform::singleton()) {
+        homeform::singleton()->funrunRequestOpen(what);
+    }
     QJsonObject main;
     main[QStringLiteral("msg")] = QStringLiteral("R_funrun_open");
+    tempSender->send(QJsonDocument(main).toJson(QJsonDocument::Compact));
+}
+
+void TemplateInfoSenderBuilder::onFunRunSaveGpx(const QJsonValue &msgContent, TemplateInfoSender *tempSender) {
+    const QJsonObject c = msgContent.toObject();
+    const QString file = FunRunStore::saveGpx(c.value(QStringLiteral("name")).toString(),
+                                              c.value(QStringLiteral("gpx")).toString().toUtf8());
+    QJsonObject content;
+    content[QStringLiteral("ok")] = !file.isEmpty();
+    content[QStringLiteral("file")] = file;
+    content[QStringLiteral("tag")] = c.value(QStringLiteral("tag"));
+    QJsonObject main;
+    main[QStringLiteral("msg")] = QStringLiteral("R_funrun_save_gpx");
+    main[QStringLiteral("content")] = content;
+    tempSender->send(QJsonDocument(main).toJson(QJsonDocument::Compact));
+}
+
+void TemplateInfoSenderBuilder::onFunRunReadGpx(const QJsonValue &msgContent, TemplateInfoSender *tempSender) {
+    const QString file = msgContent.toObject().value(QStringLiteral("file")).toString();
+    const QByteArray text = FunRunStore::readGpx(file);
+    QJsonObject content;
+    content[QStringLiteral("ok")] = !text.isEmpty();
+    content[QStringLiteral("file")] = file;
+    content[QStringLiteral("text")] = QString::fromUtf8(text);
+    QJsonObject main;
+    main[QStringLiteral("msg")] = QStringLiteral("R_funrun_read_gpx");
+    main[QStringLiteral("content")] = content;
+    tempSender->send(QJsonDocument(main).toJson(QJsonDocument::Compact));
+}
+
+void TemplateInfoSenderBuilder::onFunRunUltra(const QString &msg, const QJsonValue &msgContent,
+                                              TemplateInfoSender *tempSender) {
+    const QJsonObject c = msgContent.toObject();
+    const QString id = c.value(QStringLiteral("id")).toString();
+    QJsonObject main;
+    main[QStringLiteral("msg")] = QStringLiteral("R_") + msg;
+    if (msg == QStringLiteral("funrun_ultra_list")) {
+        main[QStringLiteral("content")] = FunRunStore::listUltra();
+    } else {
+        QJsonObject content;
+        content[QStringLiteral("id")] = id;
+        if (msg == QStringLiteral("funrun_ultra_get")) {
+            content[QStringLiteral("project")] = FunRunStore::loadUltra(id);
+        } else if (msg == QStringLiteral("funrun_ultra_save")) {
+            const QJsonObject project = c.value(QStringLiteral("project")).toObject();
+            content[QStringLiteral("id")] = project.value(QStringLiteral("id"));
+            content[QStringLiteral("ok")] = FunRunStore::saveUltra(project);
+        } else if (msg == QStringLiteral("funrun_ultra_delete")) {
+            content[QStringLiteral("ok")] = FunRunStore::deleteUltra(id);
+        } else if (msg == QStringLiteral("funrun_ultra_adopt")) {
+            const QString file = FunRunStore::adoptUltraGpx(c.value(QStringLiteral("file")).toString(), id);
+            content[QStringLiteral("ok")] = !file.isEmpty();
+            content[QStringLiteral("file")] = file;
+        }
+        main[QStringLiteral("content")] = content;
+    }
     tempSender->send(QJsonDocument(main).toJson(QJsonDocument::Compact));
 }
 
@@ -1785,6 +1849,15 @@ void TemplateInfoSenderBuilder::onDataReceived(const QByteArray &data) {
                     return;
                 } else if (msg == QStringLiteral("funrun_open")) {
                     onFunRunOpen(jsonObject[QStringLiteral("content")], sender);
+                    return;
+                } else if (msg == QStringLiteral("funrun_save_gpx")) {
+                    onFunRunSaveGpx(jsonObject[QStringLiteral("content")], sender);
+                    return;
+                } else if (msg == QStringLiteral("funrun_read_gpx")) {
+                    onFunRunReadGpx(jsonObject[QStringLiteral("content")], sender);
+                    return;
+                } else if (msg.startsWith(QStringLiteral("funrun_ultra_"))) {
+                    onFunRunUltra(msg, jsonObject[QStringLiteral("content")], sender);
                     return;
                 }
                 if (msg == QStringLiteral("start")) {

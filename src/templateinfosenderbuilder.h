@@ -119,6 +119,10 @@ class TemplateInfoSenderBuilder : public QObject {
     void onFunRunRoutes(TemplateInfoSender *tempSender);
     void onFunRunStart(const QJsonValue &msgContent, TemplateInfoSender *tempSender);
     void onFunRunOpen(const QJsonValue &msgContent, TemplateInfoSender *tempSender);
+    // FunRun "Entdecken" and long routes: save a new route, read a route, projects of long routes in stages
+    void onFunRunSaveGpx(const QJsonValue &msgContent, TemplateInfoSender *tempSender);
+    void onFunRunReadGpx(const QJsonValue &msgContent, TemplateInfoSender *tempSender);
+    void onFunRunUltra(const QString &msg, const QJsonValue &msgContent, TemplateInfoSender *tempSender);
     void onGetLatLon(TemplateInfoSender *tempSender);
     void onNextInclination300Meters(TemplateInfoSender *tempSender);
     void onGetGPXBase64(TemplateInfoSender *tempSender);

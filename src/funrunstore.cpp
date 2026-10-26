@@ -279,6 +279,130 @@ bool FunRunStore::validId(const QString &id) {
     return true;
 }
 
+bool FunRunStore::validUltraId(const QString &id) {
+    if (id.isEmpty() || id.size() > 60)
+        return false;
+    for (const QChar c : id) {
+        if (!(c >= QLatin1Char('a') && c <= QLatin1Char('z')) && !c.isDigit() && c != QLatin1Char('-'))
+            return false;
+    }
+    return true;
+}
+
+namespace {
+// the folder of a file, as an absolute path without a trailing slash
+QString dirOf(const QString &file) { return QFileInfo(file).absolutePath(); }
+QString cleanDir(const QString &dir) { return QFileInfo(dir).absoluteFilePath(); }
+bool isGpxText(const QByteArray &gpx) {
+    const QByteArray head = gpx.left(1000);
+    return gpx.size() > 0 && gpx.size() <= 60 * 1024 * 1024 && head.contains("<gpx");
+}
+} // namespace
+
+QString FunRunStore::saveGpx(const QString &name, const QByteArray &gpx) {
+    if (!isGpxText(gpx))
+        return QString();
+    // a file name every file system takes
+    QString base;
+    for (const QChar c : name) {
+        const bool bad = c < QLatin1Char(' ') || QStringLiteral("/\\:*?\"<>|").contains(c);
+        base += bad ? QLatin1Char(' ') : c;
+    }
+    base = base.simplified().left(80);
+    while (base.endsWith(QLatin1Char('.')))
+        base.chop(1);
+    base = base.trimmed();
+    if (base.isEmpty())
+        base = QStringLiteral("Strecke");
+    const QString dir = homeform::getWritableAppDir() + QStringLiteral("gpx/");
+    QDir().mkpath(dir);
+    QString path = dir + base + QStringLiteral(".gpx");
+    for (int k = 2; QFile::exists(path); k++) {
+        QFile old(path);
+        if (old.open(QIODevice::ReadOnly) && old.readAll() == gpx)
+            return path; // the same route again
+        path = dir + base + QStringLiteral(" (") + QString::number(k) + QStringLiteral(").gpx");
+    }
+    QSaveFile f(path);
+    if (!f.open(QIODevice::WriteOnly))
+        return QString();
+    f.write(gpx);
+    return f.commit() ? path : QString();
+}
+
+QByteArray FunRunStore::readGpx(const QString &file) {
+    if (file.isEmpty() || !file.endsWith(QStringLiteral(".gpx"), Qt::CaseInsensitive))
+        return QByteArray();
+    const QString dir = dirOf(file);
+    if (dir != cleanDir(homeform::getWritableAppDir() + QStringLiteral("gpx")) &&
+        dir != cleanDir(folder() + QStringLiteral("ultra")))
+        return QByteArray();
+    QFile f(file);
+    if (f.size() > 60 * 1024 * 1024 || !f.open(QIODevice::ReadOnly))
+        return QByteArray();
+    return f.readAll();
+}
+
+QJsonArray FunRunStore::listUltra() {
+    QJsonArray out;
+    QDir dir(folder() + QStringLiteral("ultra"));
+    const QStringList files = dir.entryList(QStringList() << QStringLiteral("*.json"), QDir::Files, QDir::Name);
+    for (const QString &f : files) {
+        QJsonObject p = readJsonFile(dir.filePath(f));
+        if (p.isEmpty())
+            continue;
+        p.remove(QStringLiteral("track"));
+        out.append(p);
+    }
+    return out;
+}
+
+QJsonObject FunRunStore::loadUltra(const QString &id) {
+    if (!validUltraId(id))
+        return QJsonObject();
+    return readJsonFile(folder() + QStringLiteral("ultra/") + id + QStringLiteral(".json"));
+}
+
+bool FunRunStore::saveUltra(const QJsonObject &project) {
+    const QString id = project.value(QStringLiteral("id")).toString();
+    if (!validUltraId(id))
+        return false;
+    QDir().mkpath(folder() + QStringLiteral("ultra"));
+    return writeJsonFile(folder() + QStringLiteral("ultra/") + id + QStringLiteral(".json"), project);
+}
+
+bool FunRunStore::deleteUltra(const QString &id) {
+    if (!validUltraId(id))
+        return false;
+    const QString path = folder() + QStringLiteral("ultra/") + id + QStringLiteral(".json");
+    const QJsonObject p = readJsonFile(path);
+    // stage files the project made (only from the gpx folder)
+    const QString gpxDir = cleanDir(homeform::getWritableAppDir() + QStringLiteral("gpx"));
+    for (const QJsonValue &v : p.value(QStringLiteral("stages")).toArray()) {
+        const QString f = v.toObject().value(QStringLiteral("file")).toString();
+        if (!f.isEmpty() && dirOf(f) == gpxDir && f.endsWith(QStringLiteral(".gpx"), Qt::CaseInsensitive))
+            QFile::remove(f);
+    }
+    QFile::remove(folder() + QStringLiteral("ultra/") + id + QStringLiteral(".gpx"));
+    return QFile::remove(path);
+}
+
+QString FunRunStore::adoptUltraGpx(const QString &file, const QString &id) {
+    if (!validUltraId(id) || !file.endsWith(QStringLiteral(".gpx"), Qt::CaseInsensitive) || !QFile::exists(file) ||
+        dirOf(file) != cleanDir(homeform::getWritableAppDir() + QStringLiteral("gpx")))
+        return QString();
+    QDir().mkpath(folder() + QStringLiteral("ultra"));
+    const QString target = folder() + QStringLiteral("ultra/") + id + QStringLiteral(".gpx");
+    QFile::remove(target);
+    if (QFile::rename(file, target))
+        return target;
+    if (QFile::copy(file, target)) {
+        QFile::remove(file);
+        return target;
+    }
+    return QString();
+}
+
 void FunRunStore::writeIndex(const QJsonArray &rides) {
     QJsonObject index;
     index[QStringLiteral("v")] = 1;
@@ -335,9 +459,26 @@ QString FunRunStore::saveRide(const QList<SessionLine> &session, const QHash<qui
     double windSum = 0;
     int windSamples = 0, windHead = 0, windSide = 0, windTail = 0;
     const double hrMax = info.hrMax > 0 ? info.hrMax : 190;
+    // speed on the flat and metres up per hour on climbs (ride time estimate of routes); one sample per second
+    double flatTime = 0, flatDist = 0, climbTime = 0, climbUp = 0;
     for (int i = 0; i < n; i++) {
         const SessionLine &l = session.at(i);
         joules += l.watt;
+        if (l.speed > 3.0) {
+            // grade of this second: from the route's heights on a route (the recorded grade is in whole percent)
+            double grade = l.inclination, up = l.speed / 3.6 * l.inclination / 100.0;
+            if (i > 0 && rd[i] >= 0 && rd[i - 1] >= 0 && rd[i] - rd[i - 1] > 0.5) {
+                up = route.elevationAt(rd[i]) - route.elevationAt(rd[i - 1]);
+                grade = up / (rd[i] - rd[i - 1]) * 100.0;
+            }
+            if (fabs(grade) < 1.5) {
+                flatTime += 1;
+                flatDist += l.speed / 3.6;
+            } else if (grade >= 3.0) {
+                climbTime += 1;
+                climbUp += up;
+            }
+        }
         maxSpeed = qMax(maxSpeed, l.speed);
         maxPower = qMax(maxPower, (double)l.watt);
         if (l.speed > 0.5 || l.cadence > 0) {
@@ -445,6 +586,14 @@ QString FunRunStore::saveRide(const QList<SessionLine> &session, const QHash<qui
     summary[QStringLiteral("hrZones")] = zoneSeconds;
     summary[QStringLiteral("device")] = info.deviceName;
     summary[QStringLiteral("step")] = step;
+    if (flatTime >= 60) {
+        summary[QStringLiteral("flatSpeed")] = round1(flatDist / flatTime * 3.6);
+        summary[QStringLiteral("flatTime")] = (qint64)flatTime;
+    }
+    if (climbTime >= 60) {
+        summary[QStringLiteral("vam")] = (qint64)std::lround(climbUp / climbTime * 3600.0);
+        summary[QStringLiteral("climbTime")] = (qint64)climbTime;
+    }
 
     if (onRoute) {
         // time from the start of the route to its end (or to the farthest point reached)

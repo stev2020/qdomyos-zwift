@@ -42,6 +42,8 @@
         <file>inner_templates/funrun/start.htm</file>
         <file>inner_templates/funrun/strecken.htm</file>
         <file>inner_templates/funrun/einstellungen.htm</file>
+        <file>inner_templates/funrun/funrun-routes.js</file>
+        <file>inner_templates/funrun/katalog.json</file>
         <file>inner_templates/chartjs/.eslintrc.js</file>
         <file>inner_templates/chartjs/.jshintrc</file>
         <file>inner_templates/chartjs/chart.htm</file>

@@ -2271,6 +2271,10 @@ import AndroidStatusBar 1.0
             property real funrun_level_per_percent: 1.5
             property int funrun_level_interval: 10
             property bool funrun_start_page: true
+            property int funrun_month_goal: 0
+            property real funrun_flat_speed: 25.0
+            property int funrun_climb_rate: 700
+            property bool funrun_speed_adaptive: false
         }
 
         // The home page has its own Settings copy, read once when it is created: hand it every new
