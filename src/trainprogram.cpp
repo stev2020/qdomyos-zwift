@@ -1343,6 +1343,13 @@ void trainprogram::end() {
     QSettings settings;
     qDebug() << QStringLiteral("trainprogram ends!");
 
+    // FunRun: the end of the route is the finish, the ride ends there (then the app shows the ride end screen)
+    if (funrunFinishAtEnd) {
+        started = false;
+        emit stop(false);
+        return;
+    }
+
            // circuit?
     if (!isnan(rows.first().latitude) && !isnan(rows.first().longitude) &&
         QGeoCoordinate(rows.first().latitude, rows.first().longitude)

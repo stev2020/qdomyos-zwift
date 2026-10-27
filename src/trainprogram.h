@@ -110,6 +110,8 @@ class trainprogram : public QObject {
     QTime currentRowRemainingTime();
     QTime remainingTime();
     double currentTargetMets();
+    // FunRun rides end at the end of the route, also on round routes (set by homeform::funrunStartRoute)
+    bool funrunFinishAtEnd = false;
     QTime duration();
     double totalDistance();
     trainrow currentRow();

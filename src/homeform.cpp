@@ -9823,6 +9823,9 @@ void homeform::funrunStartRoute(const QString &gpxFile) {
     }
     // the route after Start: Start forgets the name of the workout (the FIT file takes the route's name)
     gpx_open_clicked(QUrl::fromLocalFile(gpxFile));
+    // at the end of the route the ride ends and the end screen follows
+    if (trainProgram)
+        trainProgram->funrunFinishAtEnd = true;
     if (trainProgram && !trainProgram->isStarted())
         trainProgram->restart();
     emit funrunMapRequested();
