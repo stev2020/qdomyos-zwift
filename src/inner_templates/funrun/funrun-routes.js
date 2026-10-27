@@ -239,11 +239,15 @@
   // ------------------------------------------------------------------ GPX
   const ESC = { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' };
   const esc = t => Array.from(String(t == null ? '' : t), c => ESC[c] || c).join('');
-  RT.gpx = (name, desc, pts) => {
+  // wpts (optional): checkpoints [{ lat, lon, name }], written as waypoints of the type "checkpoint"
+  RT.gpx = (name, desc, pts, wpts) => {
     const out = ['<?xml version="1.0" encoding="UTF-8"?>',
       '<gpx version="1.1" creator="FunRun (QZ)" xmlns="http://www.topografix.com/GPX/1/1">',
-      '  <metadata>', '    <name>' + esc(name) + '</name>', '    <desc>' + esc(desc) + '</desc>', '  </metadata>',
-      '  <trk>', '    <name>' + esc(name) + '</name>', '    <trkseg>'];
+      '  <metadata>', '    <name>' + esc(name) + '</name>', '    <desc>' + esc(desc) + '</desc>', '  </metadata>'];
+    for (const w of wpts || []) {
+      out.push('  <wpt lat="' + w.lat.toFixed(6) + '" lon="' + w.lon.toFixed(6) + '"><name>' + esc(w.name) + '</name><type>checkpoint</type></wpt>');
+    }
+    out.push('  <trk>', '    <name>' + esc(name) + '</name>', '    <trkseg>');
     for (const p of pts) out.push('      <trkpt lat="' + p[0].toFixed(6) + '" lon="' + p[1].toFixed(6) + '"><ele>' + p[2].toFixed(2) + '</ele></trkpt>');
     out.push('    </trkseg>', '  </trk>', '</gpx>', '');
     return out.join('\n');
@@ -979,6 +983,19 @@
   // the checkpoints in a stage of a project (not the start): names
   RT.stageCps = (project, st) => (project.cps || []).filter(c => c.at > 1000 && c.at >= st.from && (c.at < st.to || st.n === project.stages.length)).map(c => c.name);
   RT.cpLabel = name => (String(name).toLowerCase() === 'finish' ? 'Ziel' : String(name));
+  // the checkpoints of a stage as waypoints of its GPX file (the fantasy world puts towns there); pts: the stage's points
+  RT.stageWaypoints = (project, st, pts) => {
+    const s = RT.cum(pts), len = s[s.length - 1], out = [];
+    for (const c of project.cps || []) {
+      if (!(c.at > 1000 && c.at >= st.from && (c.at < st.to || st.n === project.stages.length))) continue;
+      const d = Math.min(len, Math.max(0, c.at - st.from));
+      let i = 1;
+      while (i < s.length - 1 && s[i] < d) i++;
+      const u = s[i] > s[i - 1] ? (d - s[i - 1]) / (s[i] - s[i - 1]) : 0;
+      out.push({ lat: pts[i - 1][0] + (pts[i][0] - pts[i - 1][0]) * u, lon: pts[i - 1][1] + (pts[i][1] - pts[i - 1][1]) * u, name: RT.cpLabel(c.name) });
+    }
+    return out;
+  };
   // heights for the climbing of the stages where the tracker has none: coarse terrain tiles (zoom 10) every 200 m, in parts
   // along the route (the tiles of a part are shared); onProgress(0..1)
   RT.coarseProfile = async (pts, onProgress) => {

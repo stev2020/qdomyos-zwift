@@ -733,7 +733,7 @@ async function stageFile(p, n) {
   const desc = p.name + ', Etappe ' + n + ' von ' + p.stages.length + ' (km ' + FR.num(st.from / 1000) + '–' + FR.num(st.to / 1000) + ').' +
     (p.source && p.source.indexOf('ultra:') === 0 ? ' Strecke des Veranstalters.' : '') +
     (p.source && p.source.indexOf('dotwatcher:') === 0 ? ' Strecke vom Tracker des Rennens (' + (RT.trackerName(p.tracker) || 'über DotWatcher') + '), sie gehört dem Veranstalter.' : '');
-  const res = await FR.saveGpx(RT.fileName(name), RT.gpx(name, desc, pts), RT.describe(pts));
+  const res = await FR.saveGpx(RT.fileName(name), RT.gpx(name, desc, pts, RT.stageWaypoints(full, full.stages[n - 1], pts)), RT.describe(pts));
   if (!res || !res.ok) throw new Error('Speichern ging nicht');
   full.stages[n - 1].file = res.file;
   await FR.ultraSave(full);

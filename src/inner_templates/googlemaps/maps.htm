@@ -165,7 +165,7 @@ body.bare #metrics,body.bare #camBar,body.bare #zoomCol{display:none}
       <button data-p="ich">Ich</button><button data-p="verfolger">Verfolger</button><button data-p="ueberblick">Überblick</button>
     </div>
     <div class="seg panel pe" id="layers">
-      <button data-l="sat" class="on">Satellit</button><button data-l="g3d">3D-Fotos</button>
+      <button data-l="sat" class="on">Satellit</button><button data-l="g3d">3D-Fotos</button><button data-l="fantasy">Fantasy</button>
     </div>
     <div class="seg panel pe" id="tools">
       <button id="btnProfile" title="Höhenprofil ein/aus"><svg viewBox="0 0 24 24"><path d="M2 18.6h20v1.8H2z" fill="currentColor"/>
@@ -290,6 +290,8 @@ const store = {
   get(k, d) { try { const v = localStorage.getItem('qzmap.' + k); return v === null ? d : JSON.parse(v); } catch (e) { return d; } },
   set(k, v) { try { localStorage.setItem('qzmap.' + k, JSON.stringify(v)); } catch (e) { /* storage not available */ } },
 };
+// the rider chose the fantasy world (button "Fantasy"): it is its own page, without Cesium
+if (store.get('layer', 'sat') === 'fantasy') { location.replace('welt.htm' + location.search); return; }
 // grade classes in orange steps on the dark panels: the steeper, the brighter
 const GRADE_COLORS = ['#76421e', '#a0531f', '#cc6620', '#ff7a1a', '#ffb067'];
 const gradeClass = g => (g <= 1 ? 0 : g <= 3 ? 1 : g <= 5 ? 2 : g <= 7 ? 3 : 4);
@@ -698,7 +700,7 @@ function setZoom(t, tau) {
 // ------------------------------------------------------------------ what is shown (the rider's choice, kept in the page storage)
 const CELL_NAMES = { 'm-grade': 'Steigung', 'm-level': 'Stufe', 'm-speed': 'Tempo', 'm-power': 'Leistung', 'm-cad': 'Trittfrequenz',
   'm-hr': 'Puls', 'm-time': 'Zeit', 'm-dist': 'Strecke' };
-const BUTTON_NAMES = { presets: 'Ich · Verfolger · Überblick', layers: 'Satellit · 3D-Fotos', zoomTrack: 'Zoom-Regler', compass: 'Kompass',
+const BUTTON_NAMES = { presets: 'Ich · Verfolger · Überblick', layers: 'Satellit · 3D-Fotos · Fantasy', zoomTrack: 'Zoom-Regler', compass: 'Kompass',
   ride: 'Pause · Beenden' };
 const UI = {
   bare: false, // after a tap on the map: only the map (and the profile, if switched on)
@@ -952,7 +954,7 @@ function initInput() {
   track.addEventListener('pointerdown', e => { dragging = true; try { track.setPointerCapture(e.pointerId); } catch (err) { /* ignore */ } setZoom(fromY(e.clientY), 0.15); });
   track.addEventListener('pointermove', e => { if (dragging) setZoom(fromY(e.clientY), 0.08); });
   ['pointerup', 'pointercancel'].forEach(t => track.addEventListener(t, () => { dragging = false; }));
-  document.querySelectorAll('#layers button').forEach(b => b.addEventListener('click', () => setLayer(b.dataset.l)));
+  document.querySelectorAll('#layers button:not([data-l="fantasy"])').forEach(b => b.addEventListener('click', () => setLayer(b.dataset.l)));
   document.querySelectorAll('#pmode button').forEach(b => b.addEventListener('click', () => {
     PROFILE.mode = b.dataset.m; store.set('pmode', PROFILE.mode); markButtons(); PROFILE.dirty = true;
   }));
@@ -964,7 +966,7 @@ function initInput() {
 
 function markButtons() {
   document.querySelectorAll('#presets button').forEach(b => b.classList.toggle('on', Math.abs(cam.tTarget - PRESETS[b.dataset.p]) < 0.03));
-  document.querySelectorAll('#layers button').forEach(b => b.classList.toggle('on', (b.dataset.l === 'g3d') === tilesOn));
+  document.querySelectorAll('#layers button').forEach(b => b.classList.toggle('on', b.dataset.l === (tilesOn ? 'g3d' : 'sat')));
   document.querySelectorAll('#pmode button').forEach(b => b.classList.toggle('on', b.dataset.m === PROFILE.mode));
 }
 
@@ -1580,6 +1582,7 @@ async function fillElevationFromTerrain() {
 let layerBusy = false;
 async function setLayer(l) {
   if (layerBusy) return;
+  if (l === 'fantasy') { store.set('layer', 'fantasy'); location.replace('welt.htm' + location.search); return; }
   if (l === 'g3d' && !tilesOn) {
     layerBusy = true;
     try {
@@ -1697,8 +1700,10 @@ async function boot() {
   markRide();
   applyUI();
   status('3D-Karte wird geladen …');
+  // the fantasy world needs no internet: its button works also when the map cannot load
+  document.querySelector('#layers button[data-l="fantasy"]').addEventListener('click', () => setLayer('fantasy'));
   window.qzmapDiag.stage = 'cesium-laden';
-  try { await loadCesium(); } catch (e) { status('Die 3D-Karte braucht eine Internetverbindung (CesiumJS konnte nicht geladen werden).', true); return; }
+  try { await loadCesium(); } catch (e) { status('Die 3D-Karte braucht eine Internetverbindung (CesiumJS konnte nicht geladen werden). Die Fantasy-Welt (Knopf „Fantasy“) geht auch ohne.', true); return; }
   // cesium-key.js carries the own ion key from the build (secret CESIUM_TOKEN). Without one, CesiumJS keeps its
   // built-in evaluation key: fine for testing, Cesium then shows a notice in the credits.
   const builtinToken = Cesium.Ion.defaultAccessToken;
