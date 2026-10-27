@@ -1,4 +1,4 @@
-// What the app would get from the trackers of some races (the app's own code, its user agent)
+// The routes of the races for the app's selection, as the app would take them (variant, heights, climbing of a project)
 globalThis.window = globalThis;
 require('./funrun-routes.js');
 const RT = window.FRR;
@@ -9,27 +9,22 @@ RT.fetchText = async (url, opts) => {
   if (!r.ok) throw new Error('HTTP ' + r.status);
   return r.text();
 };
-const refs = process.argv.slice(2).length ? process.argv.slice(2) : [
-  'aztr26', 'arkhigh26', 'tnga26', 'transatlantic25', 'transatlantic26', 'logdrivers26', 'tourdivide25', 'highland26', 'ctr26', 'bcepic26', 'transam26',
-  'https://app.madcap.cc/event/lakes-n-knodel-26', 'https://app.madcap.cc/event/gravel-n-grostl-26', 'https://app.madcap.cc/event/say-hi-to-hermann-26',
-  'https://app.madcap.cc/event/peninsular-divide-26'];
+const races = [['aztr26', 1375], ['ctr26', 828], ['arkhigh26', 1635], ['tnga26', 571], ['transatlantic25', 2417], ['bcepic26', 1049],
+  ['https://app.madcap.cc/event/lakes-n-knodel-26', 725], ['https://app.madcap.cc/event/say-hi-to-hermann-26', 751], ['https://app.madcap.cc/event/peninsular-divide-26', 1520]];
 (async () => {
-  for (const ref of refs) {
-    const t = RT.tracker(ref);
-    let title = '';
-    if (t.kind === 'tl') {
-      try { const h = await RT.fetchText('https://trackleaders.com/' + t.id); const a = h.indexOf('<title>'); title = a >= 0 ? h.slice(a + 7, h.indexOf('</title>', a)) : ''; } catch (e) { title = 'page ' + e.message; }
-    }
+  for (const [ref, want] of races) {
     try {
-      const r = await RT.raceRoute(t);
-      const vs = r.variants.map(v => (v.name || v.key) + ' ' + v.km.toFixed(0) + 'km' + (v.main ? ' main' : '') + (v.heights ? ' ele' : ''));
-      let asc = '';
-      const v0 = r.variants.find(v => v.main) || r.variants[0];
-      if (v0 && v0.heights) { let up = 0; for (let i = 1; i < v0.pts.length; i++) { const d = v0.pts[i][2] - v0.pts[i - 1][2]; if (d > 0) up += d; } asc = ' up(raw)=' + Math.round(up); }
-      if (v0 && v0.tl) { try { const p = await RT.variantHeights(v0); if (p) { let up = 0; for (let i = 1; i < p.length; i++) { const d = p[i][2] - p[i - 1][2]; if (d > 0) up += d; } asc = ' up(tl)=' + Math.round(up); } } catch (e) { asc = ' ele ' + e.message; } }
-      const f = v0 && v0.pts[0], l = v0 && v0.pts[v0.pts.length - 1];
-      console.log(ref, '|', title, '|', vs.join(', '), '| cps', r.cps.length, r.cps.slice(0, 8).map(c => c.name).join('/'), asc,
-        '| start', f && f[0].toFixed(3) + ',' + f[1].toFixed(3), 'end', l && l[0].toFixed(3) + ',' + l[1].toFixed(3));
-    } catch (e) { console.log(ref, '|', title, '| ERROR', e.message); }
+      const r = await RT.raceRoute(RT.tracker(ref));
+      let v = r.variants.find(x => x.main) || r.variants.slice().sort((a, b) => Math.abs(a.km - want) - Math.abs(b.km - want))[0];
+      const pts = (await RT.variantHeights(v)) || null;
+      let asc = 'no heights';
+      if (pts) { const p = RT.makeProject({ id: 'x', name: 'x' }, pts, 50000, {}); asc = p.ascent + ' m (project), ' + (p.length / 1000).toFixed(0) + ' km'; }
+      let la0 = 90, la1 = -90, lo0 = 180, lo1 = -180;
+      for (const q of v.pts) { la0 = Math.min(la0, q[0]); la1 = Math.max(la1, q[0]); lo0 = Math.min(lo0, q[1]); lo1 = Math.max(lo1, q[1]); }
+      const f = v.pts[0], l = v.pts[v.pts.length - 1];
+      const cps = RT.placeCps(v.pts, r.cps);
+      console.log(ref, '|', v.name || v.key, v.km.toFixed(0) + ' km |', asc, '| start', f[0].toFixed(3) + ',' + f[1].toFixed(3), 'end', l[0].toFixed(3) + ',' + l[1].toFixed(3),
+        '| lat', la0.toFixed(2) + '..' + la1.toFixed(2), 'lon', lo0.toFixed(2) + '..' + lo1.toFixed(2), '| cps', cps.map(c => c.name + '@' + Math.round(c.at / 1000)).join(', '));
+    } catch (e) { console.log(ref, '| ERROR', e.message); }
   }
 })();
