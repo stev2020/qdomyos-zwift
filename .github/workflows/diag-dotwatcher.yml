@@ -1,0 +1,11 @@
+# Temporary check: how DotWatcher answers a non-browser client (as the app's downloads are). Branch is deleted afterwards.
+name: diag dotwatcher
+on:
+  push:
+    branches: [ diag-dotwatcher ]
+jobs:
+  probe:
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+      - run: python3 diag.py
