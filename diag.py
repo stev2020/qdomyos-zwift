@@ -1,62 +1,48 @@
-import json, time, urllib.request, urllib.error, concurrent.futures as cf
+import json, time, urllib.request, urllib.error
 
 APP_UA = 'Mozilla/5.0 (Linux; Android 13) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0 Mobile Safari/537.36 FunRun'
-KEEP = ('server', 'x-vercel-mitigated', 'x-vercel-cache', 'retry-after', 'cache-control', 'x-vercel-id', 'content-type')
+KEEP = ('server', 'x-vercel-mitigated', 'cf-mitigated', 'retry-after', 'content-type', 'cf-ray')
 
-def get(url, ua=APP_UA):
-    req = urllib.request.Request(url, headers={'User-Agent': ua})
+def get(url, data=None, ctype=None):
+    h = {'User-Agent': APP_UA}
+    if ctype: h['Content-Type'] = ctype
+    req = urllib.request.Request(url, data=data, headers=h)
     t = time.time()
     try:
         with urllib.request.urlopen(req, timeout=30) as r:
-            return r.status, dict(r.headers), r.read(), time.time() - t
+            return r.status, dict(r.headers), r.read(400000), time.time() - t
     except urllib.error.HTTPError as e:
         return e.code, dict(e.headers), e.read(), time.time() - t
     except Exception as e:
         return 0, {}, str(e).encode(), time.time() - t
 
-def show(tag, res):
+def show(tag, res, snippet=0):
     st, h, b, dt = res
     keep = {k.lower(): v for k, v in h.items() if k.lower() in KEEP}
-    s = b[:30000].decode('utf-8', 'replace')
+    s = b[:200000].decode('utf-8', 'replace')
     i = s.find('<title>')
-    title = s[i + 7:s.find('</title>', i)] if i >= 0 else ''
-    print(f'{time.strftime("%H:%M:%S")} {tag}: {st} {dt:.2f}s {len(b)}B {keep} {title!r}', flush=True)
-    return st
+    title = s[i + 7:s.find('</title>', i)].strip() if i >= 0 else ''
+    print(f'{tag}: {st} {dt:.2f}s {len(b)}B {keep} {title!r}', flush=True)
+    if snippet:
+        print('   ', s[:snippet].replace('\n', ' '), flush=True)
+    return s
 
-print('--- user agents')
-for ua in (APP_UA, 'QZ FunRun (github.com/cagnulein/qdomyos-zwift)', 'curl/7.81.0'):
-    show('races ua=' + ua[:30], get('https://dotwatcher.cc/races', ua))
-    time.sleep(2)
-
-r = get('https://dotwatcher.cc/races')
-show('races', r)
-html = r[2].decode('utf-8', 'replace')
-k = html.find('id="__NEXT_DATA__"')
-if k < 0:
-    print('no __NEXT_DATA__ in the races page; body start:', html[:1500].replace('\n', ' '))
-    raise SystemExit(0)
-a = html.find('>', k) + 1
-nd = json.loads(html[a:html.find('</script>', a)])
-build = nd['buildId']
-d = nd['props']['pageProps']['data']
-slugs = []
-for key in ('liveRacesCollection', 'upcomingRaceCollection', 'pastRacesCollection'):
-    for x in ((d.get(key) or {}).get('items') or []):
-        if x and x.get('slug'):
-            slugs.append(x['slug'])
-print('build', build, 'races', len(slugs))
-show('archive', get(f'https://dotwatcher.cc/_next/data/{build}/results.json'))
-
-print('--- race pages two at a time (as the app list check did)')
-def race(s):
-    return s, get(f'https://dotwatcher.cc/_next/data/{build}/race/{s}.json?slug={s}')
-codes = []
-with cf.ThreadPoolExecutor(2) as ex:
-    for s, res in ex.map(race, slugs[:45]):
-        codes.append(show('race ' + s, res))
-print('codes', codes)
-show('archive again', get(f'https://dotwatcher.cc/_next/data/{build}/results.json'))
-show('races again', get('https://dotwatcher.cc/races'))
-for wait in (30, 60):
-    time.sleep(wait)
-    show(f'archive after +{wait}s', get(f'https://dotwatcher.cc/_next/data/{build}/results.json'))
+show('tl page', get('https://trackleaders.com/highland25'))
+show('tl route', get('https://trackleaders.com/spot/highland25/route.js'), 160)
+home = show('tl home', get('https://trackleaders.com/'))
+links = []
+k = 0
+while True:
+    k = home.find('href="', k)
+    if k < 0: break
+    e = home.find('"', k + 6)
+    links.append(home[k + 6:e]); k = e
+print('tl home links', len(links), links[:80])
+show('fmc page', get('https://www.followmychallenge.com/live/bm25/'))
+show('fmc live index', get('https://www.followmychallenge.com/live/'), 300)
+show('fmc home', get('https://www.followmychallenge.com/'), 300)
+show('fmc tprno6', get('https://live.followmychallenge.com/tprno6/'))
+show('madcap geo', get('https://api2.madcap.cc/event/geo/v6', json.dumps({'event': 'lakes-n-knodel-26'}).encode(), 'application/json'), 160)
+show('madcap app', get('https://app.madcap.cc/'), 200)
+show('rwgps', get('https://ridewithgps.com/routes/55605184.json'), 120)
+show('dotwatcher robots', get('https://dotwatcher.cc/robots.txt'), 300)
