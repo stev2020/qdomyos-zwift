@@ -296,12 +296,12 @@ function renderPick() {
   $('dlist').innerHTML = items.map(u => {
     const proj = projects.find(p => p.source === 'ultra:' + u.id || (u.dotwatcher && p.source === 'dotwatcher:' + u.dotwatcher));
     return card({ key: 'u:' + u.id, thumbHtml: '<svg viewBox="0 0 24 24" width="28" height="28" fill="none" stroke="#ff7a1a" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 21V4M5 4h11l-2 4 2 4H5"/></svg>',
-      name: u.name, meta: FR.num(u.length / 1000) + ' km · ' + FR.num(u.ascent) + ' Hm' + (u.unpaved ? ' · ' + u.unpaved + ' % Schotter' : ''),
+      name: u.name, meta: FR.num(u.length / 1000) + ' km · ' + FR.num(u.ascent) + ' Hm' + (u.unpaved ? ' · ' + u.unpaved + ' % Schotter' : u.terrain ? ' · ' + TERRAIN[u.terrain] : ''),
       sub: FR.esc(u.start + (u.finish && u.finish !== u.start ? ' – ' + u.finish : ' (Runde)')) + ' · ' + FR.esc(u.region) + (u.when ? ' · ' + FR.esc(u.when) : ''),
       noProf: FR.esc(u.note || ''), left: 'Etappen ab 30 km',
-      act: proj ? 'Angelegt' : u.rwgps || u.dotwatcher ? 'Ansehen' : 'Zur Website' });
+      act: proj ? 'Angelegt' : u.rwgps || u.dotwatcher || u.tracker ? 'Ansehen' : 'Zur Website' });
   }).join('');
-  $('attr').innerHTML = 'Strecken der Veranstalter (öffentlich bei RideWithGPS) oder zum Herunterladen auf ihren Websites. Weitere Rennen unter „Demnächst“, „Zuletzt“ und „Archiv“ (DotWatcher).';
+  $('attr').innerHTML = 'Strecken der Veranstalter (öffentlich bei RideWithGPS, von den Trackern der Rennen) oder zum Herunterladen auf ihren Websites. Weitere Rennen unter „Demnächst“, „Zuletzt“ und „Archiv“ (DotWatcher).';
 }
 
 // ------------------------------------------------------------------ DotWatcher: next races, the last 25, the archive
@@ -563,19 +563,25 @@ function openUltra(u) {
   const proj = projects.find(p => p.source === 'ultra:' + u.id || (u.dotwatcher && p.source === 'dotwatcher:' + u.dotwatcher));
   openSheet('<h2>' + FR.esc(u.name) + '</h2><div class="sub">' + FR.esc(u.region) + ' · ' + FR.esc(u.start + (u.finish && u.finish !== u.start ? ' – ' + u.finish : ' (Runde)')) +
     (u.when ? ' · ' + FR.esc(u.when) : '') + '</div>' +
-    kv([['Länge', FR.num(u.length / 1000) + ' km'], ['Bergauf', FR.num(u.ascent) + ' Hm'], ['Schotter', u.unpaved ? u.unpaved + ' %' : '–'], ['Etappen', '<i id="stCount" style="font-style:normal"></i>']]) +
+    kv([['Länge', FR.num(u.length / 1000) + ' km'], ['Bergauf', FR.num(u.ascent) + ' Hm'],
+        u.unpaved || !u.terrain ? ['Schotter', u.unpaved ? u.unpaved + ' %' : '–'] : ['Untergrund', TERRAIN[u.terrain]], ['Etappen', '<i id="stCount" style="font-style:normal"></i>']]) +
     '<p class="muted" style="margin:0">' + FR.esc(u.note || '') + '</p>' +
     (proj ? '<div class="state">Schon als Langstrecke angelegt – du findest sie unter „Meine“.</div>'
       : (u.rwgps ? stageChooser(50) + '<p class="attr">Die App teilt das Rennen in Etappen. Jede Etappe fährst du wie eine Strecke; der Fortschritt zählt übers ganze Rennen.</p>'
+                 : u.tracker ? '<div id="dwRoute" style="display:flex;flex-direction:column;gap:10px"></div><p class="attr">Die App lädt die Strecke ' +
+                   (u.edition ? 'von ' + u.edition + ' ' : '') + 'vom Tracker des Rennens (' + (RT.trackerName(RT.tracker(u.tracker).kind) || 'Tracker') + ') und teilt sie in Etappen. ' +
+                   'Die Strecke gehört dem Veranstalter – nur für dich privat.</p>'
                  : u.dotwatcher ? '<p class="attr">Die Strecke der letzten Austragung lädt die App über DotWatcher vom Tracker des Rennens.</p>'
                  : '<p class="attr">Die Strecke gibt es auf der Website des Veranstalters. Lade dort die GPX herunter und importiere sie hier („GPX importieren“); unter „Meine“ kannst du sie dann in Etappen fahren.</p>')) +
     '<div class="state" id="sheetState"></div>' +
-    '<div class="btns">' + (proj ? '' : u.rwgps ? '<button class="btn primary" id="sMake">Als Langstrecke anlegen</button>' : u.dotwatcher ? '<button class="btn primary" id="sDwr">Über DotWatcher laden</button>' : '') +
+    '<div class="btns">' + (proj ? '' : u.rwgps ? '<button class="btn primary" id="sMake">Als Langstrecke anlegen</button>' : u.tracker ? '<button class="btn primary" id="sLoad">Strecke laden</button>'
+      : u.dotwatcher ? '<button class="btn primary" id="sDwr">Über DotWatcher laden</button>' : '') +
     '<button class="btn" id="sWeb">Website des Rennens</button><button class="btn" id="sClose">Schließen</button></div>');
   $('sClose').onclick = closeSheet;
   $('sWeb').onclick = () => FR.openUrl(u.url);
   const count = len => { const el = $('stCount'); if (el) el.textContent = Math.max(1, Math.round(u.length / (len * 1000))) + ' × ~' + len + ' km'; };
-  if (!proj && !u.rwgps && u.dotwatcher) $('sDwr').onclick = () => openDwRace(u.dotwatcher, u.name);
+  if (!proj && !u.rwgps && u.tracker) $('sLoad').onclick = () => loadRaceRoute(catalogRace(u));
+  if (!proj && !u.rwgps && !u.tracker && u.dotwatcher) $('sDwr').onclick = () => openDwRace(u.dotwatcher, u.name);
   if (proj || !u.rwgps) { $('stCount').textContent = proj ? proj.stages.length + '' : '–'; return; }
   const getLen = wireStageChooser();
   window.funrunStageInfo = count; count(getLen());
@@ -599,6 +605,11 @@ function openUltra(u) {
     sheetBusy = false;
   };
 }
+// a race of the selection whose route comes from its tracker: it goes the way of a DotWatcher race (route, variants,
+// checkpoints, stages), but is saved as a race of the selection
+const catalogRace = u => ({ slug: u.id, title: u.name, source: 'ultra:' + u.id, location: u.region, km: u.length / 1000, hm: u.ascent, terrain: u.terrain || '',
+  website: u.url || '', page: '', tracker: RT.tracker(u.tracker), variant: u.variant || '', reopen: () => openUltra(u),
+  meta: { url: u.url, country: u.country, region: u.region, start: u.start, finish: u.finish } });
 // ------------------------------------------------------------------ DotWatcher races: data, route at the tracker, long route
 const httpsUrl = u => (String(u || '').indexOf('http://') === 0 ? 'https://' + String(u).slice(7) : String(u || ''));
 function openArchive(a) {
@@ -648,7 +659,7 @@ window.funrunHandoff = d => {
     const base = RT.fmcBase(d.id);
     handed[base] = String(d.page || '');
     for (const f of Object.keys(d.routes || {})) handed[base + 'application/helpers/prefetch.route.php?r=' + f + '&light=false'] = String(d.routes[f]);
-    dwRaceSheet(w.race);
+    if (w.race.reopen) w.race.reopen(); else dwRaceSheet(w.race);
     loadRaceRoute(w.race);
   }
 };
@@ -707,8 +718,8 @@ async function loadRaceRoute(race) {
     $('sLoad').remove();
     return;
   }
-  // first choice: the main route, else the one closest to DotWatcher's length, else the longest
-  let pick = route.variants.find(v => v.main) || null;
+  // first choice: the main route (or the one the selection names), else the one closest to DotWatcher's length, else the longest
+  let pick = route.variants.find(v => v.main) || (race.variant ? route.variants.find(v => v.name === race.variant) : null) || null;
   if (!pick && Number.isFinite(race.km)) pick = route.variants.slice().sort((a, b) => Math.abs(a.km - race.km) - Math.abs(b.km - race.km))[0];
   pick = pick || route.variants[0];
   const many = route.variants.length > 1, vname = v => v.name || 'Strecke ' + (route.variants.indexOf(v) + 1);
@@ -750,8 +761,9 @@ async function makeRaceProject(race, v, cps, stageKm, variantName) {
     }
     state('Etappen werden eingeteilt …');
     const name = race.title + (variantName ? ' – ' + variantName : '');
-    const p = RT.makeProject({ id: RT.projectId(name), name, source: 'dotwatcher:' + race.slug, variant: v.key, url: httpsUrl(race.website) || race.page,
-      dotwatcher: race.page, tracker: race.tracker.kind, region: race.location, terrain: race.terrain }, pts, stageKm * 1000, opts);
+    // (a race of the selection keeps its own source and data)
+    const p = RT.makeProject(Object.assign({ id: RT.projectId(name), name, source: race.source || 'dotwatcher:' + race.slug, variant: v.key, url: httpsUrl(race.website) || race.page,
+      tracker: race.tracker.kind, region: race.location, terrain: race.terrain }, race.source ? race.meta : { dotwatcher: race.page }), pts, stageKm * 1000, opts);
     const res = await FR.ultraSave(p);
     if (!res || res.ok === false) throw new Error('Speichern ging nicht');
     projects = await loadProjects();
