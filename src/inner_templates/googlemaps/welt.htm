@@ -1210,10 +1210,11 @@ function updateOverlays() {
   if (!route || !cam.pose) return;
   const sNow = rider.s == null ? 0 : rider.s;
   if (sNow < 300) placeFlag($('flagStart'), 'start', groundAt(0, 'start')); else $('flagStart').style.display = 'none';
-  placeFlag($('flagFinish'), 'finish', groundAt(route.total, 'finish'));
+  // (flags only within sight of the world, about 15 km)
+  if (route.total - sNow < 15000) placeFlag($('flagFinish'), 'finish', groundAt(route.total, 'finish')); else $('flagFinish').style.display = 'none';
   const sm = route.nextSummit(sNow);
   const fsEl = $('flagSummit');
-  if (sm != null && route.total - sm > 30) {
+  if (sm != null && route.total - sm > 30 && sm - sNow < 15000) {
     placeFlag(fsEl, 'summit', groundAt(sm, 'summit'));
     const t = rider.s == null ? 'Kuppe' : 'Kuppe · ' + num((sm - rider.s) / 1000, 1) + ' km';
     if (t !== lastFlagText) { fsEl.querySelector('span').textContent = t; lastFlagText = t; }

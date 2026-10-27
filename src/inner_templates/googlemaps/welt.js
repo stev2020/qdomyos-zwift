@@ -494,6 +494,8 @@ class Engine {
     const warm = C('#ffb15e');
     this.mat = {
       terrain: lambert({ vertexColors: true }, 1.0),
+      // (far land without the brush noise: there it does not show, and every pixel counts on a tablet)
+      terrainFar: lambert({ vertexColors: true }, 0),
       tree: lambert({ vertexColors: true }, 0.6),
       stone: lambert({ color: C(LOOK.stone) }, 0.8),
       stones: lambert({ color: C(LOOK.stones), flatShading: true }, 0.9),
@@ -886,7 +888,7 @@ class Engine {
     geo.setAttribute('color', new T.BufferAttribute(col, 3));
     geo.setIndex(new T.BufferAttribute(this.gridIndex(cells), 1));
     geo.computeBoundingSphere();
-    const mesh = new T.Mesh(geo, this.mat.terrain);
+    const mesh = new T.Mesh(geo, lod ? this.mat.terrainFar : this.mat.terrain);
     mesh.position.set(x0, 0, z0);
     this.world.add(mesh);
     const chunk = { lod, i: ci, j: cj, mesh, trees: null, x: x0 + size / 2, z: z0 + size / 2 };
