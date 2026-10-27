@@ -11,6 +11,8 @@ def get(url, ua=APP_UA):
             return r.status, dict(r.headers), r.read(), time.time() - t
     except urllib.error.HTTPError as e:
         return e.code, dict(e.headers), e.read(), time.time() - t
+    except Exception as e:
+        return 0, {}, str(e).encode(), time.time() - t
 
 def show(tag, res):
     st, h, b, dt = res
@@ -31,7 +33,8 @@ show('races', r)
 html = r[2].decode('utf-8', 'replace')
 k = html.find('id="__NEXT_DATA__"')
 if k < 0:
-    raise SystemExit('no __NEXT_DATA__ in the races page')
+    print('no __NEXT_DATA__ in the races page; body start:', html[:1500].replace('\n', ' '))
+    raise SystemExit(0)
 a = html.find('>', k) + 1
 nd = json.loads(html[a:html.find('</script>', a)])
 build = nd['buildId']
