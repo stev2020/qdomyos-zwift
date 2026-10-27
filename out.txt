@@ -1,15 +1,9 @@
-aztr26 | Arizona Trail Race 2026 live tracker by trackleaders.com | 800 Northbound 1375km, 300 Northbound 491km, Patagonia_Legacy - Allowed Alternate 18km | cps 0   up(tl)=31674 | start 31.371,-110.332 end 35.218,-111.632
-arkhigh26 | Arkansas High Country 2026 live tracker by trackleaders.com | Full Clockwise 1635km, Full Counterclockwise 1635km, Northwest 394km, ArHC Singletrack Option 111km | cps 0   up(tl)=24861 | start 36.373,-94.207 end 36.375,-94.207
-tnga26 | Trans North Georgia 2026 live tracker by trackleaders.com | Gravel YoYo 1072km, Original 571km, Gravel 536km | cps 0   up(tl)=23198 | start 34.919,-83.169 end 34.919,-83.169
-transatlantic25 | TransAtlantic Way Bike 2025 live tracker by trackleaders.com | Cu Culhainn - Full 2417km, Setanta - Short 1704km, Cean beag O dheas - South 1036km, Cean beag O thuaidh - North 1032km, Donegal_Rally_diversion_cu_culhainn 478km, Donegal_rally_diversion_Setanta_and_Cean_beag_O_thuaidh 383km | cps 0   up(tl)=26002 | start 51.893,-8.509 end 55.003,-7.312
-transatlantic26 | page HTTP 404 | ERROR HTTP 404
-logdrivers26 | Log Drivers Waltz 2026 live tracker by trackleaders.com | Full Rewind 1615km, Full 807km, Half-Demi 381km | cps 0   up(tl)=19169 | start 45.224,-76.199 end 45.225,-76.196
-tourdivide25 | Tour Divide 2025 live tracker by trackleaders.com | Northbound 4321km, Southbound 4321km, tl3 190km, tl4 170km, tl2 117km | cps 0   up(tl)=52001 | start 31.334,-108.530 end 51.161,-115.560
-highland26 | page HTTP 404 | ERROR HTTP 404
-ctr26 | Colorado Trail Race 2026 live tracker by trackleaders.com | Eastbound 828km, Westbound 828km | cps 0   up(tl)=24916 | start 37.331,-107.903 end 39.491,-105.094
-bcepic26 | BC Epic 1000 2026 live tracker by trackleaders.com | Eastbound 1049km, Westbound 1049km | cps 0   up(tl)=15937 | start 50.110,-120.790 end 49.504,-115.062
-transam26 | page HTTP 404 | ERROR HTTP 404
-https://app.madcap.cc/event/lakes-n-knodel-26 |  | 1ff91f34-2b6a-4d1f-a641-f41bf6fef825 725km main ele | cps 6 Start/CP 1 - Moirer Hof/CP2 - Blecksteinhaus/CP3 - Plumsjochhütte/CP4 - Alpe Sorg I/Finish  up(raw)=12368 | start 47.796,13.303 end 47.460,9.995
-https://app.madcap.cc/event/gravel-n-grostl-26 |  | 100k 101km ele, 90k 87km ele, 80k 78km ele, 70k old 70km ele, 70k 63km ele, 60k 60km ele, 50k 51km ele, 40k 38km ele, 30k 31km ele, 20k 11km ele | cps 1 Start  up(raw)=1756 | start 47.641,12.295 end 47.642,12.295
-https://app.madcap.cc/event/say-hi-to-hermann-26 |  | Etape Forcée 751km main ele | cps 1 Finish  up(raw)=3378 | start 52.184,5.413 end 52.184,5.413
-https://app.madcap.cc/event/peninsular-divide-26 |  | ffd4483f-db6b-4b40-831e-2c46eb64f701 1520km main ele | cps 6 Start/Kampung Aur/Fraser's Hill/Mossy Forest/Jeli/Finish  up(raw)=37197 | start 1.370,104.280 end 6.666,100.202
+aztr26 | 800 Northbound 1375 km | 23876 m (project), 1375 km | start 31.371,-110.332 end 35.218,-111.632 | lat 31.37..36.09 lon -112.15..-110.33 | cps 
+ctr26 | Westbound 828 km | no heights | start 39.491,-105.094 end 37.331,-107.903 | lat 37.33..39.55 lon -108.04..-105.09 | cps 
+arkhigh26 | Full Clockwise 1635 km | 20573 m (project), 1635 km | start 36.373,-94.207 end 36.375,-94.207 | lat 34.37..36.54 lon -94.46..-92.09 | cps 
+tnga26 | Original 571 km | 11203 m (project), 571 km | start 34.919,-83.169 end 33.950,-85.396 | lat 33.95..34.98 lon -85.40..-83.17 | cps 
+transatlantic25 | Cu Culhainn - Full 2417 km | 21700 m (project), 2417 km | start 51.893,-8.509 end 55.003,-7.312 | lat 51.45..55.38 lon -10.47..-7.00 | cps 
+bcepic26 | Eastbound 1049 km | 10601 m (project), 1049 km | start 50.110,-120.790 end 49.504,-115.062 | lat 49.00..50.11 lon -120.93..-114.93 | cps 
+https://app.madcap.cc/event/lakes-n-knodel-26 | 1ff91f34-2b6a-4d1f-a641-f41bf6fef825 725 km | 11694 m (project), 724 km | start 47.796,13.303 end 47.460,9.995 | lat 47.36..48.00 lon 9.94..13.49 | cps Start@0, CP 1 - Moirer Hof@141, CP2 - Blecksteinhaus@313, CP3 - Plumsjochhütte@500, CP4 - Alpe Sorg I@647, Finish@725
+https://app.madcap.cc/event/say-hi-to-hermann-26 | Etape Forcée 751 km | 3050 m (project), 751 km | start 52.184,5.413 end 52.184,5.413 | lat 51.65..52.29 lon 5.41..8.94 | cps Finish@751
+https://app.madcap.cc/event/peninsular-divide-26 | ffd4483f-db6b-4b40-831e-2c46eb64f701 1520 km | 17780 m (project), 1518 km | start 1.370,104.280 end 6.666,100.202 | lat 1.37..6.67 lon 100.20..104.29 | cps Start@0, Kampung Aur@335, Fraser's Hill@698, Mossy Forest@899, Jeli@1146, Finish@1519
