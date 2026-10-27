@@ -172,8 +172,16 @@ const near = { place: ls.get('place', { name: 'Lübeck', lat: 53.8655, lon: 10.6
 // ultra races: the selection (katalog.json) or DotWatcher (next races, the last 25, the archive)
 let ultraView = ls.get('ultraView', 'pick'), terrain = ls.get('terrain', 'all'), ultraLen = ls.get('ultraLen', 'all');
 const dw = { races: null, loading: false, error: '', archive: null, archLoading: false, archError: '', info: ls.get('dwInfo', {}), checking: new Set() };
-// the app loads the pages of DotWatcher and of the trackers (the page itself may not)
-RT.fetchText = FR.fetchText;
+// the app loads the pages of DotWatcher and of the trackers (the page itself may not). Texts that the app's browser handed
+// over for a site that lets only browsers in (see "the app's browser" below) are taken from here: url → text
+const handed = {};
+RT.fetchText = (url, opts) => (Object.prototype.hasOwnProperty.call(handed, url) ? Promise.resolve(handed[url]) : FR.fetchText(url, opts));
+// DotWatcher let only browsers in: no new tries for some hours, also on the next visit of the page
+RT.dwBlockedUntil = ls.get('dwBlockedUntil', 0);
+RT.onDwBlocked = until => {
+  ls.set('dwBlockedUntil', until);
+  if (view === 'discover' && src === 'ultra' && ultraView !== 'pick') renderUltra();
+};
 
 // ------------------------------------------------------------------ drawing helpers
 const avgGrade = r => (r.length > 0 ? r.ascent / r.length * 100 : 0);
@@ -276,9 +284,10 @@ function renderUltra() {
   document.querySelectorAll('#ultraView button').forEach(b => b.classList.toggle('on', b.dataset.u === ultraView));
   document.querySelectorAll('#terrainChips button').forEach(b => b.classList.toggle('on', b.dataset.t === terrain));
   document.querySelectorAll('#ultraLen button').forEach(b => b.classList.toggle('on', b.dataset.l === ultraLen));
-  $('archSearch').classList.toggle('hidden', ultraView !== 'arch');
-  $('terrainChips').classList.toggle('hidden', ultraView === 'pick' || ultraView === 'arch');
-  $('ultraLen').classList.toggle('hidden', ultraView === 'arch');
+  const blocked = ultraView !== 'pick' && RT.dwBlocked();
+  $('archSearch').classList.toggle('hidden', ultraView !== 'arch' || blocked);
+  $('terrainChips').classList.toggle('hidden', ultraView === 'pick' || ultraView === 'arch' || blocked);
+  $('ultraLen').classList.toggle('hidden', ultraView === 'arch' || blocked);
   if (ultraView === 'pick') renderPick(); else if (ultraView === 'arch') renderArchive(); else renderDw();
 }
 function renderPick() {
@@ -318,12 +327,24 @@ function dwCard(r) {
 }
 async function loadDw() {
   dw.loading = true; dw.error = '';
-  try { dw.races = await RT.dwRaces(); } catch (e) { dw.error = e.message; }
+  try { dw.races = await RT.dwRaces(); } catch (e) { dw.error = e.dwBlocked ? '' : e.message; }
   dw.loading = false;
   if (view === 'discover' && src === 'ultra') renderUltra();
 }
+// DotWatcher lets only browsers in: its pages in the app's browser, a race comes back with "Übernehmen" there
+const DW_SITE = 'https://dotwatcher.cc', DW_HINT = 'Öffne ein Rennen und tippe dann auf „Übernehmen“.';
+function dwBrowseCard(path, label) {
+  setMsg('');
+  $('dlist').innerHTML = '<div class="card" style="grid-column:1/-1;display:flex;flex-direction:column;gap:10px">' +
+    '<b style="font-size:17px">DotWatcher lässt die App nicht mehr selbst laden</b>' +
+    '<p class="muted" style="margin:0">DotWatcher lässt seit Kurzem nur noch Browser auf seine Seiten. Öffne es hier in der App, ' +
+    'such dir ein Rennen aus und tippe unten auf „Übernehmen“ – dann geht es hier mit der Strecke weiter.</p>' +
+    '<div class="btns"><button class="btn primary" id="dwBrowse">' + label + '</button></div></div>';
+  $('dwBrowse').onclick = () => browseFor(DW_SITE + path, DW_HINT, { kind: 'dwrace' });
+}
 function renderDw() {
   $('attr').innerHTML = DW_ATTR;
+  if (RT.dwBlocked()) { dwBrowseCard('/races', ultraView === 'next' ? 'Nächste Rennen bei DotWatcher' : 'Letzte Rennen bei DotWatcher'); return; }
   if (!dw.races) {
     setMsg(dw.error ? 'DotWatcher ist gerade nicht erreichbar (' + dw.error + ').' : 'Rennen werden bei DotWatcher geladen …');
     $('dlist').innerHTML = '';
@@ -358,12 +379,13 @@ function checkTrackers(items) {
 }
 async function loadArchive() {
   dw.archLoading = true; dw.archError = '';
-  try { dw.archive = await RT.dwArchive(); } catch (e) { dw.archError = e.message; }
+  try { dw.archive = await RT.dwArchive(); } catch (e) { dw.archError = e.dwBlocked ? '' : e.message; }
   dw.archLoading = false;
   if (view === 'discover' && src === 'ultra' && ultraView === 'arch') renderUltra();
 }
 function renderArchive() {
   $('attr').innerHTML = DW_ATTR;
+  if (RT.dwBlocked()) { dwBrowseCard('/results', 'Archiv bei DotWatcher'); return; }
   if (!dw.archive) {
     setMsg(dw.archError ? 'Das Archiv von DotWatcher ist gerade nicht erreichbar (' + dw.archError + ').' : 'Archiv wird bei DotWatcher geladen …');
     $('dlist').innerHTML = '';
@@ -591,7 +613,53 @@ function openDwRace(slug, title) {
     '<div class="btns"><button class="btn" id="sClose">Schließen</button></div>');
   $('sClose').onclick = closeSheet;
   const token = sheetToken;
-  RT.dwRace(slug).then(race => { if (token === sheetToken) dwRaceSheet(race); }, e => { if (token === sheetToken) state('Das hat nicht geklappt: ' + e.message, true); });
+  RT.dwRace(slug).then(race => { if (token === sheetToken) dwRaceSheet(race); }, e => {
+    if (token !== sheetToken) return;
+    if (e.dwBlocked) dwBlockedSheet(slug, title); else state('Das hat nicht geklappt: ' + e.message, true);
+  });
+}
+// DotWatcher lets only browsers in: the race's page in the app's browser, "Übernehmen" there brings the race back
+function dwBlockedSheet(slug, title) {
+  openSheet('<h2>' + FR.esc(title) + '</h2>' +
+    '<p class="muted" style="margin:0">DotWatcher lässt seit Kurzem nur noch Browser auf seine Seiten, die App kommt nicht selbst an die Daten des Rennens. ' +
+    'Öffne die Seite des Rennens hier in der App und tippe dort unten auf „Übernehmen“.</p>' +
+    '<div class="btns"><button class="btn primary" id="sBrowse">Rennen bei DotWatcher öffnen</button><button class="btn" id="sClose">Schließen</button></div>');
+  $('sClose').onclick = closeSheet;
+  $('sBrowse').onclick = () => browseFor(DW_SITE + '/race/' + encodeURIComponent(slug), 'Tippe auf „Übernehmen“, um das Rennen in die App zu holen.', { kind: 'dwrace' });
+}
+// ------------------------------------------------------------------ the app's browser, for sites that let only browsers in
+// (DotWatcher; the trackers of FollowMyChallenge). FR.browse shows the site above this page; "Übernehmen" there reads the
+// race or its route from the site's page (uebernahme.js) and hands it to window.funrunHandoff.
+let browseWait = null;  // what the browser was opened for: { kind: 'dwrace' } or { kind: 'fmc', race }
+function browseFor(url, hint, wait) { browseWait = wait; FR.browse(url, hint); }
+window.funrunHandoff = d => {
+  if (!d) return;
+  // a race of DotWatcher: its sheet, as if the app had loaded it
+  if (d.kind === 'dwrace' && d.item) {
+    browseWait = null;
+    dwRaceSheet(RT.dwRaceFromItem(d.item, String(d.item.slug || '')));
+    return;
+  }
+  // the route at FollowMyChallenge: the race's route is read from what the browser handed over
+  const w = browseWait;
+  if (d.kind === 'fmc' && w && w.kind === 'fmc') {
+    if (String(d.id) !== String(w.race.tracker.id)) { state('Das war der Tracker eines anderen Rennens. Öffne ihn noch einmal.', true); return; }
+    browseWait = null;
+    const base = RT.fmcBase(d.id);
+    handed[base] = String(d.page || '');
+    for (const f of Object.keys(d.routes || {})) handed[base + 'application/helpers/prefetch.route.php?r=' + f + '&light=false'] = String(d.routes[f]);
+    dwRaceSheet(w.race);
+    loadRaceRoute(w.race);
+  }
+};
+// FollowMyChallenge lets only browsers in: the tracker in the app's browser, its route comes back with "Übernehmen" there
+const refusedByBrowserCheck = e => { const m = String(e && e.message); return m === 'HTTP 403' || m === 'HTTP 429' || m === 'HTTP 503'; };
+function fmcBrowse(race) {
+  state('FollowMyChallenge lässt die App nicht selbst laden, nur Browser. Öffne den Tracker hier in der App; sobald die Karte zu sehen ist, tippe unten auf „Übernehmen“.');
+  const btn = $('sLoad');
+  btn.textContent = 'Tracker öffnen';
+  btn.disabled = false;
+  btn.onclick = () => browseFor(RT.fmcBase(race.tracker.id), 'Sobald die Karte zu sehen ist, tippe auf „Übernehmen“.', { kind: 'fmc', race });
 }
 function dwRaceSheet(race) {
   dw.info[race.slug] = { k: race.tracker.kind, t: Date.now() };
@@ -626,7 +694,9 @@ async function loadRaceRoute(race) {
   let route;
   try { route = await RT.raceRoute(race.tracker, t => { if (token === sheetToken) state(t); }); } catch (e) {
     sheetBusy = false;
-    if (token === sheetToken) { state('Das hat nicht geklappt: ' + e.message, true); $('sLoad').disabled = false; }
+    if (token !== sheetToken) return;
+    if (race.tracker.kind === 'fmc' && refusedByBrowserCheck(e)) fmcBrowse(race);
+    else { state('Das hat nicht geklappt: ' + e.message, true); $('sLoad').disabled = false; }
     return;
   }
   sheetBusy = false;

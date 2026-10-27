@@ -707,6 +707,34 @@
 
   const DW = 'https://dotwatcher.cc';
   let dwBuild = '';
+  // DotWatcher may let only browsers in (its "Vercel Security Checkpoint" answers the app's own downloads with HTTP 429).
+  // The app asks one page at a time, at least RT.dwGap ms apart; after such an answer it stops asking until
+  // RT.dwBlockedUntil (the page then offers DotWatcher in the app's browser) and calls RT.onDwBlocked.
+  RT.dwGap = 1000;
+  RT.dwBlockedUntil = 0;
+  RT.dwBlocked = () => Date.now() < RT.dwBlockedUntil;
+  const dwBlockedError = () => Object.assign(new Error('DotWatcher lässt die App gerade nicht herein, nur Browser'), { dwBlocked: true });
+  let dwQueue = Promise.resolve(), dwLast = 0;
+  const dwText = url => {
+    const job = async () => {
+      if (RT.dwBlocked()) throw dwBlockedError();
+      const wait = dwLast + RT.dwGap - Date.now();
+      if (wait > 0) await new Promise(res => setTimeout(res, wait));
+      dwLast = Date.now();
+      try { return await RT.fetchText(url); } catch (e) {
+        const m = String(e && e.message);
+        if (m === 'HTTP 429' || m === 'HTTP 403') {
+          RT.dwBlockedUntil = Date.now() + 6 * 3600000;
+          if (RT.onDwBlocked) RT.onDwBlocked(RT.dwBlockedUntil);
+          throw dwBlockedError();
+        }
+        throw e;
+      }
+    };
+    const p = dwQueue.then(job, job);
+    dwQueue = p.catch(() => {});
+    return p;
+  };
   // the data of a Next.js page (<script id="__NEXT_DATA__">)
   RT.nextData = html => {
     const k = html.indexOf('id="__NEXT_DATA__"');
@@ -720,7 +748,7 @@
   const dwItems = v => ((v && v.items) || []).filter(x => x && x.slug).map(dwItem);
   // DotWatcher's race list: { upcoming, live, past } (the next races, those under way, the last 25)
   RT.dwRaces = async () => {
-    const nd = RT.nextData(await RT.fetchText(DW + '/races'));
+    const nd = RT.nextData(await dwText(DW + '/races'));
     dwBuild = nd.buildId || dwBuild;
     const d = (nd.props && nd.props.pageProps && nd.props.pageProps.data) || {};
     return { upcoming: dwItems(d.upcomingRaceCollection), live: dwItems(d.liveRacesCollection), past: dwItems(d.pastRacesCollection) };
@@ -729,12 +757,13 @@
   async function dwData(path) {
     if (!dwBuild) await RT.dwRaces();
     try {
-      return JSON.parse(await RT.fetchText(DW + '/_next/data/' + dwBuild + '/' + path));
+      return JSON.parse(await dwText(DW + '/_next/data/' + dwBuild + '/' + path));
     } catch (e) {
+      if (e.dwBlocked) throw e;
       const old = dwBuild;
       await RT.dwRaces();
       if (dwBuild === old) throw e;
-      return JSON.parse(await RT.fetchText(DW + '/_next/data/' + dwBuild + '/' + path));
+      return JSON.parse(await dwText(DW + '/_next/data/' + dwBuild + '/' + path));
     }
   }
   // all races DotWatcher ever covered: [{ name, events: [{ slug, year }] }] (newest year first)
@@ -753,8 +782,11 @@
     }
     const d = j.pageProps && j.pageProps.data, it = d && d.racesCollection && d.racesCollection.items && d.racesCollection.items[0];
     if (!it) throw new Error('DotWatcher kennt dieses Rennen nicht');
-    return Object.assign(dwItem(it), { tracker: RT.tracker(it.trackleadersRaceId), website: it.website || '', page: DW + '/race/' + slug });
+    return RT.dwRaceFromItem(it, slug);
   };
+  // a race from DotWatcher's data (as the app loads it, or as the app's browser hands it over from the race's page)
+  RT.dwRaceFromItem = (it, slug) => Object.assign(dwItem(Object.assign({ slug }, it)),
+    { tracker: RT.tracker(it.trackleadersRaceId), website: it.website || '', page: DW + '/race/' + (it.slug || slug) });
 
   // where the map of a race comes from (DotWatcher's field "trackleadersRaceId": a Trackleaders id or the tracker's address):
   // { kind: 'tl' | 'fmc' | 'madcap' | 'map' | 'other' | 'none', id, url }
@@ -920,6 +952,8 @@
     return { files, cps };
   };
 
+  // the page of a race at FollowMyChallenge (its route files are relative to it)
+  RT.fmcBase = id => 'https://www.followmychallenge.com/live/' + id + '/';
   // the route of a race at its tracker: { variants: [{ key, name, km, pts, heights, main, tl }], cps: [{ name, lat, lon }] }
   // variants longest first; pts [[lat, lon, ele]] (ele NaN where the tracker has no heights); onState: progress texts
   RT.raceRoute = async (tracker, onState) => {
@@ -931,7 +965,7 @@
       variants = lines.map(l => ({ key: 'tl' + l.num, name: l.name, pts: l.pts, heights: false, tl: { id: tracker.id, num: l.num } }));
     } else if (tracker.kind === 'fmc') {
       say('Seite des Rennens bei FollowMyChallenge wird gelesen …');
-      const base = 'https://www.followmychallenge.com/live/' + tracker.id + '/';
+      const base = RT.fmcBase(tracker.id);
       const page = RT.parseFmcPage(await RT.fetchText(base, { stopAfter: 'prefetch.route.php?r=', stopExtra: 200000 }));
       cps = page.cps;
       for (const f of page.files) {

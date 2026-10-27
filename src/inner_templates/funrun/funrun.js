@@ -107,6 +107,18 @@
   FR.open = what => FR.send('funrun_open', { what });
   // a web page in the browser of the device (https only)
   FR.openUrl = url => (demo ? window.open(url, '_blank') : FR.send('funrun_open', { what: 'url', url }));
+  // a site in the app's own browser, above this page (FunRunPage.qml): for sites that let only browsers in. Its bar has
+  // "Übernehmen": the app then reads the race or route from the site's page (uebernahme.js) and hands it to
+  // window.funrunHandoff of this page. The request goes in the page's title ("FunRun browse <n> <url> <hint>").
+  // (demo: kept in FR.browsed for the tests)
+  let browseCount = 0, pageTitle = '';
+  FR.browse = (url, hint) => {
+    if (demo) { FR.browsed = { url, hint: hint || '' }; return; }
+    if (document.title.indexOf('FunRun browse ') !== 0) pageTitle = document.title;
+    document.title = 'FunRun browse ' + (++browseCount) + ' ' + url + ' ' + (hint || '');
+  };
+  // the app opened its browser: the page gets its title back
+  window.funrunBrowseOpened = () => { if (pageTitle) document.title = pageTitle; };
 
   // demo: what the pages "saved" (routes, long route projects), kept in the tab's storage
   const demoStore = key => { try { return JSON.parse(sessionStorage.getItem(key) || 'null'); } catch (e) { return null; } };
