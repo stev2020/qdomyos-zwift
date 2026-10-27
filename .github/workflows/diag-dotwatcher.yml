@@ -3,7 +3,7 @@ name: diag dotwatcher
 on:
   push:
     branches: [ diag-dotwatcher ]
-    paths: [ 'diag.py', '.github/workflows/diag-dotwatcher.yml' ]
+    paths: [ 'diag.py', 'probe.cjs', '.github/workflows/diag-dotwatcher.yml' ]
 jobs:
   probe:
     runs-on: ubuntu-22.04
@@ -11,7 +11,7 @@ jobs:
       contents: write
     steps:
       - uses: actions/checkout@v4
-      - run: python3 diag.py 2>&1 | tee out.txt
+      - run: node probe.cjs 2>&1 | tee out.txt
       - run: |
           git config user.name "github-actions"
           git config user.email "github-actions@users.noreply.github.com"
