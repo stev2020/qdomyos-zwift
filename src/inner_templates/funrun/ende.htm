@@ -434,7 +434,9 @@ async function longRoute(sum, rides) {
     const pr = RT.projectProgress(p, rides), N = p.stages.length, total = p.length / 1000;
     const pct = total > 0 ? Math.min(100, pr.km / total * 100) : 0;
     const head = sum.route.finished ? 'Etappe ' + st.n + ' von ' + N + ' geschafft' : 'Etappe ' + st.n + ' von ' + N + ' – noch nicht bis zum Ende';
-    const next = pr.next ? 'Nächste: Etappe ' + pr.next.n + ' · km ' + FR.num(pr.next.from / 1000) + '–' + FR.num(pr.next.to / 1000) + ' · ' + FR.num(pr.next.ascent) + ' Hm'
+    const cps = pr.next ? RT.stageCps(p, pr.next).map(RT.cpLabel) : [];
+    const next = pr.next ? 'Nächste: Etappe ' + pr.next.n + ' · km ' + FR.num(pr.next.from / 1000) + '–' + FR.num(pr.next.to / 1000) + ' · ' + FR.num(pr.next.ascent) + ' Hm' +
+      (cps.length ? ' · mit ' + FR.esc(cps.join(', ')) : '')
       : 'Alle Etappen geschafft – die ganze Strecke ist gefahren!';
     $('longCard').innerHTML = '<div class="chead"><h2>' + FR.esc(p.name) + '</h2><span class="aside">Langstrecke</span></div>' +
       '<div class="lr-head">' + head + '</div>' +

@@ -4,6 +4,7 @@
 //  - heights from the Terrarium terrain tiles (AWS open data), smoothed for the bike's resistance
 //  - GPX writer, outline and profile as the app computes them for its own routes
 //  - ride time estimate: speed on the flat and climbing rate (fixed or learned from the last 10 rides)
+//  - ultra races of DotWatcher with their routes from the trackers (Trackleaders, FollowMyChallenge, Madcap)
 // No dependency on the app: works in any browser (tests). Plain string handling, no regular expressions.
 (function () {
   'use strict';
@@ -54,11 +55,12 @@
     out.push(RT.at(pts, s, hi));
     return a <= b ? out : out.reverse();
   };
-  // nearest point of the line to p: { d (along the line), off (metres away) }
-  RT.nearest = (pts, s, p) => {
+  // nearest point of the line to p: { d (along the line), off (metres away) }; from: only the line from there on
+  RT.nearest = (pts, s, p, from) => {
     const ky = R * DEG, kx = R * DEG * Math.cos(p[0] * DEG);
     let best = 1e18, bestD = 0;
     for (let i = 0; i + 1 < pts.length; i++) {
+      if (from > 0 && s[i + 1] < from) continue;
       const ax = (pts[i][1] - p[1]) * kx, ay = (pts[i][0] - p[0]) * ky;
       const dx = (pts[i + 1][1] - pts[i][1]) * kx, dy = (pts[i + 1][0] - pts[i][0]) * ky, l2 = dx * dx + dy * dy;
       const t = l2 > 0 ? Math.max(0, Math.min(1, -(ax * dx + ay * dy) / l2)) : 0;
@@ -584,7 +586,10 @@
     return out;
   };
   // a long route as a project of stages: { id, name, length, ascent, stageLen, track, stages: [{ n, from, to, length, ascent }] }
-  RT.makeProject = (meta, ptsIn, stageLen) => {
+  // opts (routes without heights): profile { step, ele } heights along the route for the climbing of the stages,
+  // ascentTotal the organiser's figure for the whole route (sets the scale of coarse heights); cps: [{ name, at }]
+  RT.makeProject = (meta, ptsIn, stageLen, opts) => {
+    const o = opts || {};
     // points closer than 2 m to each other add nothing; bends are kept to 3 m
     const pts = RT.simplify(ptsIn.filter((p, i) => i === 0 || RT.dist(ptsIn[i - 1], p) > 2), 3);
     const s = RT.cum(pts), total = s[s.length - 1];
@@ -595,6 +600,8 @@
       const grid = RT.resample(pts, s, step);
       step = grid.step;
       ele = RT.gauss(RT.despike(grid.pts.map(p => p[2]), step), 100 / step);
+    } else if (o.profile && o.profile.ele && o.profile.ele.length > 1) {
+      ele = o.profile.ele; step = o.profile.step;
     }
     const climb = (a, b) => {
       if (!ele) return 0;
@@ -603,8 +610,15 @@
       return Math.round(up);
     };
     const stages = RT.stageBorders(total, stageLen).map(([a, b], k) => ({ n: k + 1, from: Math.round(a), to: Math.round(b), length: Math.round(b - a), ascent: climb(a, b) }));
-    return Object.assign({ v: 1, created: new Date().toISOString(), stageLen, length: Math.round(total),
+    // coarse terrain heights miss the small ups and downs: the organiser's figure for the whole route sets the scale (when it fits)
+    if (!hasEle && ele && o.ascentTotal > 0) {
+      const sum = stages.reduce((x, st) => x + st.ascent, 0), f = sum > 0 ? o.ascentTotal / sum : 0;
+      if (f >= 0.4 && f <= 3) for (const st of stages) st.ascent = Math.round(st.ascent * f);
+    }
+    const project = Object.assign({ v: 1, created: new Date().toISOString(), stageLen, length: Math.round(total),
       ascent: stages.reduce((x, st) => x + st.ascent, 0), heights: hasEle ? 'route' : 'terrain', track: RT.encodeTrack(pts), stages }, meta);
+    if (o.cps && o.cps.length) project.cps = o.cps;
+    return project;
   };
   // the GPX points of stage n (1..): heights of the route smoothed (or from the terrain tiles), 1 km more on both sides
   // for the smoothing, then cut
@@ -638,6 +652,343 @@
     const km = project.stages.filter(st => done.has(st.n)).reduce((x, st) => x + st.length, 0) / 1000;
     const next = project.stages.find(st => !done.has(st.n)) || null;
     return { done, km, next };
+  };
+
+  // ------------------------------------------------------------------ ultra races of DotWatcher and the trackers it shows
+  // There is no official interface: these are the data the sites' own pages load (a site that changes its pages needs an
+  // update here). The FunRun page may not load these sites itself: the page sets RT.fetchText (the app loads them).
+  RT.fetchText = async (url, opts) => {
+    const o = opts || {};
+    const r = await fetch(url, o.method === 'POST' ? { method: 'POST', headers: { 'Content-Type': o.type || 'application/json' }, body: o.body || '' } : undefined);
+    if (!r.ok) throw new Error('HTTP ' + r.status);
+    return r.text();
+  };
+  // the first number of a text, thousands marks taken out: "1,050km" 1050, "~9,000m" 9000, "1.100 km" 1100, "553.3 mi" 553.3
+  RT.firstNumber = text => {
+    const s = String(text == null ? '' : text), digit = c => c >= '0' && c <= '9';
+    let i = 0;
+    while (i < s.length && !digit(s[i])) i++;
+    let j = i;
+    while (j < s.length && (digit(s[j]) || ((s[j] === ',' || s[j] === '.') && digit(s[j + 1] || '')))) j++;
+    const parts = [];
+    let cur = '';
+    for (const ch of s.slice(i, j)) { if (ch === ',' || ch === '.') { parts.push(cur); cur = ''; } else cur += ch; }
+    parts.push(cur);
+    if (!parts[0]) return NaN;
+    if (parts.length === 1) return +parts[0];
+    // groups of three after the first: thousands marks; otherwise the last mark is the decimal point
+    if (parts.slice(1).every(x => x.length === 3)) return +parts.join('');
+    return +(parts.slice(0, -1).join('') + '.' + parts[parts.length - 1]);
+  };
+  // length and climbing as DotWatcher and the trackers write them ("1,050km", "320km / 410km", "553.3 mi"; "36,000m") in km
+  // and m; missing or 0: NaN
+  RT.textKm = text => {
+    const t = String(text || '').toLowerCase(), n = RT.firstNumber(t);
+    const v = t.indexOf('mi') >= 0 && t.indexOf('km') < 0 ? n * 1.609344 : n;
+    return v > 0 ? v : NaN;
+  };
+  RT.textMetres = text => {
+    const t = String(text || '').toLowerCase(), n = RT.firstNumber(t);
+    const v = t.indexOf('ft') >= 0 ? n * 0.3048 : n;
+    return v > 0 ? v : NaN;
+  };
+  // DotWatcher's terrain: 'road', 'gravel' (also all-road, mixed), 'off' (off-road, MTB) or ''
+  RT.terrainKind = text => {
+    const t = String(text || '').toLowerCase();
+    if (t.indexOf('off') >= 0 || t.indexOf('mtb') >= 0 || t.indexOf('trail') >= 0 || t.indexOf('mountain') >= 0) return 'off';
+    if (t.indexOf('gravel') >= 0 || t.indexOf('all') >= 0 || t.indexOf('mixed') >= 0) return 'gravel';
+    if (t.indexOf('road') >= 0) return 'road';
+    return '';
+  };
+
+  const DW = 'https://dotwatcher.cc';
+  let dwBuild = '';
+  // the data of a Next.js page (<script id="__NEXT_DATA__">)
+  RT.nextData = html => {
+    const k = html.indexOf('id="__NEXT_DATA__"');
+    if (k < 0) throw new Error('DotWatcher hat seine Seiten umgebaut');
+    const a = html.indexOf('>', k) + 1, b = html.indexOf('</script>', a);
+    return JSON.parse(html.slice(a, b));
+  };
+  const dwItem = x => ({ slug: x.slug, title: String(x.title || x.slug).trim(), date: x.raceDate || '', end: x.raceEndDate || '',
+    location: x.location || '', lengthText: x.length || '', km: RT.textKm(x.length), elevationText: x.elevation || '',
+    hm: RT.textMetres(x.elevation), terrain: RT.terrainKind(x.terrain), terrainText: x.terrain || '', desc: x.shortDescription || '' });
+  const dwItems = v => ((v && v.items) || []).filter(x => x && x.slug).map(dwItem);
+  // DotWatcher's race list: { upcoming, live, past } (the next races, those under way, the last 25)
+  RT.dwRaces = async () => {
+    const nd = RT.nextData(await RT.fetchText(DW + '/races'));
+    dwBuild = nd.buildId || dwBuild;
+    const d = (nd.props && nd.props.pageProps && nd.props.pageProps.data) || {};
+    return { upcoming: dwItems(d.upcomingRaceCollection), live: dwItems(d.liveRacesCollection), past: dwItems(d.pastRacesCollection) };
+  };
+  // data of a DotWatcher page (the build id in its path changes with every update of the site: then read again)
+  async function dwData(path) {
+    if (!dwBuild) await RT.dwRaces();
+    try {
+      return JSON.parse(await RT.fetchText(DW + '/_next/data/' + dwBuild + '/' + path));
+    } catch (e) {
+      const old = dwBuild;
+      await RT.dwRaces();
+      if (dwBuild === old) throw e;
+      return JSON.parse(await RT.fetchText(DW + '/_next/data/' + dwBuild + '/' + path));
+    }
+  }
+  // all races DotWatcher ever covered: [{ name, events: [{ slug, year }] }] (newest year first)
+  RT.dwArchive = async () => {
+    const j = await dwData('results.json');
+    return ((j.pageProps && j.pageProps.allRaces) || []).filter(x => x && x.name && x.events && x.events.length)
+      .map(x => ({ name: String(x.name).trim(), events: x.events.filter(e => e && e.slug).map(e => ({ slug: e.slug, year: +e.year || 0 })).sort((a, b) => b.year - a.year) }))
+      .filter(x => x.events.length);
+  };
+  // one race: its data, where its map comes from (tracker), the organiser's website
+  RT.dwRace = async slug => {
+    let j;
+    try { j = await dwData('race/' + encodeURIComponent(slug) + '.json?slug=' + encodeURIComponent(slug)); } catch (e) {
+      if (String(e.message).indexOf('404') >= 0) throw new Error('DotWatcher hat zu diesem Rennen keine Seite mehr');
+      throw e;
+    }
+    const d = j.pageProps && j.pageProps.data, it = d && d.racesCollection && d.racesCollection.items && d.racesCollection.items[0];
+    if (!it) throw new Error('DotWatcher kennt dieses Rennen nicht');
+    return Object.assign(dwItem(it), { tracker: RT.tracker(it.trackleadersRaceId), website: it.website || '', page: DW + '/race/' + slug });
+  };
+
+  // where the map of a race comes from (DotWatcher's field "trackleadersRaceId": a Trackleaders id or the tracker's address):
+  // { kind: 'tl' | 'fmc' | 'madcap' | 'map' | 'other' | 'none', id, url }
+  const TRACKERS = { tl: 'Trackleaders', fmc: 'FollowMyChallenge', madcap: 'Madcap', map: 'MAProgress' };
+  RT.trackerName = kind => TRACKERS[kind] || '';
+  RT.trackerLoads = kind => kind === 'tl' || kind === 'fmc' || kind === 'madcap';
+  RT.tracker = ref => {
+    const s = String(ref || '').trim();
+    if (!s) return { kind: 'none' };
+    if (s.indexOf('http') !== 0) return s.indexOf('/') < 0 && s.indexOf('.') < 0 && s.indexOf(' ') < 0 ? { kind: 'tl', id: s } : { kind: 'other', url: s };
+    let u;
+    try { u = new URL(s); } catch (e) { return { kind: 'other', url: s }; }
+    const host = u.hostname.toLowerCase(), parts = u.pathname.split('/').filter(Boolean);
+    const on = d => host === d || host.endsWith('.' + d);
+    if (on('followmychallenge.com')) {
+      const i = parts.indexOf('live'), id = i >= 0 ? parts[i + 1] : parts[0];
+      return id ? { kind: 'fmc', id, url: s } : { kind: 'other', url: s };
+    }
+    if (host === 'app.madcap.cc') {
+      const i = parts.indexOf('event');
+      return i >= 0 && parts[i + 1] ? { kind: 'madcap', id: parts[i + 1], url: s } : { kind: 'other', url: s };
+    }
+    if (on('trackleaders.com')) {
+      let id = parts[0] || '';
+      if (id.endsWith('f.php')) id = id.slice(0, -5); else if (id.endsWith('.php')) id = id.slice(0, -4);
+      return id ? { kind: 'tl', id, url: s } : { kind: 'other', url: s };
+    }
+    if (on('maprogress.com')) return { kind: 'map', url: s };
+    return { kind: 'other', url: s };
+  };
+
+  // lines of a GeoJSON object (LineString, MultiLineString, also in features): [[[lat, lon, ele], ...], ...]
+  RT.geoLines = g => {
+    const out = [];
+    const line = coords => {
+      const pts = [];
+      for (const c of coords || []) {
+        const lon = parseFloat(c[0]), lat = parseFloat(c[1]), e = c.length > 2 ? parseFloat(c[2]) : NaN;
+        if (Number.isFinite(lat) && Number.isFinite(lon)) pts.push([lat, lon, e]);
+      }
+      if (pts.length > 1) out.push(pts);
+    };
+    const geom = gm => {
+      if (!gm) return;
+      if (gm.type === 'LineString') line(gm.coordinates);
+      else if (gm.type === 'MultiLineString') for (const c of gm.coordinates || []) line(c);
+      else if (gm.type === 'GeometryCollection') for (const x of gm.geometries || []) geom(x);
+    };
+    const walk = o => {
+      if (!o) return;
+      if (o.type === 'FeatureCollection') for (const f of o.features || []) walk(f);
+      else if (o.type === 'Feature') geom(o.geometry);
+      else geom(o);
+    };
+    walk(g);
+    return out;
+  };
+  // the parts of one route in their order as one line
+  RT.joinLines = lines => {
+    const out = [];
+    for (const l of lines) for (let i = 0; i < l.length; i++) { if (i === 0 && out.length && RT.dist(out[out.length - 1], l[0]) < 1) continue; out.push(l[i]); }
+    return out;
+  };
+
+  // a JavaScript array of numbers in a text, from its "[" to the "];" that ends it (a comma before the last "]" is allowed there)
+  function jsArray(js, open) {
+    const end = js.indexOf('];', open);
+    if (open < 0 || end < 0) return null;
+    let t = js.slice(open, end).trim();
+    if (t.endsWith(',')) t = t.slice(0, -1);
+    try { return JSON.parse(t + ']'); } catch (e) { return null; }
+  }
+  // Trackleaders, route.js: "routeptsN = [[lat,lon],...];" and the popup of each line ("<b>Route:</b> NAME<br>553.3 mi<br>")
+  const TL = 'https://trackleaders.com/spot/';
+  RT.parseTlRoutes = js => {
+    const decls = [];
+    let k = 0;
+    while ((k = js.indexOf('routepts', k)) >= 0) {
+      let i = k + 8, num = '';
+      while (i < js.length && js[i] >= '0' && js[i] <= '9') num += js[i++];
+      let j = i;
+      while (js[j] === ' ') j++;
+      if (num && js[j] === '=') decls.push({ num: +num, at: k, open: js.indexOf('[', j) });
+      k = i;
+    }
+    const out = [];
+    decls.forEach((d, n) => {
+      const arr = jsArray(js, d.open), close = js.indexOf('];', d.open);
+      if (!arr) return;
+      const pts = arr.filter(p => p && Number.isFinite(p[0]) && Number.isFinite(p[1])).map(p => [p[0], p[1], NaN]);
+      if (pts.length < 2) return;
+      const end = n + 1 < decls.length ? decls[n + 1].at : js.length;
+      let name = '', km = NaN;
+      const pop = js.indexOf('bindPopup(', close);
+      if (pop >= 0 && pop < end) {
+        const txt = js.slice(pop, Math.min(end, pop + 600));
+        const b = txt.indexOf('</b>'), br1 = b >= 0 ? txt.indexOf('<br>', b) : -1, br2 = br1 >= 0 ? txt.indexOf('<br>', br1 + 4) : -1;
+        if (br1 > b) name = txt.slice(b + 4, br1).trim();
+        if (br2 > br1) km = RT.textKm(txt.slice(br1 + 4, br2));
+      }
+      // file names ("highland25.kml-0") are no names
+      if (name.indexOf('.kml') >= 0 || name.indexOf('.gpx') >= 0) name = '';
+      out.push({ num: d.num, name, km, pts });
+    });
+    return out;
+  };
+  // Trackleaders, elevationN.js: the profile of line N ("ele": distance in mi or km, height in ft or m; one sample for each
+  // point of the line). The distances are rounded to 0.1: the samples of one distance are spread over the next 0.1
+  RT.parseTlElevation = js => {
+    const unit = key => { const k = js.indexOf(key); if (k < 0) return ''; const a = js.indexOf("'", k) + 1; return a > 0 ? js.slice(a, js.indexOf("'", a)) : ''; };
+    const fx = unit('exUnits') === 'mi' ? 1609.344 : 1000, fy = unit('eyUnits') === 'ft' ? 0.3048 : 1;
+    const k = js.indexOf('ele = [');
+    const arr = k >= 0 ? jsArray(js, js.indexOf('[', k)) : null;
+    if (!arr) return null;
+    const d = [], e = [];
+    for (let i = 0; i < arr.length;) {
+      let j = i;
+      while (j < arr.length && arr[j][0] === arr[i][0]) j++;
+      const x0 = arr[i][0], x1 = Math.min(j < arr.length ? arr[j][0] : x0 + 0.1, x0 + 0.1);
+      for (let m = i; m < j; m++) { d.push((x0 + (x1 - x0) * (m - i) / (j - i)) * fx); e.push(arr[m][1] * fy); }
+      i = j;
+    }
+    return d.length > 1 ? { d, e } : null;
+  };
+  // heights along a line from a profile: one sample for each point, or else by the distance (the profile stretched to the
+  // line's length)
+  RT.heightsFromProfile = (pts, prof) => {
+    if (prof.e.length === pts.length) return pts.map((p, i) => [p[0], p[1], prof.e[i]]);
+    const s = RT.cum(pts), total = s[s.length - 1], k = total > 0 ? prof.d[prof.d.length - 1] / total : 1;
+    let j = 0;
+    return pts.map((p, i) => {
+      const x = s[i] * k;
+      while (j < prof.d.length - 2 && prof.d[j + 1] < x) j++;
+      const a = prof.d[j], b = prof.d[j + 1], u = b > a ? Math.max(0, Math.min(1, (x - a) / (b - a))) : 0;
+      return [p[0], p[1], prof.e[j] + (prof.e[j + 1] - prof.e[j]) * u];
+    });
+  };
+  // FollowMyChallenge, the race's page: route files ("prefetch.route.php?r=<file>&...") and checkpoints (a label, then its
+  // marker "setLngLat([lon, lat])")
+  RT.parseFmcPage = html => {
+    const files = [];
+    let k = 0;
+    while ((k = html.indexOf('prefetch.route.php?r=', k)) >= 0) {
+      k += 21;
+      let e = k;
+      while (e < html.length && html[e] !== '&' && html[e] !== "'" && html[e] !== '"' && html[e] !== ' ') e++;
+      const f = html.slice(k, e);
+      if (f && files.indexOf(f) < 0) files.push(f);
+    }
+    const cps = [];
+    k = 0;
+    while ((k = html.indexOf('checkpointFloatingLabel_CP', k)) >= 0) {
+      const a = html.indexOf("' + '", k);
+      const b = a >= 0 ? html.indexOf("' + '", a + 5) : -1;
+      if (b < 0) break;
+      const next = html.indexOf('checkpointFloatingLabel_CP', b), m = html.indexOf('setLngLat([', b);
+      k = b;
+      if (m < 0 || (next >= 0 && m > next)) continue;
+      const c = html.slice(m + 11, html.indexOf(']', m)).split(',');
+      const name = html.slice(a + 5, b).split("\\'").join("'").trim(), lon = parseFloat(c[0]), lat = parseFloat(c[1]);
+      if (name && Number.isFinite(lat) && Number.isFinite(lon)) cps.push({ name, lat, lon });
+    }
+    return { files, cps };
+  };
+
+  // the route of a race at its tracker: { variants: [{ key, name, km, pts, heights, main, tl }], cps: [{ name, lat, lon }] }
+  // variants longest first; pts [[lat, lon, ele]] (ele NaN where the tracker has no heights); onState: progress texts
+  RT.raceRoute = async (tracker, onState) => {
+    const say = t => { if (onState) onState(t); };
+    let variants = [], cps = [];
+    if (tracker.kind === 'tl') {
+      say('Strecke wird bei Trackleaders geladen …');
+      const lines = RT.parseTlRoutes(await RT.fetchText(TL + encodeURIComponent(tracker.id) + '/route.js'));
+      variants = lines.map(l => ({ key: 'tl' + l.num, name: l.name, pts: l.pts, heights: false, tl: { id: tracker.id, num: l.num } }));
+    } else if (tracker.kind === 'fmc') {
+      say('Seite des Rennens bei FollowMyChallenge wird gelesen …');
+      const base = 'https://www.followmychallenge.com/live/' + tracker.id + '/';
+      const page = RT.parseFmcPage(await RT.fetchText(base, { stopAfter: 'prefetch.route.php?r=', stopExtra: 200000 }));
+      cps = page.cps;
+      for (const f of page.files) {
+        say('Strecke wird bei FollowMyChallenge geladen …');
+        const pts = RT.joinLines(RT.geoLines(JSON.parse(await RT.fetchText(base + 'application/helpers/prefetch.route.php?r=' + f + '&light=false'))));
+        if (pts.length > 1) variants.push({ key: f, name: '', pts, heights: pts.every(p => Number.isFinite(p[2])) });
+      }
+    } else if (tracker.kind === 'madcap') {
+      say('Strecke wird bei Madcap geladen …');
+      const j = JSON.parse(await RT.fetchText('https://api2.madcap.cc/event/geo/v6', { method: 'POST', body: JSON.stringify({ event: tracker.id }), type: 'application/json' }));
+      const d = j.data || {};
+      for (const r of d.routes || []) {
+        let g = r.geojson;
+        if (typeof g === 'string') { try { g = JSON.parse(g); } catch (e) { g = null; } }
+        const pts = RT.joinLines(RT.geoLines(g));
+        if (pts.length > 1) variants.push({ key: String(r.id || variants.length), name: r.name && r.name !== 'Route' ? String(r.name) : '', main: !!r.is_main, pts, heights: pts.every(p => Number.isFinite(p[2])) });
+      }
+      cps = (d.cps || []).filter(c => c && c.cp_type !== 'INVISIBLE').sort((a, b) => (+a.order || 0) - (+b.order || 0))
+        .map(c => ({ name: String(c.name || c.short_name || '').trim(), lat: +c.latitude, lon: +c.longitude }))
+        .filter(c => c.name && Number.isFinite(c.lat) && Number.isFinite(c.lon));
+    } else throw new Error('Von diesem Tracker kann die App keine Strecke laden');
+    for (const v of variants) { const s = RT.cum(v.pts); v.km = s[s.length - 1] / 1000; }
+    variants.sort((a, b) => b.km - a.km);
+    return { variants, cps };
+  };
+  // heights of a variant: from the tracker (Madcap, some FollowMyChallenge routes) or the profile of Trackleaders; null: none
+  RT.variantHeights = async v => {
+    if (v.heights) return v.pts;
+    if (v.tl) {
+      try {
+        const prof = RT.parseTlElevation(await RT.fetchText(TL + encodeURIComponent(v.tl.id) + '/elevation' + v.tl.num + '.js'));
+        if (prof) return RT.heightsFromProfile(v.pts, prof);
+      } catch (e) { /* no profile: terrain heights */ }
+    }
+    return null;
+  };
+  // checkpoints along a line in the order of the race: [{ name, at (metres) }]; those more than 3 km off the line drop out
+  RT.placeCps = (pts, cps) => {
+    const s = RT.cum(pts), out = [];
+    let from = 0;
+    for (const c of cps || []) {
+      const nr = RT.nearest(pts, s, [c.lat, c.lon], from);
+      if (nr.off > 3000) continue;
+      out.push({ name: c.name, at: Math.round(nr.d) });
+      from = Math.max(from, nr.d - 1000);
+    }
+    return out;
+  };
+  // the checkpoints in a stage of a project (not the start): names
+  RT.stageCps = (project, st) => (project.cps || []).filter(c => c.at > 1000 && c.at >= st.from && (c.at < st.to || st.n === project.stages.length)).map(c => c.name);
+  RT.cpLabel = name => (String(name).toLowerCase() === 'finish' ? 'Ziel' : String(name));
+  // heights for the climbing of the stages where the tracker has none: coarse terrain tiles (zoom 10) every 200 m, in parts
+  // along the route (the tiles of a part are shared); onProgress(0..1)
+  RT.coarseProfile = async (pts, onProgress) => {
+    const s = RT.cum(pts), grid = RT.resample(pts, s, 200), raw = [];
+    for (let i = 0; i < grid.pts.length; i += 1500) {
+      const part = await RT.heights(grid.pts.slice(i, i + 1500), 10);
+      for (const h of part) raw.push(h);
+      if (onProgress) onProgress(Math.min(1, (i + 1500) / grid.pts.length));
+    }
+    return { step: grid.step, ele: RT.gauss(raw, 400 / grid.step) };
   };
 
   // ------------------------------------------------------------------ ride time estimate

@@ -6,7 +6,7 @@
 <title>FunRun – Strecken</title>
 <!-- FunRun routes: the app's GPX routes and long routes in stages ("Meine"); new routes to load ("Entdecken"):
      famous climbs (katalog.json, routed with BRouter), signposted cycle routes of OpenStreetMap around a place,
-     ultra races (public routes of the organisers) -->
+     ultra races (public routes of the organisers; all races of DotWatcher with the routes of their trackers) -->
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Barlow:wght@400;500;600;700&amp;family=Barlow+Condensed:wght@600;700&amp;display=swap">
 <link rel="stylesheet" href="funrun.css">
 <style>
@@ -69,7 +69,8 @@ svg.pf { display: block; width: 100%; height: 36px; }
 @media (min-width: 520px) { .kv { grid-template-columns: repeat(4, minmax(0, 1fr)); } }
 .kv div { background: var(--bg); border: 1px solid var(--line); border-radius: 12px; padding: 8px 10px; display: flex; flex-direction: column; gap: 2px; }
 .kv span { font-size: 12px; color: var(--muted); font-weight: 600; }
-.kv b { font-size: 20px; font-family: "Barlow Condensed", Barlow, sans-serif; }
+.kv b { font-size: 20px; font-family: "Barlow Condensed", Barlow, sans-serif; overflow-wrap: break-word; }
+.kv b small { font-size: 17px; }
 .state { font-size: 14px; color: var(--soft); min-height: 20px; }
 .state.err { color: var(--bad); }
 .stlist { display: flex; flex-direction: column; border: 1px solid var(--line); border-radius: 12px; overflow: hidden; }
@@ -77,6 +78,12 @@ svg.pf { display: block; width: 100%; height: 36px; }
   border: 0; border-top: 1px solid var(--line); background: transparent; color: var(--text); text-align: left; font-size: 14px; cursor: pointer; }
 .stlist button:first-child { border-top: 0; }
 .stlist .ok { color: var(--good); font-weight: 700; }
+.stlist .cp { display: block; color: var(--accent); font-size: 13px; margin-top: 2px; }
+.rc .st { font-size: 13px; color: var(--muted); }
+.rc .st.go { color: var(--good); }
+.years { display: flex; flex-wrap: wrap; gap: 8px; }
+.years button { appearance: none; -webkit-appearance: none; min-width: 72px; height: 42px; padding: 0 14px; border-radius: 12px; border: 1px solid var(--line);
+  background: var(--bg); color: var(--text); font-size: 16px; font-weight: 700; cursor: pointer; }
 .stlist .nx { color: var(--accent); font-weight: 700; }
 </style>
 </head>
@@ -111,6 +118,21 @@ svg.pf { display: block; width: 100%; height: 36px; }
     </div>
     <div id="catFilters" style="display:flex;flex-direction:column;gap:10px">
       <div class="chips small scroll" id="countryChips"></div>
+    </div>
+    <div id="ultraFilters" class="hidden" style="display:flex;flex-direction:column;gap:10px">
+      <div class="chips small scroll" id="ultraView" role="group" aria-label="Rennen">
+        <button data-u="pick" class="on">Auswahl</button><button data-u="next">Demnächst</button><button data-u="past">Zuletzt</button><button data-u="arch">Archiv</button>
+      </div>
+      <label class="search hidden" id="archSearch">
+        <svg viewBox="0 0 24 24" fill="none" stroke="#9ba7b4" stroke-width="2" stroke-linecap="round" aria-hidden="true"><circle cx="11" cy="11" r="6.5"/><path d="m16 16 4.5 4.5"/></svg>
+        <input type="search" id="aq" placeholder="Rennen suchen, z. B. Transcontinental" aria-label="Rennen suchen">
+      </label>
+      <div class="chips small scroll" id="terrainChips" role="group" aria-label="Untergrund">
+        <button data-t="all" class="on">Jeder Untergrund</button><button data-t="road">Straße</button><button data-t="gravel">Schotter</button><button data-t="off">Gelände</button>
+      </div>
+      <div class="chips small scroll" id="ultraLen" role="group" aria-label="Länge">
+        <button data-l="all" class="on">Jede Länge</button><button data-l="s">bis 500 km</button><button data-l="m">500–1.000 km</button><button data-l="l">1.000–2.000 km</button><button data-l="xl">über 2.000 km</button>
+      </div>
     </div>
     <div id="nearFilters" class="hidden" style="display:flex;flex-direction:column;gap:10px">
       <form class="search" id="placeForm">
@@ -147,6 +169,11 @@ const ls = {
 let routes = [], rides = [], selected = '', projects = [], params = { flat: 25, climb: 700 }, catalog = null;
 let view = FR.qs.get('view') === 'mine' ? 'mine' : ls.get('view', 'mine'), src = ls.get('src', 'cat'), filter = 'all', lenFilter = 'all', country = 'all';
 const near = { place: ls.get('place', { name: 'Lübeck', lat: 53.8655, lon: 10.6866 }), radius: ls.get('radius', 25), items: null, loading: false, token: 0 };
+// ultra races: the selection (katalog.json) or DotWatcher (next races, the last 25, the archive)
+let ultraView = ls.get('ultraView', 'pick'), terrain = ls.get('terrain', 'all'), ultraLen = ls.get('ultraLen', 'all');
+const dw = { races: null, loading: false, error: '', archive: null, archLoading: false, archError: '', info: ls.get('dwInfo', {}), checking: new Set() };
+// the app loads the pages of DotWatcher and of the trackers (the page itself may not)
+RT.fetchText = FR.fetchText;
 
 // ------------------------------------------------------------------ drawing helpers
 const avgGrade = r => (r.length > 0 ? r.ascent / r.length * 100 : 0);
@@ -181,12 +208,14 @@ function card(o) {
     '<span class="h"><span class="th">' + (o.thumbHtml || '') + '</span><span class="tx"><span class="n"><b>' + FR.esc(o.name) + '</b>' +
     (o.lv ? '<span class="lv" style="color:' + o.lv[1] + '">' + o.lv[0] + '</span>' : '') + '</span>' +
     '<span class="m">' + o.meta + '</span>' + (o.sub ? '<span class="w">' + o.sub + '</span>' : '') + '</span></span>' +
-    (o.prof ? profile(o.prof) : '<span class="nopf">' + (o.noProf || '') + '</span>') +
+    (o.flat ? '' : o.prof ? profile(o.prof) : '<span class="nopf">' + (o.noProf || '') + '</span>') +
     '<span class="f"><span class="tm">' + (o.time ? CLOCK + o.time : '') + (o.left ? (o.time ? ' · ' : '') + o.left : '') + '</span>' +
     '<span class="act">' + (o.act || '') + '</span></span></button>';
 }
 
 // ------------------------------------------------------------------ "Meine": long routes and the app's routes
+// checkpoints of a race in a stage: "· mit CP 2, Ziel"
+const cpText = (p, st, lead) => { const c = RT.stageCps(p, st); return c.length ? lead + FR.esc(c.map(RT.cpLabel).join(', ')) : ''; };
 const stageFiles = () => new Set([].concat(...projects.map(p => (p.stages || []).filter(s => s.file).map(s => s.file))));
 function renderProjects() {
   $('projects').innerHTML = projects.map(p => {
@@ -196,7 +225,8 @@ function renderProjects() {
       '<div class="chead"><h2>' + FR.esc(p.name) + '</h2><span class="aside">' + (COUNTRIES[p.country] || p.region || 'Langstrecke') + '</span></div>' +
       '<div class="row2"><span>' + (pr.km > 0 ? FR.num(pr.km, pr.km < 100 ? 1 : 0) : '0') + ' von ' + FR.num(total) + ' km</span><span>' + pr.done.size + ' von ' + p.stages.length + ' Etappen</span></div>' +
       '<div class="bar" role="img" aria-label="' + pct + ' Prozent geschafft"><i style="width:' + pct + '%"></i></div>' +
-      (st ? '<div class="muted" style="font-size:14px">Nächste: <b style="color:var(--text)">Etappe ' + st.n + '</b> · ' + FR.km(st.length) + ' km · ' + FR.num(st.ascent) + ' Hm · ' + RT.duration(RT.estimateAscent(st.length, st.ascent, params)) + '</div>'
+      (st ? '<div class="muted" style="font-size:14px">Nächste: <b style="color:var(--text)">Etappe ' + st.n + '</b> · ' + FR.km(st.length) + ' km · ' + FR.num(st.ascent) + ' Hm · ' + RT.duration(RT.estimateAscent(st.length, st.ascent, params)) +
+          cpText(p, st, ' · mit ') + '</div>'
           : '<div style="font-size:15px;font-weight:700;color:var(--good)">Alle Etappen geschafft!</div>') +
       '<div class="btns2">' + (st ? '<button class="btn primary" data-act="next">Etappe ' + st.n + ' fahren</button>' : '') +
       '<button class="btn" data-act="stages">Etappen</button></div></section>';
@@ -236,18 +266,116 @@ function renderCatalog() {
   $('attr').innerHTML = 'Strecken: © OpenStreetMap-Mitwirkende (ODbL), berechnet mit BRouter; Höhen: SRTM, geglättet.';
 }
 const catalogName = c => c.name + ' (' + c.from + ')';
+const FLAG = '<svg viewBox="0 0 24 24" width="28" height="28" fill="none" stroke="#ff7a1a" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 21V4M5 4h11l-2 4 2 4H5"/></svg>';
+const TERRAIN = { road: 'Straße', gravel: 'Schotter', off: 'Gelände' };
+// length of an ultra race in km (NaN: unknown, passes only "Jede Länge")
+const ultraLenOk = km => ultraLen === 'all' || (ultraLen === 's' && km < 500) || (ultraLen === 'm' && km >= 500 && km < 1000) ||
+  (ultraLen === 'l' && km >= 1000 && km < 2000) || (ultraLen === 'xl' && km >= 2000);
+const terrainOk = t => terrain === 'all' || t === terrain;
 function renderUltra() {
-  const items = ((catalog && catalog.ultras) || []).filter(u => lenOk(u.length));
+  document.querySelectorAll('#ultraView button').forEach(b => b.classList.toggle('on', b.dataset.u === ultraView));
+  document.querySelectorAll('#terrainChips button').forEach(b => b.classList.toggle('on', b.dataset.t === terrain));
+  document.querySelectorAll('#ultraLen button').forEach(b => b.classList.toggle('on', b.dataset.l === ultraLen));
+  $('archSearch').classList.toggle('hidden', ultraView !== 'arch');
+  $('terrainChips').classList.toggle('hidden', ultraView === 'pick' || ultraView === 'arch');
+  $('ultraLen').classList.toggle('hidden', ultraView === 'arch');
+  if (ultraView === 'pick') renderPick(); else if (ultraView === 'arch') renderArchive(); else renderDw();
+}
+function renderPick() {
+  const items = ((catalog && catalog.ultras) || []).filter(u => ultraLenOk(u.length / 1000));
   setMsg(catalog ? (items.length ? '' : 'Kein Rennen passt.') : 'Liste wird geladen …');
   $('dlist').innerHTML = items.map(u => {
-    const proj = projects.find(p => p.source === 'ultra:' + u.id);
+    const proj = projects.find(p => p.source === 'ultra:' + u.id || (u.dotwatcher && p.source === 'dotwatcher:' + u.dotwatcher));
     return card({ key: 'u:' + u.id, thumbHtml: '<svg viewBox="0 0 24 24" width="28" height="28" fill="none" stroke="#ff7a1a" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 21V4M5 4h11l-2 4 2 4H5"/></svg>',
       name: u.name, meta: FR.num(u.length / 1000) + ' km · ' + FR.num(u.ascent) + ' Hm' + (u.unpaved ? ' · ' + u.unpaved + ' % Schotter' : ''),
       sub: FR.esc(u.start + (u.finish && u.finish !== u.start ? ' – ' + u.finish : ' (Runde)')) + ' · ' + FR.esc(u.region) + (u.when ? ' · ' + FR.esc(u.when) : ''),
       noProf: FR.esc(u.note || ''), left: 'Etappen ab 30 km',
-      act: proj ? 'Angelegt' : u.rwgps ? 'Ansehen' : 'Zur Website' });
+      act: proj ? 'Angelegt' : u.rwgps || u.dotwatcher ? 'Ansehen' : 'Zur Website' });
   }).join('');
-  $('attr').innerHTML = 'Strecken der Veranstalter (öffentlich bei RideWithGPS) oder zum Herunterladen auf ihren Websites.';
+  $('attr').innerHTML = 'Strecken der Veranstalter (öffentlich bei RideWithGPS) oder zum Herunterladen auf ihren Websites. Weitere Rennen unter „Demnächst“, „Zuletzt“ und „Archiv“ (DotWatcher).';
+}
+
+// ------------------------------------------------------------------ DotWatcher: next races, the last 25, the archive
+const DW_ATTR = 'Rennen: DotWatcher.cc. Strecken von den Trackern der Rennen (Trackleaders, FollowMyChallenge, Madcap); sie gehören den Veranstaltern – nur für dich privat. ' +
+  'Höhen, wo der Tracker keine hat: Terrain Tiles (Mapzen, AWS Open Data).';
+const raceDay = iso => { const d = new Date(iso); return isNaN(d) ? '' : d.getDate() + '. ' + FR.months[d.getMonth()] + ' ' + d.getFullYear(); };
+const raceMeta = r => [Number.isFinite(r.km) ? FR.num(r.km) + ' km' : '', Number.isFinite(r.hm) ? FR.num(r.hm) + ' Hm' : '', TERRAIN[r.terrain] || r.terrainText].filter(Boolean).join(' · ');
+// what the tracker of a race offers: { text, go }
+function trackerState(slug) {
+  const i = dw.info[slug];
+  if (!i) return { text: 'Strecke wird geprüft …', go: false };
+  if (i.k === 'tl' || i.k === 'fmc' || i.k === 'madcap') return { text: 'Strecke bei ' + RT.trackerName(i.k), go: true };
+  if (i.k === 'map') return { text: 'Strecke nicht ladbar (MAProgress)', go: false };
+  if (i.k === 'none' && i.gone) return { text: 'keine Seite mehr bei DotWatcher', go: false };
+  return { text: 'keine Strecke zum Laden', go: false };
+}
+function dwCard(r) {
+  const proj = projects.find(p => p.source === 'dotwatcher:' + r.slug), ts = trackerState(r.slug);
+  return card({ key: 'd:' + r.slug, thumbHtml: FLAG, name: r.title, meta: raceMeta(r) || FR.esc(r.lengthText),
+    sub: FR.esc([r.location, raceDay(r.date)].filter(Boolean).join(' · ')),
+    noProf: '<span class="st' + (ts.go ? ' go' : '') + '">' + ts.text + '</span>', left: r.live ? 'läuft gerade' : '',
+    act: proj ? 'Angelegt' : 'Ansehen' });
+}
+async function loadDw() {
+  dw.loading = true; dw.error = '';
+  try { dw.races = await RT.dwRaces(); } catch (e) { dw.error = e.message; }
+  dw.loading = false;
+  if (view === 'discover' && src === 'ultra') renderUltra();
+}
+function renderDw() {
+  $('attr').innerHTML = DW_ATTR;
+  if (!dw.races) {
+    setMsg(dw.error ? 'DotWatcher ist gerade nicht erreichbar (' + dw.error + ').' : 'Rennen werden bei DotWatcher geladen …');
+    $('dlist').innerHTML = '';
+    if (!dw.loading && !dw.error) loadDw();
+    return;
+  }
+  const list = ultraView === 'next' ? dw.races.live.map(x => Object.assign({ live: true }, x)).concat(dw.races.upcoming) : dw.races.past;
+  const items = list.filter(r => terrainOk(r.terrain) && ultraLenOk(r.km));
+  setMsg(items.length ? '' : list.length ? 'Kein Rennen passt.' : 'DotWatcher listet hier gerade keine Rennen.');
+  $('dlist').innerHTML = items.map(dwCard).join('');
+  checkTrackers(items);
+}
+// which tracker shows each race (one small request per race, kept; upcoming races are checked again after 3 days)
+function checkTrackers(items) {
+  const now = Date.now();
+  const todo = items.filter(r => !dw.checking.has(r.slug) && (!dw.info[r.slug] || (r.date && new Date(r.date) > now && now - dw.info[r.slug].t > 3 * 86400000)));
+  if (!todo.length) return;
+  for (const r of todo) dw.checking.add(r.slug);
+  RT.pool(todo, 2, async r => {
+    try { const x = await RT.dwRace(r.slug); dw.info[r.slug] = { k: x.tracker.kind, t: Date.now() }; }
+    catch (e) { if (e.message.indexOf('keine Seite') >= 0) dw.info[r.slug] = { k: 'none', gone: true, t: Date.now() }; }
+    dw.checking.delete(r.slug);
+    // keep the newest 400
+    const keys = Object.keys(dw.info);
+    if (keys.length > 400) { keys.sort((a, b) => dw.info[a].t - dw.info[b].t); for (const k of keys.slice(0, keys.length - 400)) delete dw.info[k]; }
+    ls.set('dwInfo', dw.info);
+    if (view === 'discover' && src === 'ultra' && (ultraView === 'next' || ultraView === 'past')) {
+      const el = document.querySelector('.rc[data-key="d:' + r.slug + '"]');
+      if (el) el.outerHTML = dwCard(r);
+    }
+  });
+}
+async function loadArchive() {
+  dw.archLoading = true; dw.archError = '';
+  try { dw.archive = await RT.dwArchive(); } catch (e) { dw.archError = e.message; }
+  dw.archLoading = false;
+  if (view === 'discover' && src === 'ultra' && ultraView === 'arch') renderUltra();
+}
+function renderArchive() {
+  $('attr').innerHTML = DW_ATTR;
+  if (!dw.archive) {
+    setMsg(dw.archError ? 'Das Archiv von DotWatcher ist gerade nicht erreichbar (' + dw.archError + ').' : 'Archiv wird bei DotWatcher geladen …');
+    $('dlist').innerHTML = '';
+    if (!dw.archLoading && !dw.archError) loadArchive();
+    return;
+  }
+  const q = $('aq').value.trim().toLowerCase();
+  const items = dw.archive.filter(a => !q || a.name.toLowerCase().includes(q));
+  setMsg(items.length ? '' : 'Kein Rennen passt.');
+  $('dlist').innerHTML = items.map(a => card({ key: 'a:' + a.name, thumbHtml: FLAG, name: a.name, flat: true,
+    meta: a.events.length + (a.events.length === 1 ? ' Austragung' : ' Austragungen'),
+    sub: FR.esc(a.events.slice(0, 7).map(e => e.year).join(' · ') + (a.events.length > 7 ? ' …' : '')), act: 'Jahre' })).join('');
 }
 function renderNear() {
   const it = near.items;
@@ -269,6 +397,8 @@ function renderDiscover() {
   document.querySelectorAll('#srcChips button').forEach(b => b.classList.toggle('on', b.dataset.s === src));
   $('catFilters').classList.toggle('hidden', src !== 'cat');
   $('nearFilters').classList.toggle('hidden', src !== 'near');
+  $('ultraFilters').classList.toggle('hidden', src !== 'ultra');
+  $('lenChips').classList.toggle('hidden', src === 'ultra');
   if (src === 'cat') renderCatalog(); else if (src === 'ultra') renderUltra(); else renderNear();
 }
 function render() {
@@ -319,9 +449,9 @@ async function searchNear() {
 }
 
 // ------------------------------------------------------------------ sheet: details and loading
-let sheetBusy = false;
-function openSheet(html) { $('sheetBox').innerHTML = html; $('sheet').classList.add('open'); }
-function closeSheet() { if (!sheetBusy) $('sheet').classList.remove('open'); }
+let sheetBusy = false, sheetToken = 0;
+function openSheet(html) { sheetToken++; $('sheetBox').innerHTML = html; $('sheet').classList.add('open'); }
+function closeSheet() { if (!sheetBusy) { sheetToken++; $('sheet').classList.remove('open'); } }
 $('sheet').addEventListener('click', e => { if (e.target === $('sheet')) closeSheet(); });
 const kv = pairs => '<div class="kv">' + pairs.map(([k, v]) => '<div><span>' + k + '</span><b>' + v + '</b></div>').join('') + '</div>';
 const state = (t, err) => { const el = $('sheetState'); if (el) { el.textContent = t; el.classList.toggle('err', !!err); } };
@@ -408,20 +538,22 @@ function wireStageChooser() {
   return () => len;
 }
 function openUltra(u) {
-  const proj = projects.find(p => p.source === 'ultra:' + u.id);
+  const proj = projects.find(p => p.source === 'ultra:' + u.id || (u.dotwatcher && p.source === 'dotwatcher:' + u.dotwatcher));
   openSheet('<h2>' + FR.esc(u.name) + '</h2><div class="sub">' + FR.esc(u.region) + ' · ' + FR.esc(u.start + (u.finish && u.finish !== u.start ? ' – ' + u.finish : ' (Runde)')) +
     (u.when ? ' · ' + FR.esc(u.when) : '') + '</div>' +
     kv([['Länge', FR.num(u.length / 1000) + ' km'], ['Bergauf', FR.num(u.ascent) + ' Hm'], ['Schotter', u.unpaved ? u.unpaved + ' %' : '–'], ['Etappen', '<i id="stCount" style="font-style:normal"></i>']]) +
     '<p class="muted" style="margin:0">' + FR.esc(u.note || '') + '</p>' +
     (proj ? '<div class="state">Schon als Langstrecke angelegt – du findest sie unter „Meine“.</div>'
       : (u.rwgps ? stageChooser(50) + '<p class="attr">Die App teilt das Rennen in Etappen. Jede Etappe fährst du wie eine Strecke; der Fortschritt zählt übers ganze Rennen.</p>'
+                 : u.dotwatcher ? '<p class="attr">Die Strecke der letzten Austragung lädt die App über DotWatcher vom Tracker des Rennens.</p>'
                  : '<p class="attr">Die Strecke gibt es auf der Website des Veranstalters. Lade dort die GPX herunter und importiere sie hier („GPX importieren“); unter „Meine“ kannst du sie dann in Etappen fahren.</p>')) +
     '<div class="state" id="sheetState"></div>' +
-    '<div class="btns">' + (proj ? '' : u.rwgps ? '<button class="btn primary" id="sMake">Als Langstrecke anlegen</button>' : '') +
+    '<div class="btns">' + (proj ? '' : u.rwgps ? '<button class="btn primary" id="sMake">Als Langstrecke anlegen</button>' : u.dotwatcher ? '<button class="btn primary" id="sDwr">Über DotWatcher laden</button>' : '') +
     '<button class="btn" id="sWeb">Website des Rennens</button><button class="btn" id="sClose">Schließen</button></div>');
   $('sClose').onclick = closeSheet;
   $('sWeb').onclick = () => FR.openUrl(u.url);
   const count = len => { const el = $('stCount'); if (el) el.textContent = Math.max(1, Math.round(u.length / (len * 1000))) + ' × ~' + len + ' km'; };
+  if (!proj && !u.rwgps && u.dotwatcher) $('sDwr').onclick = () => openDwRace(u.dotwatcher, u.name);
   if (proj || !u.rwgps) { $('stCount').textContent = proj ? proj.stages.length + '' : '–'; return; }
   const getLen = wireStageChooser();
   window.funrunStageInfo = count; count(getLen());
@@ -444,6 +576,121 @@ function openUltra(u) {
     } catch (e) { state('Das hat nicht geklappt: ' + e.message, true); $('sMake').disabled = false; }
     sheetBusy = false;
   };
+}
+// ------------------------------------------------------------------ DotWatcher races: data, route at the tracker, long route
+const httpsUrl = u => (String(u || '').indexOf('http://') === 0 ? 'https://' + String(u).slice(7) : String(u || ''));
+function openArchive(a) {
+  openSheet('<h2>' + FR.esc(a.name) + '</h2><div class="sub">' + a.events.length + (a.events.length === 1 ? ' Austragung' : ' Austragungen') + ' bei DotWatcher</div>' +
+    '<div class="years" id="years">' + a.events.map((e, i) => '<button data-i="' + i + '">' + (e.year || '?') + '</button>').join('') + '</div>' +
+    '<div class="btns"><button class="btn" id="sClose">Schließen</button></div>');
+  $('sClose').onclick = closeSheet;
+  $('years').onclick = e => { const b = e.target.closest('button'); if (!b) return; const ev = a.events[+b.dataset.i]; openDwRace(ev.slug, a.name + ' ' + ev.year); };
+}
+function openDwRace(slug, title) {
+  openSheet('<h2>' + FR.esc(title) + '</h2><div class="state" id="sheetState">Rennen wird bei DotWatcher geladen …</div>' +
+    '<div class="btns"><button class="btn" id="sClose">Schließen</button></div>');
+  $('sClose').onclick = closeSheet;
+  const token = sheetToken;
+  RT.dwRace(slug).then(race => { if (token === sheetToken) dwRaceSheet(race); }, e => { if (token === sheetToken) state('Das hat nicht geklappt: ' + e.message, true); });
+}
+function dwRaceSheet(race) {
+  dw.info[race.slug] = { k: race.tracker.kind, t: Date.now() };
+  ls.set('dwInfo', dw.info);
+  const proj = projects.find(p => p.source === 'dotwatcher:' + race.slug), loads = RT.trackerLoads(race.tracker.kind), web = httpsUrl(race.website);
+  openSheet('<h2>' + FR.esc(race.title) + '</h2><div class="sub">' + FR.esc([race.location, raceDay(race.date)].filter(Boolean).join(' · ')) + '</div>' +
+    kv([['Länge', Number.isFinite(race.km) ? FR.num(race.km) + ' km' : FR.esc(race.lengthText || '–')],
+        ['Bergauf', Number.isFinite(race.hm) ? FR.num(race.hm) + ' Hm' : FR.esc(race.elevationText || '–')],
+        ['Untergrund', TERRAIN[race.terrain] || FR.esc(race.terrainText || '–')], ['Tracker', '<small>' + (RT.trackerName(race.tracker.kind) || '–').split('MyChallenge').join('My&shy;Challenge') + '</small>']]) +
+    (race.desc ? '<p class="muted" style="margin:0">' + FR.esc(race.desc) + '</p>' : '') +
+    '<div id="dwRoute" style="display:flex;flex-direction:column;gap:10px"></div>' +
+    (proj ? '<div class="state">Schon als Langstrecke angelegt – du findest sie unter „Meine“.</div>'
+      : loads ? '' : '<p class="attr">' + (race.tracker.kind === 'map' ? 'Die Karte dieses Rennens kommt von MAProgress; von dort kann die App keine Strecke laden.'
+        : 'Für dieses Rennen kennt die App keinen Tracker, von dem sie die Strecke laden kann.') +
+        ' Gibt es die GPX auf der Website des Veranstalters, lade sie dort herunter und importiere sie hier („GPX importieren“).</p>') +
+    '<div><button class="link" id="sDw" style="padding:0">Bei DotWatcher ansehen<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="m9 6 6 6-6 6"/></svg></button>' +
+    (web ? '<button class="link" id="sWeb" style="padding:0">Website des Rennens<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="m9 6 6 6-6 6"/></svg></button>' : '') + '</div>' +
+    '<div class="state" id="sheetState"></div>' +
+    '<div class="btns">' + (!proj && loads ? '<button class="btn primary" id="sLoad">Strecke laden</button>' : '') +
+    '<button class="btn" id="sClose">Schließen</button></div>' +
+    (loads && !proj ? '<p class="attr">' + DW_ATTR + '</p>' : ''));
+  $('sClose').onclick = closeSheet;
+  $('sDw').onclick = () => FR.openUrl(race.page);
+  if (web) $('sWeb').onclick = () => FR.openUrl(web);
+  if (!proj && loads) $('sLoad').onclick = () => loadRaceRoute(race);
+}
+// the route at the tracker: variants to choose, checkpoints, stage length
+async function loadRaceRoute(race) {
+  if (sheetBusy) return;
+  sheetBusy = true; $('sLoad').disabled = true;
+  const token = sheetToken;
+  let route;
+  try { route = await RT.raceRoute(race.tracker, t => { if (token === sheetToken) state(t); }); } catch (e) {
+    sheetBusy = false;
+    if (token === sheetToken) { state('Das hat nicht geklappt: ' + e.message, true); $('sLoad').disabled = false; }
+    return;
+  }
+  sheetBusy = false;
+  if (token !== sheetToken) return;
+  if (!route.variants.length) {
+    state(route.cps.length ? 'Für dieses Rennen gibt es keine feste Strecke, nur ' + route.cps.length + ' Checkpoints – die Fahrer wählen ihren Weg selbst.'
+      : 'Beim Tracker ist für dieses Rennen keine Strecke zu finden.', true);
+    $('sLoad').remove();
+    return;
+  }
+  // first choice: the main route, else the one closest to DotWatcher's length, else the longest
+  let pick = route.variants.find(v => v.main) || null;
+  if (!pick && Number.isFinite(race.km)) pick = route.variants.slice().sort((a, b) => Math.abs(a.km - race.km) - Math.abs(b.km - race.km))[0];
+  pick = pick || route.variants[0];
+  const many = route.variants.length > 1, vname = v => v.name || 'Strecke ' + (route.variants.indexOf(v) + 1);
+  $('dwRoute').innerHTML = (many ? '<div class="flabel">Strecke</div><div class="chips small" id="varChips">' + route.variants.map((v, i) =>
+      '<button data-i="' + i + '"' + (v === pick ? ' class="on"' : '') + '>' + FR.esc(vname(v)) + ' · ' + FR.num(v.km) + ' km</button>').join('') + '</div>' : '') +
+    stageChooser(50) + '<div class="muted" id="varInfo" style="font-size:14px"></div>';
+  let cur = pick, cps = RT.placeCps(pick.pts, route.cps);
+  const getLen = wireStageChooser();
+  const info = () => {
+    const len = getLen(), n = Math.max(1, Math.round(cur.km / len)), cpN = cps.filter(c => c.at > 1000).length;
+    $('varInfo').textContent = FR.num(cur.km) + ' km in ' + n + (n === 1 ? ' Etappe' : ' Etappen') + ' zu etwa ' + len + ' km' + (cpN ? ' · ' + cpN + (cpN === 1 ? ' Checkpoint' : ' Checkpoints') : '');
+  };
+  window.funrunStageInfo = info;
+  info();
+  if (many) $('varChips').onclick = e => {
+    const b = e.target.closest('button'); if (!b) return;
+    cur = route.variants[+b.dataset.i]; cps = RT.placeCps(cur.pts, route.cps);
+    document.querySelectorAll('#varChips button').forEach(x => x.classList.toggle('on', x === b));
+    info();
+  };
+  state('');
+  const btn = $('sLoad');
+  btn.textContent = 'Als Langstrecke anlegen';
+  btn.disabled = false;
+  btn.onclick = () => makeRaceProject(race, cur, cps, getLen(), many ? vname(cur) : '');
+}
+async function makeRaceProject(race, v, cps, stageKm, variantName) {
+  if (sheetBusy) return;
+  sheetBusy = true; $('sLoad').disabled = true;
+  try {
+    state('Höhen werden geladen …');
+    let pts = await RT.variantHeights(v);
+    const opts = { cps };
+    if (!pts) {
+      // the tracker has no heights: coarse terrain heights for the climbing of the stages (each stage gets fine ones when it is ridden)
+      pts = v.pts;
+      opts.profile = await RT.coarseProfile(v.pts, f => state('Höhen werden geschätzt … ' + Math.round(f * 100) + ' %'));
+      if (Number.isFinite(race.hm) && Number.isFinite(race.km) && Math.abs(v.km - race.km) / race.km < 0.15) opts.ascentTotal = race.hm;
+    }
+    state('Etappen werden eingeteilt …');
+    const name = race.title + (variantName ? ' – ' + variantName : '');
+    const p = RT.makeProject({ id: RT.projectId(name), name, source: 'dotwatcher:' + race.slug, variant: v.key, url: httpsUrl(race.website) || race.page,
+      dotwatcher: race.page, tracker: race.tracker.kind, region: race.location, terrain: race.terrain }, pts, stageKm * 1000, opts);
+    const res = await FR.ultraSave(p);
+    if (!res || res.ok === false) throw new Error('Speichern ging nicht');
+    projects = await loadProjects();
+    sheetBusy = false;
+    closeSheet();
+    view = 'mine'; ls.set('view', view); render();
+    window.scrollTo(0, 0);
+  } catch (e) { state('Das hat nicht geklappt: ' + e.message, true); $('sLoad').disabled = false; }
+  sheetBusy = false;
 }
 // a long route of the app (imported GPX) as a project of stages
 function openLongRoute(r) {
@@ -484,7 +731,8 @@ async function stageFile(p, n) {
   const pts = await RT.stageTrack(full, n);
   const name = p.name + ' · Etappe ' + String(n).padStart(2, '0') + ' von ' + p.stages.length;
   const desc = p.name + ', Etappe ' + n + ' von ' + p.stages.length + ' (km ' + FR.num(st.from / 1000) + '–' + FR.num(st.to / 1000) + ').' +
-    (p.source && p.source.indexOf('ultra:') === 0 ? ' Strecke des Veranstalters.' : '');
+    (p.source && p.source.indexOf('ultra:') === 0 ? ' Strecke des Veranstalters.' : '') +
+    (p.source && p.source.indexOf('dotwatcher:') === 0 ? ' Strecke vom Tracker des Rennens (' + (RT.trackerName(p.tracker) || 'über DotWatcher') + '), sie gehört dem Veranstalter.' : '');
   const res = await FR.saveGpx(RT.fileName(name), RT.gpx(name, desc, pts), RT.describe(pts));
   if (!res || !res.ok) throw new Error('Speichern ging nicht');
   full.stages[n - 1].file = res.file;
@@ -514,11 +762,13 @@ function openStages(p) {
   const pr = RT.projectProgress(p, rides);
   openSheet('<h2>' + FR.esc(p.name) + '</h2><div class="sub">' + FR.num(p.length / 1000) + ' km · ' + FR.num(p.ascent) + ' Hm · ' + p.stages.length + ' Etappen</div>' +
     '<div class="stlist">' + p.stages.map(st => '<button data-n="' + st.n + '"><span>Etappe ' + st.n + ' · km ' + FR.num(st.from / 1000) + '–' + FR.num(st.to / 1000) +
-      ' · ' + FR.num(st.ascent) + ' Hm</span>' + (pr.done.has(st.n) ? '<span class="ok">geschafft</span>' : pr.next && pr.next.n === st.n ? '<span class="nx">nächste</span>' : '<span class="muted">fahren</span>') + '</button>').join('') + '</div>' +
+      ' · ' + FR.num(st.ascent) + ' Hm' + cpText(p, st, '<small class="cp">') + (RT.stageCps(p, st).length ? '</small>' : '') + '</span>' + (pr.done.has(st.n) ? '<span class="ok">geschafft</span>' : pr.next && pr.next.n === st.n ? '<span class="nx">nächste</span>' : '<span class="muted">fahren</span>') + '</button>').join('') + '</div>' +
     (p.url ? '<button class="link" id="sWeb" style="padding:0">Website des Rennens<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="m9 6 6 6-6 6"/></svg></button>' : '') +
+    (p.dotwatcher && p.dotwatcher !== p.url ? '<button class="link" id="sDwp" style="padding:0">Bei DotWatcher ansehen<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="m9 6 6 6-6 6"/></svg></button>' : '') +
     '<div class="state" id="sheetState"></div><div class="btns"><button class="btn" id="sDel">Langstrecke löschen</button><button class="btn" id="sClose">Schließen</button></div>');
   $('sClose').onclick = closeSheet;
   if (p.url) $('sWeb').onclick = () => FR.openUrl(p.url);
+  if ($('sDwp')) $('sDwp').onclick = () => FR.openUrl(p.dotwatcher);
   $('sheetBox').querySelector('.stlist').onclick = e => { const b = e.target.closest('button'); if (b) { closeSheet(); rideStage(p, +b.dataset.n, null); } };
   let armed = false;
   $('sDel').onclick = async () => {
@@ -557,6 +807,10 @@ $('srcChips').addEventListener('click', e => {
   if (src === 'near' && !near.items && !near.loading) searchNear();
 });
 $('countryChips').addEventListener('click', e => { const b = e.target.closest('button'); if (!b) return; country = b.dataset.c; renderCountries(); renderCatalog(); });
+$('ultraView').addEventListener('click', e => { const b = e.target.closest('button'); if (!b) return; ultraView = b.dataset.u; ls.set('ultraView', ultraView); renderUltra(); });
+$('terrainChips').addEventListener('click', e => { const b = e.target.closest('button'); if (!b) return; terrain = b.dataset.t; ls.set('terrain', terrain); renderUltra(); });
+$('ultraLen').addEventListener('click', e => { const b = e.target.closest('button'); if (!b) return; ultraLen = b.dataset.l; ls.set('ultraLen', ultraLen); renderUltra(); });
+$('aq').addEventListener('input', () => { if (ultraView === 'arch') renderArchive(); });
 $('lenChips').addEventListener('click', e => {
   const b = e.target.closest('button'); if (!b) return;
   lenFilter = b.dataset.l;
@@ -590,6 +844,8 @@ $('dlist').addEventListener('click', e => {
   if (kind === 'c') { const c = catalog.climbs.find(x => x.id === id); if (c) openCatalog(c); }
   else if (kind === 'u') { const u = catalog.ultras.find(x => x.id === id); if (u) openUltra(u); }
   else if (kind === 'n') { const x = (near.items || []).find(i => i.key === id); if (x) openNear(x); }
+  else if (kind === 'd') { const r = dw.races && [].concat(dw.races.live, dw.races.upcoming, dw.races.past).find(x => x.slug === id); openDwRace(id, r ? r.title : id); }
+  else if (kind === 'a') { const a = (dw.archive || []).find(x => x.name === id); if (a) openArchive(a); }
 });
 $('btnImport').addEventListener('click', () => FR.open('gpx'));
 function renderCountries() {

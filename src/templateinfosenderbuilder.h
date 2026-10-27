@@ -8,6 +8,8 @@
 #include <QJsonArray>
 #include <QSettings>
 
+class QNetworkAccessManager;
+
 #define TEMPLATE_TYPE_TCPCLIENT QStringLiteral("TcpClient")
 #define TEMPLATE_TYPE_WEBSERVER QStringLiteral("WebServer")
 #define TEMPLATE_PRIVATE_WEBSERVER_ID "QZWS"
@@ -123,6 +125,9 @@ class TemplateInfoSenderBuilder : public QObject {
     void onFunRunSaveGpx(const QJsonValue &msgContent, TemplateInfoSender *tempSender);
     void onFunRunReadGpx(const QJsonValue &msgContent, TemplateInfoSender *tempSender);
     void onFunRunUltra(const QString &msg, const QJsonValue &msgContent, TemplateInfoSender *tempSender);
+    // FunRun ultra races: pages and route data of DotWatcher and the trackers it shows (the page cannot load them itself)
+    void onFunRunFetch(const QJsonValue &msgContent, TemplateInfoSender *tempSender);
+    QNetworkAccessManager *funrunNet = nullptr;
     void onGetLatLon(TemplateInfoSender *tempSender);
     void onNextInclination300Meters(TemplateInfoSender *tempSender);
     void onGetGPXBase64(TemplateInfoSender *tempSender);

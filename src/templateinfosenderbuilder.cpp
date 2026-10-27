@@ -14,12 +14,17 @@
 #include <QClipboard>
 #include <QDesktopServices>
 #include <QRegularExpression>
+#include <QNetworkAccessManager>
 #include <QNetworkInterface>
+#include <QNetworkReply>
+#include <QNetworkRequest>
+#include <QPointer>
 #include <QStandardPaths>
 #include <QTime>
 #include <QQmlFile>
 #include <algorithm>
 #include <limits>
+#include <memory>
 #ifdef Q_HTTPSERVER
 #include "webserverinfosender.h"
 #endif
@@ -1688,6 +1693,130 @@ void TemplateInfoSenderBuilder::onFunRunUltra(const QString &msg, const QJsonVal
     tempSender->send(QJsonDocument(main).toJson(QJsonDocument::Compact));
 }
 
+namespace {
+// FunRun ultra races: only https and only these sites (DotWatcher and the trackers whose routes the app reads)
+bool funrunFetchAllowed(const QUrl &url) {
+    if (!url.isValid() || url.scheme() != QStringLiteral("https")) {
+        return false;
+    }
+    const QString host = url.host().toLower();
+    return host == QStringLiteral("dotwatcher.cc") || host == QStringLiteral("www.dotwatcher.cc") ||
+           host == QStringLiteral("trackleaders.com") || host == QStringLiteral("www.trackleaders.com") ||
+           host == QStringLiteral("followmychallenge.com") || host == QStringLiteral("www.followmychallenge.com") ||
+           host == QStringLiteral("live.followmychallenge.com") || host == QStringLiteral("api2.madcap.cc");
+}
+
+struct FunRunFetchState {
+    QByteArray data;
+    int searchFrom = 0;
+    bool stopped = false; // the app ended the download itself
+    bool enough = false;  // ... because the wanted part of a long page was there
+};
+} // namespace
+
+// content: { url, method ("GET" or "POST"), body, type (of the body), stopAfter, stopExtra, tag }
+// The trackers' pages hold all riders and can be several MB: with stopAfter the download ends stopExtra bytes
+// after that text. Reply R_funrun_fetch: { ok, status, text, error, tag }
+void TemplateInfoSenderBuilder::onFunRunFetch(const QJsonValue &msgContent, TemplateInfoSender *tempSender) {
+    const QJsonObject c = msgContent.toObject();
+    const QJsonValue tag = c.value(QStringLiteral("tag"));
+    const QUrl url(c.value(QStringLiteral("url")).toString());
+    QPointer<TemplateInfoSender> sender(tempSender);
+    auto answer = [sender, tag](bool ok, int status, const QByteArray &data, const QString &error) {
+        if (!sender) {
+            return;
+        }
+        QJsonObject content;
+        content[QStringLiteral("ok")] = ok;
+        content[QStringLiteral("status")] = status;
+        content[QStringLiteral("text")] = QString::fromUtf8(data);
+        content[QStringLiteral("error")] = error;
+        content[QStringLiteral("tag")] = tag;
+        QJsonObject main;
+        main[QStringLiteral("msg")] = QStringLiteral("R_funrun_fetch");
+        main[QStringLiteral("content")] = content;
+        sender->send(QJsonDocument(main).toJson(QJsonDocument::Compact));
+    };
+    if (!funrunFetchAllowed(url)) {
+        answer(false, 0, QByteArray(), QStringLiteral("not allowed"));
+        return;
+    }
+    if (!funrunNet) {
+        funrunNet = new QNetworkAccessManager(this);
+    }
+    QNetworkRequest request(url);
+    request.setAttribute(QNetworkRequest::RedirectPolicyAttribute, QNetworkRequest::UserVerifiedRedirectPolicy);
+    request.setMaximumRedirectsAllowed(5);
+    request.setTransferTimeout(45000);
+    request.setHeader(QNetworkRequest::UserAgentHeader,
+                      QStringLiteral("Mozilla/5.0 (Linux; Android 13) AppleWebKit/537.36 (KHTML, like Gecko) "
+                                     "Chrome/124.0 Mobile Safari/537.36 FunRun"));
+    QNetworkReply *reply = nullptr;
+    if (c.value(QStringLiteral("method")).toString().toUpper() == QStringLiteral("POST")) {
+        QString type = c.value(QStringLiteral("type")).toString();
+        if (type.isEmpty()) {
+            type = QStringLiteral("application/json");
+        }
+        request.setHeader(QNetworkRequest::ContentTypeHeader, type);
+        reply = funrunNet->post(request, c.value(QStringLiteral("body")).toString().toUtf8());
+    } else {
+        reply = funrunNet->get(request);
+    }
+    const QByteArray stopAfter = c.value(QStringLiteral("stopAfter")).toString().toUtf8();
+    const int stopExtra = c.value(QStringLiteral("stopExtra")).toInt(200000);
+    const int maxBytes = 16 * 1024 * 1024;
+    auto state = std::make_shared<FunRunFetchState>();
+    // redirects only to the same sites
+    connect(reply, &QNetworkReply::redirected, reply, [reply](const QUrl &to) {
+        if (funrunFetchAllowed(reply->url().resolved(to))) {
+            emit reply->redirectAllowed();
+        } else {
+            reply->abort();
+        }
+    });
+    connect(reply, &QNetworkReply::readyRead, reply, [reply, state, stopAfter, stopExtra, maxBytes]() {
+        if (state->stopped) {
+            return;
+        }
+        state->data += reply->readAll();
+        if (state->data.size() > maxBytes) {
+            state->stopped = true;
+            reply->abort();
+            return;
+        }
+        if (stopAfter.isEmpty()) {
+            return;
+        }
+        const int at = state->data.indexOf(stopAfter, state->searchFrom);
+        if (at < 0) {
+            state->searchFrom = qMax(0, state->data.size() - stopAfter.size());
+            return;
+        }
+        state->searchFrom = at;
+        if (state->data.size() >= at + stopExtra) {
+            state->stopped = true;
+            state->enough = true;
+            reply->abort();
+        }
+    });
+    connect(reply, &QNetworkReply::finished, this, [reply, state, answer]() {
+        reply->deleteLater();
+        if (!state->stopped && reply->isOpen()) {
+            state->data += reply->readAll();
+        }
+        const int status = reply->attribute(QNetworkRequest::HttpStatusCodeAttribute).toInt();
+        if (state->enough) {
+            answer(true, 200, state->data, QString());
+        } else if (state->stopped) {
+            answer(false, status, QByteArray(), QStringLiteral("too large"));
+        } else if (reply->error() != QNetworkReply::NoError) {
+            answer(false, status, QByteArray(), reply->errorString());
+        } else {
+            answer(status >= 200 && status < 300, status, state->data, QString());
+        }
+    });
+}
+
 void TemplateInfoSenderBuilder::onDataReceived(const QByteArray &data) {
     TemplateInfoSender *sender = qobject_cast<TemplateInfoSender *>(this->sender());
     if (!sender) {
@@ -1858,6 +1987,9 @@ void TemplateInfoSenderBuilder::onDataReceived(const QByteArray &data) {
                     return;
                 } else if (msg.startsWith(QStringLiteral("funrun_ultra_"))) {
                     onFunRunUltra(msg, jsonObject[QStringLiteral("content")], sender);
+                    return;
+                } else if (msg == QStringLiteral("funrun_fetch")) {
+                    onFunRunFetch(jsonObject[QStringLiteral("content")], sender);
                     return;
                 }
                 if (msg == QStringLiteral("start")) {

@@ -74,10 +74,10 @@
     const data = JSON.stringify(content === undefined ? { msg } : { msg, content });
     if (open && ws) ws.send(data); else queue.push(data);
   };
-  function request(msg, content, match) {
+  function request(msg, content, match, timeout) {
     return new Promise((resolve, reject) => {
       const p = { reply: 'R_' + msg, match, resolve };
-      p.timer = setTimeout(() => { const i = pending.indexOf(p); if (i >= 0) pending.splice(i, 1); reject(new Error('Keine Antwort von der App')); }, 20000);
+      p.timer = setTimeout(() => { const i = pending.indexOf(p); if (i >= 0) pending.splice(i, 1); reject(new Error('Keine Antwort von der App')); }, timeout || 20000);
       pending.push(p);
       FR.send(msg, content);
     });
@@ -141,6 +141,21 @@
   FR.ultraDelete = async id => {
     if (demo) { const all = demoStore('funrunDemoUltra') || {}; delete all[id]; demoKeep('funrunDemoUltra', all); return { ok: true }; }
     return request('funrun_ultra_delete', { id }, c => c && c.id === id);
+  };
+  // a page or data of the ultra race sites (DotWatcher and its trackers): the app loads it, the page itself may not.
+  // opts: { method, body, type, stopAfter, stopExtra } (long pages end stopExtra bytes after the text stopAfter)
+  FR.fetchText = async (url, opts) => {
+    const o = opts || {};
+    if (demo) {
+      const r = await fetch(url, o.method === 'POST' ? { method: 'POST', headers: { 'Content-Type': o.type || 'application/json' }, body: o.body || '' } : undefined);
+      if (!r.ok) throw new Error('HTTP ' + r.status);
+      return r.text();
+    }
+    const tag = 'f' + Date.now() + '-' + (++tagCounter);
+    const c = await request('funrun_fetch', { url, method: o.method || 'GET', body: o.body || '', type: o.type || '', stopAfter: o.stopAfter || '',
+      stopExtra: o.stopExtra || 200000, tag }, x => x && x.tag === tag, 75000);
+    if (!c || !c.ok) throw new Error(c && c.status ? 'HTTP ' + c.status : (c && c.error) || 'keine Antwort');
+    return c.text;
   };
   // moves an imported route file into the long route's folder (it is no longer listed as one route)
   FR.ultraAdopt = async (file, id) => (demo ? { ok: true, file } : request('funrun_ultra_adopt', { file, id }, c => c && c.id === id));
