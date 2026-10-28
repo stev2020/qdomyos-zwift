@@ -1,0 +1,55 @@
+; Engine configuration file.
+; It's best edited using the editor UI and not directly,
+; since the parameters that go here are not all obvious.
+;
+; Format:
+;   [section] ; section goes between []
+;   param=value ; assign values to parameters
+
+config_version=5
+
+[application]
+
+config/name="Kvest Stilprobe"
+config/description="Stilprobe für die Welt von Kvest: ein endloser Weg durch Sommerwiesen im gemalten Stil."
+run/main_scene="res://main.tscn"
+config/features=PackedStringArray("4.7", "Mobile")
+boot_splash/bg_color=Color(0.07, 0.09, 0.11, 1)
+boot_splash/show_image=false
+config/icon="res://icon.png"
+
+[display]
+
+window/size/viewport_width=1280
+window/size/viewport_height=800
+window/stretch/mode="canvas_items"
+window/stretch/aspect="expand"
+window/handheld/orientation=4
+
+[input_devices]
+
+pointing/emulate_touch_from_mouse=true
+
+[rendering]
+
+renderer/rendering_method="mobile"
+textures/vram_compression/import_etc2_astc=true
+lights_and_shadows/directional_shadow/size=2048
+lights_and_shadows/directional_shadow/soft_shadow_filter_quality.mobile=2
+anti_aliasing/quality/msaa_3d=1
+environment/defaults/default_clear_color=Color(0.6, 0.75, 0.9, 1)
+
+[shader_globals]
+
+path_phase={
+"type": "vec3",
+"value": Vector3(0.4, 1.3, 2.1)
+}
+stream_phase={
+"type": "vec2",
+"value": Vector2(2, 0.7)
+}
+noise_shift={
+"type": "float",
+"value": 0.0
+}

@@ -1,0 +1,122 @@
+# Kvest style test: exports the Godot project in kvest-stilprobe/ as an Android app of its own
+# (io.github.stev2020.kveststilprobe), signs it with the own key and publishes it as the
+# release "kvest-stilprobe". Runs only when the style test changes.
+name: Kvest Stilprobe
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [ skandika-cykling-p12h ]
+    paths:
+      - 'kvest-stilprobe/**'
+      - '.github/workflows/kvest-stilprobe.yml'
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  GODOT_VERSION: '4.7.2'
+
+jobs:
+  export:
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+    steps:
+      - name: Check signing secret
+        env:
+          QZ_KEYSTORE_PASSWORD: ${{ secrets.QZ_KEYSTORE_PASSWORD }}
+        run: |
+          if [ -z "$QZ_KEYSTORE_PASSWORD" ]; then
+            echo "::error::Secret QZ_KEYSTORE_PASSWORD is missing (Settings > Secrets and variables > Actions)."
+            exit 1
+          fi
+
+      - name: Checkout the style test and the signing key
+        uses: actions/checkout@v4
+        with:
+          sparse-checkout: |
+            kvest-stilprobe
+            .github
+
+      - name: Install Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: 'temurin'
+          java-version: '17'
+
+      - name: Cache Godot and its Android templates
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/godot
+            ~/.local/share/godot/export_templates/${{ env.GODOT_VERSION }}.stable
+          key: godot-${{ env.GODOT_VERSION }}-android-1
+
+      - name: Install Godot and the Android templates
+        run: |
+          set -euo pipefail
+          BASE="https://github.com/godotengine/godot/releases/download/${GODOT_VERSION}-stable"
+          if [ ! -x ~/godot/godot ]; then
+            mkdir -p ~/godot
+            curl -fsSL --retry 5 -o /tmp/godot.zip "$BASE/Godot_v${GODOT_VERSION}-stable_linux.x86_64.zip"
+            unzip -q /tmp/godot.zip -d ~/godot
+            mv ~/godot/Godot_v${GODOT_VERSION}-stable_linux.x86_64 ~/godot/godot
+          fi
+          T=~/.local/share/godot/export_templates/${GODOT_VERSION}.stable
+          if [ ! -f "$T/android_release.apk" ]; then
+            mkdir -p "$T"
+            curl -fsSL --retry 5 -o /tmp/templates.tpz "$BASE/Godot_v${GODOT_VERSION}-stable_export_templates.tpz"
+            unzip -q -o -j /tmp/templates.tpz 'templates/android_release.apk' 'templates/android_debug.apk' 'templates/version.txt' -d "$T"
+            rm /tmp/templates.tpz
+          fi
+          ~/godot/godot --headless --version
+
+      - name: Point Godot at the Android SDK of the runner
+        run: |
+          set -euo pipefail
+          SDK="${ANDROID_SDK_ROOT:-/usr/local/lib/android/sdk}"
+          ls "$SDK/platform-tools/adb" "$SDK/build-tools" >/dev/null
+          MINOR=$(echo "$GODOT_VERSION" | cut -d. -f1,2)
+          mkdir -p ~/.config/godot
+          printf '[gd_resource type="EditorSettings" format=3]\n\n[resource]\nexport/android/android_sdk_path = "%s"\nexport/android/java_sdk_path = "%s"\n' \
+            "$SDK" "$JAVA_HOME" > ~/.config/godot/editor_settings-$MINOR.tres
+          cat ~/.config/godot/editor_settings-$MINOR.tres
+
+      - name: Export the APK
+        working-directory: kvest-stilprobe
+        run: |
+          set -euo pipefail
+          mkdir -p build
+          ~/godot/godot --headless --path . --import || true
+          ~/godot/godot --headless --path . --export-release "Android" build/unsigned.apk
+          test -s build/unsigned.apk
+          ls -la build
+
+      - name: Sign with the own key
+        env:
+          QZ_KEYSTORE_PASSWORD: ${{ secrets.QZ_KEYSTORE_PASSWORD }}
+        run: |
+          set -euo pipefail
+          SDK="${ANDROID_SDK_ROOT:-/usr/local/lib/android/sdk}"
+          BT=$(ls -d "$SDK"/build-tools/* | sort -V | tail -n 1)
+          "$BT/apksigner" sign --ks "${{ github.workspace }}/.github/signing/qz-own.p12" --ks-type PKCS12 \
+            --ks-key-alias qz-own --ks-pass env:QZ_KEYSTORE_PASSWORD --key-pass env:QZ_KEYSTORE_PASSWORD \
+            --out "${{ github.workspace }}/kvest-stilprobe.apk" kvest-stilprobe/build/unsigned.apk
+          "$BT/apksigner" verify --print-certs "${{ github.workspace }}/kvest-stilprobe.apk"
+          AAPT="$BT/aapt2"
+          [ -x "$AAPT" ] || AAPT="$BT/aapt"
+          "$AAPT" dump badging "${{ github.workspace }}/kvest-stilprobe.apk" 2>/dev/null | grep -E "^package:|^application-label:" || true
+          ls -la "${{ github.workspace }}/kvest-stilprobe.apk"
+
+      - name: Publish as release "kvest-stilprobe"
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh release delete kvest-stilprobe --yes --cleanup-tag -R "${{ github.repository }}" || true
+          gh release create kvest-stilprobe "${{ github.workspace }}/kvest-stilprobe.apk" \
+            -R "${{ github.repository }}" \
+            --target "${{ github.sha }}" \
+            --title "Kvest Stilprobe" \
+            --notes "Style test for the world of Kvest (Godot ${GODOT_VERSION}), built from ${{ github.sha }}. Own app (io.github.stev2020.kveststilprobe) next to Kvestrun; it takes the speed from Kvestrun on the same tablet."
