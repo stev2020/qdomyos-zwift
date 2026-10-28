@@ -19,6 +19,15 @@ ColumnLayout {
     property int diagChecks: 0
     property int autoReloads: 0
     property bool pageActive: false
+    // the app opens with the FunRun pages: no QZ bar above the map, the map brings its own buttons (main.qml)
+    property bool funrunShell: false
+
+    // the system's status bar while the QZ bar is hidden: the map's displays start below it
+    Rectangle {
+        Layout.fillWidth: true
+        Layout.preferredHeight: headerToolbar.visible ? 0 : window.getTopPadding()
+        color: "#0b0f14"
+    }
 
     // Load state and diagnostics. Kept above the web view: the native web view covers anything on top of it.
     RowLayout {
@@ -63,7 +72,7 @@ ColumnLayout {
 
     function applyBar(pageTitle) {
         if (column1.pageActive && pageTitle)
-            headerToolbar.visible = pageTitle.indexOf("bar=0") < 0;
+            headerToolbar.visible = !column1.funrunShell && pageTitle.indexOf("bar=0") < 0;
     }
 
     // Start loading only once the page is on screen: a web view that starts loading while it is still
@@ -141,6 +150,9 @@ ColumnLayout {
     // Opened again later: load fresh, so a page that stayed white the first time gets another chance
     StackView.onActivated: {
         column1.pageActive = true;
+        column1.funrunShell = rootItem.funrunStartPage();
+        if (column1.funrunShell)
+            headerToolbar.visible = false;
         column1.autoReloads = 0;
         if (webView.url.toString().indexOf(column1.mapUrl) === 0)
             column1.loadMap(true);
@@ -148,15 +160,17 @@ ColumnLayout {
             loadTimer.restart();
     }
 
-    // Leaving the map: the top bar is always back
+    // Leaving the map: the top bar is back, unless a FunRun page shows now (main.qml)
     StackView.onDeactivated: {
         column1.pageActive = false;
-        headerToolbar.visible = true;
+        if (!window.funrunPageOnTop)
+            headerToolbar.visible = true;
     }
 
     Component.onCompleted: {
         column1.pageActive = true;
-        headerToolbar.visible = true;
+        column1.funrunShell = rootItem.funrunStartPage();
+        headerToolbar.visible = !column1.funrunShell;
         loadTimer.restart();
     }
 }

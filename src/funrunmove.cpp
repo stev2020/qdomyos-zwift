@@ -25,7 +25,7 @@ namespace {
 
 const QString qzPackage = QStringLiteral("org.cagnulen.qdomyoszwift");
 // the moving file and what it holds
-const QString moveFileName = QStringLiteral("QuestRun-Umzug.zip");
+const QString moveFileName = QStringLiteral("Kvestrun-Umzug.zip");
 const QString moveFormat = QStringLiteral("funrun-umzug");
 const QString manifestEntry = QStringLiteral("funrun-umzug.json");
 const QString settingsEntry = QStringLiteral("einstellungen.ini");

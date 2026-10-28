@@ -640,6 +640,8 @@ void bluetoothdevice::setGPXFile(QString filename) {
     gpxFileName = filename;
     // a new route is a new ride: new wind
     funrunNewWind();
+    // no route (FunRun free ride): no route data of the last one either
+    gpxBase64.clear();
     QFile input(filename);
     if (input.open(QIODevice::ReadOnly)) {
         QByteArray asSaved = input.readAll();

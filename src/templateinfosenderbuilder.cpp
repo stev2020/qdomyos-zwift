@@ -1718,6 +1718,19 @@ struct FunRunFetchState {
 };
 } // namespace
 
+// FunRun "Freie Fahrt": starts a ride without a route (homeform::funrunStartFree). Reply R_funrun_free: { ok }
+void TemplateInfoSenderBuilder::onFunRunFree(TemplateInfoSender *tempSender) {
+    homeform *home = homeform::singleton();
+    if (home)
+        home->funrunStartFree();
+    QJsonObject content;
+    content[QStringLiteral("ok")] = home != nullptr;
+    QJsonObject main;
+    main[QStringLiteral("msg")] = QStringLiteral("R_funrun_free");
+    main[QStringLiteral("content")] = content;
+    tempSender->send(QJsonDocument(main).toJson(QJsonDocument::Compact));
+}
+
 // FunRun "Dein Rad". content: { do: "state" | "scan" | "use" (name; empty: the first supported device) | "belt"
 // (name; empty: none) }. Reply R_funrun_device: the state after it (homeform::funrunDevices) and { do }.
 void TemplateInfoSenderBuilder::onFunRunDevice(const QJsonValue &msgContent, TemplateInfoSender *tempSender) {
@@ -2075,6 +2088,9 @@ void TemplateInfoSenderBuilder::onDataReceived(const QByteArray &data) {
                     return;
                 } else if (msg == QStringLiteral("funrun_device")) {
                     onFunRunDevice(jsonObject[QStringLiteral("content")], sender);
+                    return;
+                } else if (msg == QStringLiteral("funrun_free")) {
+                    onFunRunFree(sender);
                     return;
                 }
                 if (msg == QStringLiteral("start")) {

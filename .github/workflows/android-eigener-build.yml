@@ -288,14 +288,14 @@ jobs:
             curl -fsSL https://services.gradle.org/distributions/gradle-8.13-bin.zip -o /tmp/gradle-8.13-bin.zip
             unzip -q /tmp/gradle-8.13-bin.zip -d ${{ github.workspace }}
           fi
-          # the QZ app's id (the installed app updates over it; it packs the moving file for QuestRun)
+          # the QZ app's id (the installed app updates over it; it packs the moving file for Kvestrun)
           "$GRADLE_DIST_DIR/bin/gradle" -g "$GRADLE_USER_HOME" --no-daemon -p ${{ github.workspace }}/output/android \
             -PfunrunAppLabel="FunRun alt" assembleDebug bundleDebug
           cp "${{ github.workspace }}/output/android/build/outputs/apk/debug/android-debug.apk" "${{ github.workspace }}/unsigned-qz.apk"
-          # FunRun as an app of its own (working name QuestRun): the same build with its own id and name, installable
-          # next to QZ
+          # FunRun as an app of its own (shown as Kvestrun, codename QuestRun): the same build with its own id and name,
+          # installable next to QZ
           "$GRADLE_DIST_DIR/bin/gradle" -g "$GRADLE_USER_HOME" --no-daemon -p ${{ github.workspace }}/output/android \
-            -PfunrunAppId=io.github.stev2020.questrun -PfunrunAppLabel=QuestRun assembleDebug
+            -PfunrunAppId=io.github.stev2020.questrun -PfunrunAppLabel=Kvestrun assembleDebug
           cp "${{ github.workspace }}/output/android/build/outputs/apk/debug/android-debug.apk" "${{ github.workspace }}/unsigned-questrun.apk"
 
       - name: Slim APKs (arm64-v8a only, stripped) and sign with own key
@@ -357,5 +357,5 @@ jobs:
           gh release create eigener-build "${{ github.workspace }}/questrun.apk" "${{ github.workspace }}/qz-skandika.apk" \
             -R "${{ github.repository }}" \
             --target "${{ github.sha }}" \
-            --title "QuestRun eigener Build" \
-            --notes "Built from branch ${{ github.ref_name }} at ${{ github.sha }}. questrun.apk: FunRun as an app of its own, working name QuestRun (io.github.stev2020.questrun). qz-skandika.apk: the same build with the QZ app's id (FunRun alt), for the move. No trial limit (built without #define LICENSE)."
+            --title "Kvestrun eigener Build" \
+            --notes "Built from branch ${{ github.ref_name }} at ${{ github.sha }}. questrun.apk: FunRun as an app of its own, shown as Kvestrun (io.github.stev2020.questrun). qz-skandika.apk: the same build with the QZ app's id (FunRun alt), for the move. No trial limit (built without #define LICENSE)."

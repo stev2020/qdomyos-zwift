@@ -9963,6 +9963,32 @@ void homeform::funrunStartRoute(const QString &gpxFile) {
     emit funrunMapRequested();
 }
 
+void homeform::funrunStartFree() {
+    bluetoothdevice *dev = bluetoothManager ? bluetoothManager->device() : nullptr;
+    // a ride is going on (running or paused) once it has covered 100 m
+    const bool underway = !stopped && dev && dev->odometer() >= 0.1;
+    if (underway && dev->currentGPXFile().isEmpty()) {
+        // back to the free ride (its page was opened again during the ride)
+        if (paused)
+            Start();
+        return;
+    }
+    if (underway) {
+        // a ride on a route: kept (as after "Beenden"), then the free ride starts
+        Stop();
+    } else if (!stopped && dev) {
+        // the app counts from its start: the minutes before are not part of the ride
+        stopped = true;
+    }
+    // no route: neither the program nor the file of the last route ride go on (the ride is kept without a route)
+    if (trainProgram)
+        trainProgram->clearRows();
+    if (dev)
+        dev->setGPXFile(QString());
+    if (stopped || paused)
+        Start();
+}
+
 void homeform::fit_save_clicked() {
 
     QString path = getWritableAppDir();

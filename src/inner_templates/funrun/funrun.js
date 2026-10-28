@@ -3,8 +3,8 @@
 (function () {
   'use strict';
   const FR = (window.FR = {});
-  // the app's name as the user sees it (not final yet: the pages take it from here)
-  FR.APP = 'QuestRun';
+  // the app's name as the user sees it (not final yet: the pages take it from here; codename QuestRun)
+  FR.APP = 'Kvestrun';
   FR.qs = new URLSearchParams(location.search);
   FR.$ = id => document.getElementById(id);
 
@@ -105,6 +105,8 @@
   };
   // starts a route: the app loads it, starts the ride and shows the 3D map
   FR.start = file => (demo ? Promise.resolve({ ok: true }) : request('funrun_start', { file }));
+  // a ride without a route ("Freie Fahrt"): the app keeps a ride on a route going on, then starts it
+  FR.freeRide = () => (demo ? Promise.resolve({ ok: true }) : request('funrun_free'));
   // pages of the app: 'settings', 'menu', 'tiles', 'trainingprograms', 'gpxlist', 'gpx' (import)
   FR.open = what => FR.send('funrun_open', { what });
   // a web page in the browser of the device (https only)

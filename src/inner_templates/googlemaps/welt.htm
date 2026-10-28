@@ -122,6 +122,7 @@ body.bare #metrics,body.bare #camBar,body.bare #zoomCol{display:none}
 #profile.off{display:none}
 #tools button{padding:0 12px}
 #tools svg{width:22px;height:22px;display:block}
+#nav button{padding:0 12px}#nav svg{width:22px;height:22px;display:block}
 #sheet{position:absolute;top:0;left:0;right:0;bottom:0;display:none;align-items:center;justify-content:center;background:rgba(5,8,12,.55);z-index:5}
 #sheet.open{display:flex}
 #sheet .box{width:min(620px,94%);max-height:88%;overflow:auto;padding:14px 18px 16px;-webkit-overflow-scrolling:touch}
@@ -166,6 +167,9 @@ body.bare #metrics,body.bare #camBar,body.bare #zoomCol{display:none}
   </div>
 
   <div id="camBar">
+    <div class="seg panel pe" id="nav">
+      <button id="btnBack" title="Zurück zu Fahren (die Fahrt läuft weiter)" aria-label="Zurück"><svg viewBox="0 0 24 24"><path d="m14.5 5.5-6.5 6.5 6.5 6.5" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"/></svg></button>
+    </div>
     <div class="seg panel pe" id="presets">
       <button data-p="ich">Ich</button><button data-p="verfolger">Verfolger</button><button data-p="ueberblick">Überblick</button>
     </div>
@@ -255,6 +259,9 @@ body.bare #metrics,body.bare #camBar,body.bare #zoomCol{display:none}
     <h3>Grafik</h3>
     <div class="seg" id="grafikSeg"><button data-q="auto">Automatisch</button><button data-q="hoch">Hoch</button><button data-q="mittel">Mittel</button><button data-q="niedrig">Niedrig</button></div>
     <p class="hint" id="grafikHint">Automatisch passt die Bildgröße an, damit die Fahrt flüssig bleibt.</p>
+    <h3>Widerstand</h3>
+    <div class="seg" id="autoSeg"><button data-a="1">Automatik</button><button data-a="0">Von Hand</button></div>
+    <p class="hint">Automatik: Die Stufe folgt der Steigung der Strecke. Von Hand: Du schaltest selbst am Rad.</p>
     <h3>Knöpfe</h3>
     <div class="opts" id="optButtons"></div>
     <p class="hint">Tippen auf die Karte blendet alle Anzeigen und die obere Leiste aus und wieder ein.
@@ -838,6 +845,18 @@ function initInput() {
     if (Math.abs(cam.tTarget - old) < 0.03) setZoom(PRESETS.verfolger, 0.3); // follower view on: move along
     layout();
   });
+  // the map's way back to the FunRun pages (the ride goes on); in the preview without the app: the page before
+  $('btnBack').addEventListener('click', () => {
+    if (qz.ws) qz.sendObj({ msg: 'funrun_close', content: { to: 'back' } });
+    else history.back();
+  });
+  // resistance: automatic (follows the grade) or by hand; the app switches it over with each "autoresistance"
+  document.querySelectorAll('#autoSeg button').forEach(b => b.addEventListener('click', () => {
+    const want = b.dataset.a === '1';
+    if (AUTO.on === want) return;
+    if (!demo) qz.send('autoresistance');
+    AUTO.on = want; AUTO.hold = performance.now() + 2500; markAuto();
+  }));
   document.querySelectorAll('#ghostSeg button').forEach(b => b.addEventListener('click', () => {
     GHOST.mode = b.dataset.g; markGhost();
     qz.sendObj({ msg: 'setsettings', content: { funrun_ghost_mode: GHOST.mode } });
@@ -1039,6 +1058,10 @@ function updateGhostBadge() {
     setText('ghostSub', (m >= 1000 ? num(m / 1000, 1) + ' km' : m + ' m'));
   }
   $('ghostVal').style.color = GHOST.gapS == null || GHOST.gapS >= 0 ? '' : '#ffb3a8';
+}
+const AUTO = { on: null, hold: 0 };
+function markAuto() {
+  document.querySelectorAll('#autoSeg button').forEach(b => b.classList.toggle('on', AUTO.on !== null && (b.dataset.a === '1') === AUTO.on));
 }
 function markGhost() {
   document.querySelectorAll('#ghostSeg button').forEach(b => b.classList.toggle('on', b.dataset.g === GHOST.mode));
@@ -1369,6 +1392,10 @@ const qz = {
       } catch (e) { console.error(e); }
     } else if (m.msg === 'workout' && m.content) {
       const w = m.content;
+      if (w.autoresistance != null && performance.now() > AUTO.hold) {
+        const on = w.autoresistance === true || w.autoresistance === 'true' || w.autoresistance === 1;
+        if (on !== AUTO.on) { AUTO.on = on; markAuto(); }
+      }
       hud.metrics(w);
       if (route && Number.isFinite(w.latitude) && Number.isFinite(w.longitude) && (w.latitude !== 0 || w.longitude !== 0)) {
         rider.measure(route.project(w.longitude, w.latitude, rider.s), (+w.speed || 0) / 3.6);

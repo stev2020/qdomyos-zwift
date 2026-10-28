@@ -43,6 +43,7 @@
         <file>inner_templates/funrun/strecken.htm</file>
         <file>inner_templates/funrun/einstellungen.htm</file>
         <file>inner_templates/funrun/rad.htm</file>
+        <file>inner_templates/funrun/frei.htm</file>
         <file>inner_templates/funrun/funrun-routes.js</file>
         <file>inner_templates/funrun/uebernahme.js</file>
         <file>inner_templates/funrun/katalog.json</file>

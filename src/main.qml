@@ -556,18 +556,22 @@ ApplicationWindow {
         }
     }
 
-    // FunRun pages bring their own navigation: no QZ bar above them. The page after them gets it back (the map and
-    // others set it themselves when they show).
+    // FunRun pages bring their own navigation: no QZ bar above them, nor above the ride's map when the app opens with
+    // the FunRun pages (Expertenmodus). The page after them gets it back (the others set it themselves when they show).
     property bool funrunPageOnTop: false
+    function isFunRunOwnPage(item) {
+        return !!(item && (item.objectName === "funrunPage" ||
+                           (googleMapUI.status === Loader.Ready && item === googleMapUI.item && rootItem.funrunStartPage())))
+    }
     Connections {
         target: stackView
         function onCurrentItemChanged() {
-            var onFunRun = !!(stackView.currentItem && stackView.currentItem.objectName === "funrunPage")
-            if (onFunRun)
+            var own = window.isFunRunOwnPage(stackView.currentItem)
+            if (own)
                 headerToolbar.visible = false
             else if (window.funrunPageOnTop)
                 headerToolbar.visible = true
-            window.funrunPageOnTop = onFunRun
+            window.funrunPageOnTop = own
         }
     }
 
@@ -1029,6 +1033,11 @@ ApplicationWindow {
             } else {
                 googleMapUI.active = true
             }
+        }
+        // the map's back button ("funrun_close"): back to the page below it, the ride goes on
+        function onFunrunCloseRequested(to) {
+            if (googleMapUI.status === Loader.Ready && stackView.currentItem === googleMapUI.item)
+                stackView.pop()
         }
         function onFunrunOpenRequested(what) {
             if (what === "settings") {
@@ -1675,7 +1684,7 @@ ApplicationWindow {
                 }
 
             ItemDelegate {
-                text: qsTr("QuestRun Start")
+                text: qsTr("Kvestrun Start")
                 width: parent.width
                 onClicked: {
                     stackView.push("FunRunPage.qml", { "page": "start.htm", "rideId": "", "from": "" })

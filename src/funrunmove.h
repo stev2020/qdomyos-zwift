@@ -5,12 +5,13 @@
 #include <QString>
 
 /**
- * FunRun as an app of its own (working name QuestRun, Android id io.github.stev2020.questrun) next to the QZ app it
- * grew out of:
- * - it keeps its files in its own folder (Documents/QuestRun on Android 14+, QZ: Documents/QZ) and runs its web server
- *   on its own port, so both apps can be installed, and even run, at the same time;
+ * FunRun as an app of its own (shown as Kvestrun, not final; codename QuestRun: Android id io.github.stev2020.questrun)
+ * next to the QZ app it grew out of:
+ * - it keeps its files in its own folder (Documents/QuestRun on Android 14+, QZ: Documents/QZ; the folder stays with
+ *   the codename when the shown name changes) and runs its web server on its own port, so both apps can be installed,
+ *   and even run, at the same time;
  * - moving: the QZ app packs rides, routes, workouts, training programs, profiles, its settings and the storage of the
- *   FunRun pages into one file (Download/QuestRun-Umzug.zip). The new app takes that file (picked by the user) and
+ *   FunRun pages into one file (Download/Kvestrun-Umzug.zip). The new app takes that file (picked by the user) and
  *   unpacks it at its next start, before anything reads the settings.
  */
 namespace FunRunMove {

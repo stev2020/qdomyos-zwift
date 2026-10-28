@@ -1,0 +1,142 @@
+<!doctype html>
+<html lang="de">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
+<title>Kvestrun – Freie Fahrt</title>
+<!-- "Freie Fahrt": a ride without a route. Big live values, the level by hand, pause and end (then the ride end screen).
+     The app starts it with funrun_free; pause and end are the app's own messages ('pause' toggles, 'stop'). -->
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Barlow:wght@400;500;600;700&amp;family=Barlow+Condensed:wght@600;700&amp;display=swap">
+<link rel="stylesheet" href="funrun.css">
+<style>
+.head { display: flex; align-items: center; gap: 12px; margin-bottom: 14px; }
+.head h1 { margin: 0; flex: 1; font-family: 'Barlow Condensed', Barlow, sans-serif; font-size: 32px; }
+.state { font-size: 13px; font-weight: 700; padding: 5px 12px; border-radius: 999px; background: var(--panel); border: 1px solid var(--line); color: var(--soft); }
+.state.run { color: var(--good); border-color: rgba(76, 209, 122, .4); }
+.state.pause { color: var(--accent); border-color: rgba(255, 122, 26, .4); }
+.grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
+@media (min-width: 700px) { .grid { grid-template-columns: repeat(4, minmax(0, 1fr)); } }
+.m { background: var(--panel); border: 1px solid var(--line); border-radius: 18px; padding: 12px 14px; display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.m .k { font-size: 13px; font-weight: 600; color: var(--muted); }
+.m .v { font-family: 'Barlow Condensed', Barlow, sans-serif; font-weight: 700; font-size: 52px; line-height: 1; white-space: nowrap; font-variant-numeric: tabular-nums; }
+.m .v small { font-family: Barlow, Roboto, Arial, sans-serif; font-size: 15px; font-weight: 600; color: var(--muted); margin-left: 4px; }
+.m.big { grid-column: span 2; }
+.m.big .v { font-size: 64px; }
+.level { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-top: 12px; }
+.level .l { display: flex; flex-direction: column; }
+.level .l b { font-size: 16px; }
+.level .l span { font-size: 13px; color: var(--muted); }
+.lv { display: flex; align-items: center; gap: 8px; }
+.lv button { appearance: none; -webkit-appearance: none; width: 64px; height: 56px; border-radius: 14px; border: 1px solid var(--line2); background: var(--bg); color: var(--text); font-size: 30px; font-weight: 600; cursor: pointer; }
+.lv b { min-width: 64px; text-align: center; font-family: 'Barlow Condensed', Barlow, sans-serif; font-size: 44px; }
+.ctrl { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 10px; margin-top: 14px; }
+.ctrl .btn { min-height: 64px; font-size: 19px; }
+.btn.arm { background: #e5483a; border-color: #e5483a; color: #fff; }
+.go { width: 100%; min-height: 72px; font-size: 21px; margin-top: 14px; }
+.hint { font-size: 13px; color: var(--muted); margin: 10px 2px 0; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div class="head">
+    <button class="iconbtn" id="back" aria-label="Zurück"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m15 6-6 6 6 6"/></svg></button>
+    <h1>Freie Fahrt</h1>
+    <span class="state" id="state" role="status">Bereit</span>
+  </div>
+
+  <div class="grid" id="grid">
+    <div class="m big"><span class="k">Leistung</span><span class="v" id="vW">–<small>W</small></span></div>
+    <div class="m big"><span class="k">Zeit</span><span class="v" id="vT">0:00</span></div>
+    <div class="m"><span class="k">Trittfrequenz</span><span class="v" id="vC">–<small>/min</small></span></div>
+    <div class="m"><span class="k">Tempo</span><span class="v" id="vS">–<small>km/h</small></span></div>
+    <div class="m"><span class="k">Strecke</span><span class="v" id="vD">0,0<small>km</small></span></div>
+    <div class="m"><span class="k">Puls</span><span class="v" id="vH">–<small>/min</small></span></div>
+  </div>
+
+  <section class="card level">
+    <div class="l"><b>Stufe</b><span id="lvHint">schaltet dein Rad</span></div>
+    <div class="lv"><button id="lvMinus" aria-label="leichter">−</button><b id="lvVal">–</b><button id="lvPlus" aria-label="schwerer">+</button></div>
+  </section>
+
+  <button class="btn primary go" id="btnGo">Losfahren</button>
+  <p class="hint hidden" id="goNote"></p>
+  <div class="ctrl hidden" id="ctrl">
+    <button class="btn" id="btnPause">Pause</button>
+    <button class="btn" id="btnStop">Beenden</button>
+  </div>
+  <p class="hint" id="note">Ohne Strecke, ohne Steigung: Den Widerstand stellst du selbst ein. Die Fahrt kommt danach in deinen Verlauf.</p>
+</div>
+<script src="funrun.js"></script>
+<script>
+(function () {
+'use strict';
+const $ = FR.$;
+document.title = FR.APP + ' – Freie Fahrt';
+const leave = () => FR.go('start.htm');
+$('back').addEventListener('click', leave);
+FR.onBack(() => { leave(); return true; });
+
+let w = {}, hold = 0, armTimer = 0, starting = 0;
+// state of the ride as the app reports it, and whether it is this free ride
+const rideState = () => w.funrun_state || 'stopped';
+const underway = () => rideState() !== 'stopped' && (+w.distance || 0) >= 0.1;
+const isFree = () => !w.funrun_route_file;
+
+function render() {
+  const st = rideState(), mine = st !== 'stopped' && isFree(), other = underway() && !isFree();
+  const n = (v, d) => (Number.isFinite(+v) ? FR.num(+v, d || 0) : '–');
+  const on = !!w.deviceConnected;
+  $('vW').innerHTML = (on ? n(w.watts) : '–') + '<small>W</small>';
+  $('vC').innerHTML = (on ? n(w.cadence) : '–') + '<small>/min</small>';
+  $('vS').innerHTML = (on ? n(w.speed, 1) : '–') + '<small>km/h</small>';
+  $('vH').innerHTML = (+w.heart > 0 ? FR.num(+w.heart) : '–') + '<small>/min</small>';
+  const secs = mine ? (+w.elapsed_h || 0) * 3600 + (+w.elapsed_m || 0) * 60 + (+w.elapsed_s || 0) : 0;
+  $('vT').textContent = FR.time(secs);
+  $('vD').innerHTML = FR.num(mine ? (+w.distance || 0) : 0, 1) + '<small>km</small>';
+  $('lvVal').textContent = on && Number.isFinite(+w.resistance) ? FR.num(+w.resistance) : '–';
+  $('lvHint').textContent = on ? 'leichter oder schwerer' : 'kein Rad verbunden';
+  const label = mine ? (st === 'paused' ? 'Pause' : 'Läuft') : 'Bereit';
+  $('state').textContent = label;
+  $('state').className = 'state' + (mine ? (st === 'paused' ? ' pause' : ' run') : '');
+  // before: "Losfahren"; during: pause / go on and end
+  $('btnGo').classList.toggle('hidden', mine);
+  $('ctrl').classList.toggle('hidden', !mine);
+  if (performance.now() > hold) $('btnPause').textContent = st === 'paused' ? 'Weiter' : 'Pause';
+  $('btnPause').classList.toggle('primary', st === 'paused');
+  const note = other ? 'Deine Fahrt auf der Strecke (' + FR.km((+w.distance || 0) * 1000) + ' km) wird beim Losfahren beendet und gespeichert.' : '';
+  $('goNote').textContent = note;
+  $('goNote').classList.toggle('hidden', !note);
+  $('btnGo').disabled = performance.now() < starting;
+}
+
+$('btnGo').addEventListener('click', async () => {
+  starting = performance.now() + 3000; render();
+  try { await (FR.qs.get('demo') ? Promise.resolve() : FR.freeRide()); } catch (e) { /* the values show it */ }
+  setTimeout(render, 3100);
+});
+$('btnPause').addEventListener('click', () => {
+  FR.send('pause');
+  hold = performance.now() + 2500;
+  $('btnPause').textContent = rideState() === 'paused' ? 'Pause' : 'Weiter';
+});
+function disarm() { clearTimeout(armTimer); $('btnStop').classList.remove('arm'); $('btnStop').textContent = 'Beenden'; }
+$('btnStop').addEventListener('click', () => {
+  if (!$('btnStop').classList.contains('arm')) {
+    $('btnStop').classList.add('arm'); $('btnStop').textContent = 'Wirklich beenden?';
+    clearTimeout(armTimer); armTimer = setTimeout(disarm, 4000);
+    return;
+  }
+  disarm();
+  // the app keeps the ride and shows its end screen
+  FR.send('stop');
+});
+$('lvMinus').addEventListener('click', () => FR.send('resistance_minus'));
+$('lvPlus').addEventListener('click', () => FR.send('resistance_plus'));
+
+FR.onWorkout(v => { w = v || {}; render(); });
+FR.onRefresh(render);
+render();
+})();
+</script>
+</body>
+</html>

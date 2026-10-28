@@ -253,6 +253,8 @@ class homeform : public QObject {
     const FunRunGhost &funrunGhostState() const { return funrunGhost; }
     // FunRun start page: loads the GPX route, starts the ride and asks the app for the map
     void funrunStartRoute(const QString &gpxFile);
+    // FunRun "Freie Fahrt": a ride without a route (a ride on a route going on is kept first); back to it when it runs
+    void funrunStartFree();
     void funrunRequestOpen(const QString &what) { emit funrunOpenRequested(what); }
     // FunRun map (pause and stop buttons): "running", "paused" or "stopped"
     QString funrunRideState() const {

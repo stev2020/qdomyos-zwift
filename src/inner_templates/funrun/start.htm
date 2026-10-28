@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
-<title>QuestRun – Fahren</title>
+<title>Kvestrun – Fahren</title>
 <!-- FunRun start page: chosen route with its profile and best time, wind and ghost rider, start -->
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Barlow:wght@400;500;600;700&amp;family=Barlow+Condensed:wght@600;700&amp;display=swap">
 <link rel="stylesheet" href="funrun.css">
@@ -37,7 +37,7 @@
 <body>
 <div class="wrap">
   <div class="top" style="align-items:center">
-    <div class="brand">Quest<span>Run</span></div>
+    <div class="brand">Kvest<span>run</span></div>
     <button class="status" id="status" aria-label="Dein Rad: Verbindung und Geräte"><i></i><span>Rad wird gesucht …</span><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="m9 6 6 6-6 6"/></svg></button>
   </div>
   <p class="muted" id="week" style="margin:-4px 0 14px">&nbsp;</p>
@@ -238,6 +238,10 @@ function renderGo() {
   const text = same ? (w.funrun_state === 'paused' ? 'Weiterfahren' : 'Zurück zur Fahrt') : 'Fahrt starten';
   if ($('goText').textContent !== text) $('goText').textContent = text;
   const note = underway && !same && route ? 'Deine laufende Fahrt (' + FR.km((+w.distance || 0) * 1000) + ' km) wird dabei beendet und gespeichert.' : '';
+  // a free ride going on: its page again
+  const free = underway && !w.funrun_route_file;
+  const freeText = free ? 'Zurück zur freien Fahrt' : 'Freie Fahrt ohne Strecke';
+  if ($('lnkFree').firstChild.textContent !== freeText) $('lnkFree').firstChild.textContent = freeText;
   if ($('goNote').textContent !== note) $('goNote').textContent = note;
   $('goNote').classList.toggle('hidden', !note);
 }
@@ -267,7 +271,7 @@ $('btnGo').addEventListener('click', async () => {
 });
 $('status').addEventListener('click', () => FR.go('rad.htm', 'from=start.htm'));
 $('lnkRoutes').addEventListener('click', () => FR.go('strecken.htm'));
-$('lnkFree').addEventListener('click', () => FR.open('tiles'));
+$('lnkFree').addEventListener('click', () => FR.go('frei.htm'));
 $('lnkProgram').addEventListener('click', () => FR.open('trainingprograms'));
 $('btnImport').addEventListener('click', () => FR.open('gpx'));
 $('lnkGoal').addEventListener('click', () => FR.go('einstellungen.htm'));
