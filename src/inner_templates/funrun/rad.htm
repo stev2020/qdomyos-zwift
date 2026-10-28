@@ -1,0 +1,239 @@
+<!doctype html>
+<html lang="de">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
+<title>QuestRun – Dein Rad</title>
+<!-- "Dein Rad": the bike or trainer and its connection, the devices nearby, which one to use, the heart rate belt.
+     The app finds every bike and trainer it knows on its own; here one can be chosen and kept for every start. -->
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Barlow:wght@400;500;600;700&amp;family=Barlow+Condensed:wght@600;700&amp;display=swap">
+<link rel="stylesheet" href="funrun.css">
+<style>
+.head { display: flex; align-items: center; gap: 12px; margin-bottom: 14px; }
+.head h1 { margin: 0; font-family: 'Barlow Condensed', Barlow, sans-serif; font-size: 32px; }
+.state { display: flex; align-items: flex-start; gap: 14px; }
+.state h2 { margin: 0 0 2px; font-size: 19px; }
+.dot { flex: none; width: 14px; height: 14px; margin-top: 6px; border-radius: 50%; background: var(--muted); }
+.dot.on { background: var(--good); box-shadow: 0 0 0 5px rgba(76, 209, 122, .18); }
+.dot.wait { background: var(--accent); animation: pulse 1.3s ease-in-out infinite; }
+.dot.off { background: var(--bad); }
+@keyframes pulse { 0%, 100% { box-shadow: 0 0 0 0 rgba(255, 122, 26, .5); } 50% { box-shadow: 0 0 0 8px rgba(255, 122, 26, 0); } }
+.live { margin-top: 14px; }
+.live .stat .v { font-size: 26px; }
+.sec h2 { margin: 0 0 8px 4px; font-size: 12px; letter-spacing: .12em; text-transform: uppercase; color: var(--muted); font-weight: 600; }
+.intro { margin: 12px 16px; font-size: 13px; color: var(--muted); }
+.dev { display: flex; align-items: center; justify-content: space-between; gap: 12px; min-height: 64px; padding: 8px 16px; border-top: 1px solid var(--line); }
+.dev .l { display: flex; flex-direction: column; gap: 3px; min-width: 0; }
+.dev .n { font-size: 16px; font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.dev .m { display: flex; align-items: center; gap: 8px; font-size: 12px; color: var(--muted); flex-wrap: wrap; }
+.dev .btn { min-height: 42px; font-size: 15px; padding: 0 14px; border-radius: 12px; flex: none; }
+.dev .btn.primary { color: var(--accent-dark); }
+.dev.cur .n::after { content: ''; display: inline-block; width: 8px; height: 8px; margin-left: 8px; border-radius: 50%; background: var(--good); vertical-align: middle; }
+.tag { display: inline-flex; padding: 1px 8px; border-radius: 999px; font-size: 12px; font-weight: 700; background: rgba(255, 122, 26, .15); color: var(--accent); }
+.tag.heart { background: rgba(255, 107, 90, .15); color: var(--bad); }
+.tag.plain { background: var(--bg); color: var(--soft); border: 1px solid var(--line2); }
+.sig { display: inline-flex; align-items: flex-end; gap: 2px; height: 12px; }
+.sig i { display: block; width: 4px; border-radius: 1px; background: var(--line2); }
+.sig i:nth-child(1) { height: 4px; } .sig i:nth-child(2) { height: 7px; } .sig i:nth-child(3) { height: 10px; } .sig i:nth-child(4) { height: 12px; }
+.sig i.on { background: var(--soft); }
+.more { padding: 0 16px 4px; }
+.tips { margin: 8px 0 4px; padding-left: 20px; color: var(--soft); font-size: 14px; }
+.tips li { margin: 8px 0; }
+.note { padding: 0 16px 12px; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div class="head">
+    <button class="iconbtn" id="back" aria-label="Zurück"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m15 6-6 6 6 6"/></svg></button>
+    <h1>Dein Rad</h1>
+  </div>
+
+  <div class="cols">
+    <div class="col">
+      <section class="card" id="stateCard" role="status">
+        <div class="state"><span class="dot" id="dot"></span>
+          <div style="min-width:0"><h2 id="stateHead">Einen Moment …</h2><div class="muted" id="stateText"></div></div></div>
+        <div class="stats live hidden" id="live">
+          <div class="stat"><span class="k">Leistung</span><span class="v cond" id="lvW">–</span></div>
+          <div class="stat"><span class="k">Trittfrequenz</span><span class="v cond" id="lvC">–</span></div>
+          <div class="stat"><span class="k">Tempo</span><span class="v cond" id="lvS">–</span></div>
+          <div class="stat"><span class="k">Stufe</span><span class="v cond" id="lvR">–</span></div>
+          <div class="stat"><span class="k">Puls</span><span class="v cond" id="lvH">–</span></div>
+        </div>
+        <button class="btn primary hidden" id="btnSearch" style="width:100%;margin-top:14px">Jetzt suchen</button>
+      </section>
+
+      <section class="sec">
+        <h2>Verbinden mit</h2>
+        <div class="card flat">
+          <p class="intro" id="chooseText">QuestRun verbindet sich von selbst mit dem ersten passenden Rad oder Trainer. Du kannst auch eins festlegen, das gilt dann bei jedem Start.</p>
+          <div class="dev" id="autoRow"><div class="l"><span class="n">Automatisch</span><span class="m">das erste passende Gerät</span></div>
+            <button class="btn" id="btnAuto">Wählen</button></div>
+          <div id="devList"></div>
+          <div class="more hidden" id="moreBox"><button class="link" id="btnMore" style="padding:0">Weitere Geräte in der Nähe<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="m6 9 6 6 6-6"/></svg></button></div>
+          <div id="otherList" class="hidden"></div>
+          <p class="note muted hidden" id="rideNote" style="font-size:13px;margin:0">Während einer Fahrt lässt sich das Gerät nicht wechseln.</p>
+          <button class="link" id="btnScan" style="border-top:1px solid var(--line)">Liste aktualisieren<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 11a8 8 0 1 0-2.3 5.7M20 5v6h-6"/></svg></button>
+        </div>
+      </section>
+    </div>
+
+    <div class="col">
+      <section class="sec">
+        <h2>Pulsgurt</h2>
+        <div class="card flat">
+          <div class="dev" style="border-top:0"><div class="l"><span class="n" id="beltName">Keiner</span><span class="m" id="beltState"></span></div>
+            <button class="btn hidden" id="btnBeltOff">Keinen</button></div>
+          <p class="intro" id="beltText" style="margin-top:0">Ein Pulsgurt, der in der Nähe gefunden wird, steht oben in der Liste: Tippe dort auf „Als Pulsgurt“.</p>
+        </div>
+      </section>
+
+      <section class="sec">
+        <h2>Rad nicht gefunden?</h2>
+        <div class="card">
+          <ol class="tips">
+            <li>Schalte das Rad ein oder tritt kurz in die Pedale, damit es aufwacht.</li>
+            <li>Das Rad darf mit keiner anderen App verbunden sein, etwa Zwift, Kinomap, der App des Herstellers oder einem anderen Handy.</li>
+            <li>Bluetooth muss an sein und QuestRun Geräte in der Nähe finden dürfen (Android-Einstellungen → Apps → QuestRun → Berechtigungen).</li>
+            <li>Leg das Tablet nah ans Rad und tippe auf „Jetzt suchen“.</li>
+          </ol>
+          <button class="link" id="lnkExpert" style="padding:0;border-top:1px solid var(--line);margin-top:8px">Alle Geräte-Einstellungen (Expertenmodus)<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="m9 6 6 6-6 6"/></svg></button>
+        </div>
+      </section>
+    </div>
+  </div>
+</div>
+<script src="funrun.js"></script>
+<script>
+(function () {
+'use strict';
+const $ = FR.$;
+// back to the page it was opened from
+const from = ['start.htm', 'einstellungen.htm', 'strecken.htm', 'verlauf.htm'].indexOf(FR.qs.get('from')) >= 0 ? FR.qs.get('from') : 'start.htm';
+const leave = () => FR.go(from);
+$('back').addEventListener('click', leave);
+FR.onBack(() => { leave(); return true; });
+$('lnkExpert').addEventListener('click', () => FR.open('settings'));
+
+let S = null, live = null, showOther = false, busy = '', confirmName = null, confirmTimer = null;
+const TYPE = { bike: 'Rad', treadmill: 'Laufband', elliptical: 'Crosstrainer', rower: 'Rudergerät', other: 'Gerät' };
+const sig = p => '<span class="sig" aria-label="Signal ' + p + ' %">' + [15, 40, 65, 85].map(t => '<i' + (p >= t ? ' class="on"' : '') + '></i>').join('') + '</span>';
+
+function renderState() {
+  if (!S) return;
+  const dot = $('dot');
+  let head, text, cls = '', search = false;
+  const kind = TYPE[S.type] || 'Rad';
+  if (busy) { head = busy; text = 'Das dauert ein paar Sekunden.'; cls = 'wait'; }
+  else if (S.bluetooth === false) { head = 'Bluetooth ist aus'; text = 'Schalte Bluetooth in den Android-Einstellungen ein.'; cls = 'off'; }
+  else if (S.connected) { head = (S.name || kind) + ' ist verbunden'; text = 'Tritt kurz in die Pedale: Die Werte unten sollten sich bewegen.'; cls = 'on'; }
+  else if (S.name) { head = 'Verbinde mit ' + S.name + ' …'; text = 'Das dauert meist nur ein paar Sekunden.'; cls = 'wait'; }
+  else if (S.searching) { head = 'Rad wird gesucht …'; text = S.remembered ? FR.APP + ' sucht ' + S.remembered + '.' : FR.APP + ' sucht nach allen Rädern und Trainern, die es kennt.'; cls = 'wait'; }
+  else if (S.stopped) { head = 'Suche angehalten'; text = 'Tippe auf „Jetzt suchen“.'; search = true; }
+  else if (S.nextSearch >= 0) { head = 'Kein Rad gefunden'; text = 'Nächste Suche in ' + S.nextSearch + ' s.'; search = true; }
+  else { head = 'Kein Rad verbunden'; text = 'Tippe auf „Jetzt suchen“.'; search = true; }
+  dot.className = 'dot ' + cls;
+  $('stateHead').textContent = head;
+  $('stateText').textContent = text;
+  $('btnSearch').classList.toggle('hidden', !search || !!busy || S.bluetooth === false);
+  $('live').classList.toggle('hidden', !S.connected || !!busy);
+}
+
+function devRow(d) {
+  const isCur = S.connected && d.name === S.name, kept = S.remembered && d.name === S.remembered, isBelt = S.belt && d.name === S.belt;
+  const tags = [];
+  if (d.kind === 'trainer') tags.push('<span class="tag">Trainer</span>');
+  if (d.kind === 'heart') tags.push('<span class="tag heart">Puls</span>');
+  if (d.missing) tags.push('<span>nicht in der Nähe</span>');
+  if (isCur) tags.push('<span>verbunden</span>');
+  else if (kept) tags.push('<span>festgelegt</span>');
+  if (isBelt) tags.push('<span>' + (S.beltConnected ? 'Pulsgurt, verbunden' : 'Pulsgurt') + '</span>');
+  let btn = '';
+  const heart = d.kind === 'heart';
+  if (heart && !isBelt) btn = '<button class="btn" data-belt="' + FR.esc(d.name) + '">Als Pulsgurt</button>';
+  else if (!heart && !kept && !isCur) btn = '<button class="btn' + (confirmName === d.name ? ' primary' : '') + '" data-use="' + FR.esc(d.name) + '"' + (S.underway ? ' disabled' : '') + '>' +
+    (confirmName === d.name ? 'Ja, wechseln' : 'Verbinden') + '</button>';
+  else if (!heart && kept && !isCur) btn = '<button class="btn" data-use="' + FR.esc(d.name) + '"' + (S.underway ? ' disabled' : '') + '>Neu verbinden</button>';
+  return '<div class="dev' + (isCur ? ' cur' : '') + '"><div class="l"><span class="n">' + FR.esc(d.name) + '</span><span class="m">' + sig(d.signal) + tags.join('') + '</span></div>' + btn + '</div>';
+}
+
+function renderList() {
+  if (!S) return;
+  const found = S.found || [];
+  // what is likely a bike, trainer or belt first; everything else nearby (phones, headphones ...) folded away. The
+  // connected and the chosen device are always shown.
+  const main = found.filter(d => d.kind || d.name === S.name || d.name === S.remembered || d.name === S.belt);
+  const other = found.filter(d => main.indexOf(d) < 0);
+  // the chosen device not seen right now
+  if (S.remembered && !found.some(d => d.name === S.remembered)) main.unshift({ name: S.remembered, signal: 0, kind: '', missing: true });
+  $('devList').innerHTML = main.map(devRow).join('') ||
+    '<p class="intro" style="margin-top:4px">' + (S.searching ? 'Noch nichts gefunden …' : 'Kein Rad oder Trainer in der Nähe gefunden.') + '</p>';
+  $('otherList').innerHTML = other.map(devRow).join('');
+  $('moreBox').classList.toggle('hidden', !other.length);
+  $('otherList').classList.toggle('hidden', !showOther || !other.length);
+  $('btnMore').firstChild.textContent = (showOther ? 'Weniger anzeigen' : 'Weitere Geräte in der Nähe (' + other.length + ')');
+  const auto = !S.remembered;
+  $('btnAuto').textContent = auto ? 'Gewählt' : 'Wählen';
+  $('btnAuto').disabled = auto || S.underway;
+  $('btnAuto').classList.toggle('primary', false);
+  $('rideNote').classList.toggle('hidden', !S.underway);
+  $('beltName').textContent = S.belt || 'Keiner';
+  $('beltState').textContent = S.belt ? (S.beltConnected ? 'verbunden' : 'nicht verbunden') : 'kein Pulsgurt festgelegt';
+  $('btnBeltOff').classList.toggle('hidden', !S.belt);
+  $('btnBeltOff').disabled = !!S.underway;
+}
+
+function render() { renderState(); renderList(); }
+
+async function act(what, name, label) {
+  confirmName = null;
+  busy = label || '';
+  render();
+  try { S = await FR.device(what, name === undefined ? undefined : { name }); } catch (e) { /* the next poll */ }
+  // the new connection takes a moment: the polls show it
+  setTimeout(() => { busy = ''; render(); }, what === 'scan' ? 1500 : 4000);
+  render();
+}
+
+document.addEventListener('click', e => {
+  const use = e.target.closest('[data-use]'), belt = e.target.closest('[data-belt]');
+  if (use && !use.disabled) {
+    const name = use.dataset.use;
+    // switching away from a connected device: one more tap
+    if (S.connected && S.name && S.name !== name && confirmName !== name) {
+      confirmName = name; renderList();
+      clearTimeout(confirmTimer); confirmTimer = setTimeout(() => { confirmName = null; renderList(); }, 5000);
+      return;
+    }
+    act('use', name, 'Verbinde mit ' + name + ' …');
+  } else if (belt) {
+    act('belt', belt.dataset.belt, 'Pulsgurt ' + belt.dataset.belt + ' wird verbunden …');
+  }
+});
+$('btnAuto').addEventListener('click', () => act('use', '', 'Suche das erste passende Gerät …'));
+$('btnBeltOff').addEventListener('click', () => act('belt', '', 'Pulsgurt wird entfernt …'));
+$('btnSearch').addEventListener('click', () => act('scan', undefined, 'Rad wird gesucht …'));
+$('btnScan').addEventListener('click', () => act('scan', undefined, ''));
+$('btnMore').addEventListener('click', () => { showOther = !showOther; renderList(); });
+
+FR.onWorkout(w => {
+  live = w;
+  const n = (v, d) => (Number.isFinite(+v) && w.deviceConnected ? FR.num(+v, d || 0) : '–');
+  $('lvW').innerHTML = n(w.watts) + '<small>W</small>';
+  $('lvC').innerHTML = n(w.cadence) + '<small>/min</small>';
+  $('lvS').innerHTML = n(w.speed, 1) + '<small>km/h</small>';
+  $('lvR').textContent = n(w.resistance);
+  $('lvH').innerHTML = (+w.heart > 0 ? FR.num(+w.heart) : '–') + '<small>/min</small>';
+});
+
+async function poll() {
+  try { S = await FR.device('state'); render(); } catch (e) { /* the app answers later */ }
+}
+poll();
+setInterval(() => { if (!document.hidden) poll(); }, 2000);
+FR.onRefresh(poll);
+})();
+</script>
+</body>
+</html>

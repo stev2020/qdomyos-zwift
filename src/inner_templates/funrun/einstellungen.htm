@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
-<title>FunRun – Einstellungen</title>
+<title>QuestRun – Einstellungen</title>
 <!-- FunRun settings: resistance on routes, wind, ghost rider, map, heart rate; all other settings stay in QZ -->
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Barlow:wght@400;500;600;700&amp;family=Barlow+Condensed:wght@600;700&amp;display=swap">
 <link rel="stylesheet" href="funrun.css">
@@ -43,6 +43,14 @@
   <h1 style="margin:0 0 14px;font-family:'Barlow Condensed',Barlow,sans-serif;font-size:32px">Einstellungen</h1>
   <div class="cols">
     <div class="col">
+      <section class="sec">
+        <h2>Gerät</h2>
+        <div class="card flat">
+          <button class="link" id="lnkRad"><span style="display:flex;flex-direction:column;gap:2px;min-width:0"><span>Dein Rad</span>
+            <span class="m" id="radState" style="font-size:13px;color:var(--muted)">Verbindung, andere Geräte, Pulsgurt</span></span><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="m9 6 6 6-6 6"/></svg></button>
+        </div>
+      </section>
+
       <section class="sec">
         <h2>Widerstand auf Strecken</h2>
         <div class="card">
@@ -138,15 +146,15 @@
       <section class="sec">
         <h2>Expertenmodus</h2>
         <div class="card flat">
-          <button class="link" id="lnkExpert" aria-expanded="false" aria-controls="expertBox">Technik unter FunRun<svg id="expertChev" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true" style="transition:transform .15s"><path d="m9 6 6 6-6 6"/></svg></button>
+          <button class="link" id="lnkExpert" aria-expanded="false" aria-controls="expertBox">Technik unter QuestRun<svg id="expertChev" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true" style="transition:transform .15s"><path d="m9 6 6 6-6 6"/></svg></button>
           <div class="hidden" id="expertBox">
-            <p class="hint" style="margin:10px 16px 12px">Hier liegt die Technik, auf der FunRun aufbaut: alle Einstellungen für Räder, Rollen und Sensoren, die Kachelansicht und das Menü. Für den Alltag brauchst du sie nicht.</p>
-            <div class="line" style="padding:0 16px;border-top:1px solid var(--line)"><div class="l"><span class="n">Mit FunRun starten</span><span class="m">sonst mit der Kachelansicht</span></div>
-              <button class="switch" id="startPage" aria-label="Mit FunRun starten an oder aus"><span></span></button></div>
+            <p class="hint" style="margin:10px 16px 12px">Hier liegt die Technik, auf der QuestRun aufbaut: alle Einstellungen für Räder, Rollen und Sensoren, die Kachelansicht und das Menü. Für den Alltag brauchst du sie nicht.</p>
+            <div class="line" style="padding:0 16px;border-top:1px solid var(--line)"><div class="l"><span class="n">Mit QuestRun starten</span><span class="m">sonst mit der Kachelansicht</span></div>
+              <button class="switch" id="startPage" aria-label="Mit QuestRun starten an oder aus"><span></span></button></div>
             <button class="link" id="lnkSettings" style="border-top:1px solid var(--line)">Alle Einstellungen<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="m9 6 6 6-6 6"/></svg></button>
             <button class="link" id="lnkTiles">Kachelansicht (Fahrt ohne Karte)<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="m9 6 6 6-6 6"/></svg></button>
             <button class="link" id="lnkMenu">Menü<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="m9 6 6 6-6 6"/></svg></button>
-            <p class="hint" style="margin:0;padding:12px 16px 14px;border-top:1px solid var(--line)">FunRun baut auf QZ (qdomyos-zwift) von Roberto Viola auf und ist wie QZ freie Software unter der GPL-3.0.
+            <p class="hint" style="margin:0;padding:12px 16px 14px;border-top:1px solid var(--line)">QuestRun baut auf QZ (qdomyos-zwift) von Roberto Viola auf und ist wie QZ freie Software unter der GPL-3.0.
               <a href="#" id="lnkSource" style="color:var(--accent)">Quellcode ansehen</a></p>
           </div>
         </div>
@@ -251,7 +259,8 @@ $('follow').addEventListener('input', e => {
   if (Math.abs(+mapStore.get('zoom', old) - old) < 0.03) mapStore.set('zoom', t); // the follower view moves along
   render();
 });
-$('btnBelt').addEventListener('click', () => FR.open('settings'));
+$('btnBelt').addEventListener('click', () => FR.go('rad.htm', 'from=einstellungen.htm'));
+$('lnkRad').addEventListener('click', () => FR.go('rad.htm', 'from=einstellungen.htm'));
 $('startPage').addEventListener('click', () => { S.startPage = !S.startPage; FR.setSettings({ funrun_start_page: S.startPage }); render(); });
 $('adaptive').addEventListener('click', () => { S.adaptive = !S.adaptive; FR.setSettings({ funrun_speed_adaptive: S.adaptive }); render(); });
 $('lnkSettings').addEventListener('click', () => FR.open('settings'));
@@ -265,7 +274,7 @@ $('lnkExpert').addEventListener('click', () => {
 $('lnkSource').addEventListener('click', e => { e.preventDefault(); FR.openUrl('https://github.com/stev2020/qdomyos-zwift'); });
 
 // ------------------------------------------------------------------ move between the QZ app and the FunRun app
-// The QZ app packs everything into Download/FunRun-Umzug.zip; the FunRun app (its own id) takes that file with the
+// The QZ app packs everything into Download/QuestRun-Umzug.zip; the app with its own id (QuestRun) takes that file with the
 // file picker, checks it and unpacks it at its next start (funrunmove.cpp).
 const MOVE = { qz: null, picked: null, busy: false };
 const plural = (n, one, many) => FR.num(n) + ' ' + (n === 1 ? one : many);
@@ -283,7 +292,7 @@ function renderMove() {
   if (MOVE.qz) {
     $('moveTitle').textContent = 'Umzug in die neue App';
     $('moveText').textContent = 'Packt deine Fahrten, Strecken, Workouts und Einstellungen in eine Datei im Download-Ordner. ' +
-      'Die neue FunRun-App liest sie ein.';
+      'Die neue App ' + FR.APP + ' liest sie ein.';
     $('btnMove').textContent = MOVE.busy ? 'Wird gepackt …' : 'Umzugsdatei erstellen';
     $('btnMoveCancel').classList.add('hidden');
   } else if (MOVE.picked) {
@@ -340,7 +349,11 @@ FR.move('info').then(c => {
   MOVE.qz = !!(c && c.qz); renderMove();
   if (FR.qs.get('umzug')) $('moveSec').scrollIntoView({ block: 'start' });
 }).catch(() => { /* an older app */ });
-FR.onWorkout(w => { if (w.autoresistance != null && bool(w.autoresistance) !== S.auto) { S.auto = bool(w.autoresistance); render(); } });
+FR.onWorkout(w => {
+  if (w.autoresistance != null && bool(w.autoresistance) !== S.auto) { S.auto = bool(w.autoresistance); render(); }
+  const rad = w.deviceConnected && w.deviceName && w.deviceName !== 'N/A' ? w.deviceName + ' verbunden' : 'kein Rad verbunden';
+  if ($('radState').textContent !== rad) $('radState').textContent = rad;
+});
 
 async function load() {
   try {

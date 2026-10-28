@@ -288,14 +288,15 @@ jobs:
             curl -fsSL https://services.gradle.org/distributions/gradle-8.13-bin.zip -o /tmp/gradle-8.13-bin.zip
             unzip -q /tmp/gradle-8.13-bin.zip -d ${{ github.workspace }}
           fi
-          # the QZ app's id (the installed app updates over it; it packs the moving file for FunRun)
+          # the QZ app's id (the installed app updates over it; it packs the moving file for QuestRun)
           "$GRADLE_DIST_DIR/bin/gradle" -g "$GRADLE_USER_HOME" --no-daemon -p ${{ github.workspace }}/output/android \
             -PfunrunAppLabel="FunRun alt" assembleDebug bundleDebug
           cp "${{ github.workspace }}/output/android/build/outputs/apk/debug/android-debug.apk" "${{ github.workspace }}/unsigned-qz.apk"
-          # FunRun as an app of its own: the same build with its own id and name, installable next to QZ
+          # FunRun as an app of its own (working name QuestRun): the same build with its own id and name, installable
+          # next to QZ
           "$GRADLE_DIST_DIR/bin/gradle" -g "$GRADLE_USER_HOME" --no-daemon -p ${{ github.workspace }}/output/android \
-            -PfunrunAppId=io.github.stev2020.funrun -PfunrunAppLabel=FunRun assembleDebug
-          cp "${{ github.workspace }}/output/android/build/outputs/apk/debug/android-debug.apk" "${{ github.workspace }}/unsigned-funrun.apk"
+            -PfunrunAppId=io.github.stev2020.questrun -PfunrunAppLabel=QuestRun assembleDebug
+          cp "${{ github.workspace }}/output/android/build/outputs/apk/debug/android-debug.apk" "${{ github.workspace }}/unsigned-questrun.apk"
 
       - name: Slim APKs (arm64-v8a only, stripped) and sign with own key
         env:
@@ -326,12 +327,12 @@ jobs:
             ls -la "$2"
           }
           slim_and_sign "${{ github.workspace }}/unsigned-qz.apk" "${{ github.workspace }}/qz-skandika.apk"
-          slim_and_sign "${{ github.workspace }}/unsigned-funrun.apk" "${{ github.workspace }}/funrun.apk"
+          slim_and_sign "${{ github.workspace }}/unsigned-questrun.apk" "${{ github.workspace }}/questrun.apk"
           # which app is which
           AAPT="$BT/aapt2"
           [ -x "$AAPT" ] || AAPT="$BT/aapt"
           if [ -x "$AAPT" ]; then
-            for apk in qz-skandika.apk funrun.apk; do
+            for apk in qz-skandika.apk questrun.apk; do
               "$AAPT" dump badging "${{ github.workspace }}/$apk" 2>/dev/null | grep -E "^package:|^application-label:" || true
             done
           fi
@@ -346,15 +347,15 @@ jobs:
           name: qz-android-eigener-build
           path: |
             ${{ github.workspace }}/qz-skandika.apk
-            ${{ github.workspace }}/funrun.apk
+            ${{ github.workspace }}/questrun.apk
 
       - name: Publish APK as release "eigener-build"
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           gh release delete eigener-build --yes --cleanup-tag -R "${{ github.repository }}" || true
-          gh release create eigener-build "${{ github.workspace }}/funrun.apk" "${{ github.workspace }}/qz-skandika.apk" \
+          gh release create eigener-build "${{ github.workspace }}/questrun.apk" "${{ github.workspace }}/qz-skandika.apk" \
             -R "${{ github.repository }}" \
             --target "${{ github.sha }}" \
-            --title "FunRun eigener Build" \
-            --notes "Built from branch ${{ github.ref_name }} at ${{ github.sha }}. funrun.apk: FunRun as an app of its own (io.github.stev2020.funrun). qz-skandika.apk: the same build with the QZ app's id (FunRun alt), for the move. No trial limit (built without #define LICENSE)."
+            --title "QuestRun eigener Build" \
+            --notes "Built from branch ${{ github.ref_name }} at ${{ github.sha }}. questrun.apk: FunRun as an app of its own, working name QuestRun (io.github.stev2020.questrun). qz-skandika.apk: the same build with the QZ app's id (FunRun alt), for the move. No trial limit (built without #define LICENSE)."

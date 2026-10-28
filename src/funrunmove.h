@@ -5,11 +5,12 @@
 #include <QString>
 
 /**
- * FunRun as an app of its own (its own Android id, io.github.stev2020.funrun) next to the QZ app it grew out of:
- * - it keeps its files in its own folder (Documents/FunRun on Android 14+, QZ: Documents/QZ) and runs its web server
+ * FunRun as an app of its own (working name QuestRun, Android id io.github.stev2020.questrun) next to the QZ app it
+ * grew out of:
+ * - it keeps its files in its own folder (Documents/QuestRun on Android 14+, QZ: Documents/QZ) and runs its web server
  *   on its own port, so both apps can be installed, and even run, at the same time;
  * - moving: the QZ app packs rides, routes, workouts, training programs, profiles, its settings and the storage of the
- *   FunRun pages into one file (Download/FunRun-Umzug.zip). The FunRun app takes that file (picked by the user) and
+ *   FunRun pages into one file (Download/QuestRun-Umzug.zip). The new app takes that file (picked by the user) and
  *   unpacks it at its next start, before anything reads the settings.
  */
 namespace FunRunMove {
@@ -18,7 +19,7 @@ namespace FunRunMove {
 QString packageName();
 // the QZ app (its id, its folder, its port); false for the FunRun app with its own id
 bool isQzApp();
-// name of the app's folder in Documents (Android 14+): "QZ" or "FunRun"
+// name of the app's folder in Documents (Android 14+): "QZ" or "QuestRun"
 QString documentsFolder();
 // folder, private to the app, where the file picker puts a moving file and where the move keeps its notes
 QString incomingFolder();

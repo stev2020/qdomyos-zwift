@@ -4101,6 +4101,16 @@ void bluetooth::selectGymModeDevice(const QString &deviceName) {
     restart();
 }
 
+void bluetooth::useDevice(const QString &deviceName) {
+    const QString name = deviceName.trimmed();
+    filterDevice = name.isEmpty() ? QStringLiteral("Disabled") : name;
+    gymModeSessionDevice = name;
+    onlyDiscover = false;
+    forceHeartBeltOffForTimeout = false;
+    discoveryFinishedHandled = false;
+    restart();
+}
+
 void bluetooth::restart() {
 
     QSettings settings;

@@ -188,9 +188,9 @@ android {
 
     defaultConfig {
         // FunRun as an app of its own next to the QZ app: the same build with another id and name
-        // (-PfunrunAppId=io.github.stev2020.funrun -PfunrunAppLabel=FunRun); the code keeps its namespace
+        // (-PfunrunAppId=io.github.stev2020.questrun -PfunrunAppLabel=QuestRun); the code keeps its namespace
         applicationId = project.findProperty('funrunAppId') ?: "org.cagnulen.qdomyoszwift"
-        manifestPlaceholders = [appLabel: project.findProperty('funrunAppLabel') ?: "FunRun"]
+        manifestPlaceholders = [appLabel: project.findProperty('funrunAppLabel') ?: "QuestRun"]
         resConfig "en"
         minSdk 21
         targetSdk 36

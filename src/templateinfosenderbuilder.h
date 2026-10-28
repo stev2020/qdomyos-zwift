@@ -130,6 +130,8 @@ class TemplateInfoSenderBuilder : public QObject {
     QNetworkAccessManager *funrunNet = nullptr;
     // FunRun as an app of its own: the move from the QZ app (funrunmove.h)
     void onFunRunMove(const QJsonValue &msgContent, TemplateInfoSender *tempSender);
+    // FunRun "Dein Rad": the bike or trainer, the devices nearby, choosing one
+    void onFunRunDevice(const QJsonValue &msgContent, TemplateInfoSender *tempSender);
     void onGetLatLon(TemplateInfoSender *tempSender);
     void onNextInclination300Meters(TemplateInfoSender *tempSender);
     void onGetGPXBase64(TemplateInfoSender *tempSender);

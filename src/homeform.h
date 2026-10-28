@@ -19,6 +19,7 @@
 #include "trainprogram.h"
 #include "workoutmodel.h"
 #include "fitbackupwriter.h"
+#include <QJsonObject>
 #include <QChart>
 #include <QColor>
 #include <QGraphicsScene>
@@ -262,6 +263,15 @@ class homeform : public QObject {
     Q_INVOKABLE QString bluetoothSearchStatus();
     // Tap on the Bluetooth icon: search right away, or when Android allows it again (with a toast saying when)
     Q_INVOKABLE void bluetoothSearchNow();
+    // FunRun "Dein Rad": the bike or trainer and its state, the devices found nearby (strongest first, with what
+    // they say they are), the remembered device and the heart rate belt
+    QJsonObject funrunDevices();
+    // connect to this device now and at every start (empty: the first supported device found)
+    void funrunUseDevice(const QString &name);
+    // the heart rate belt (empty: none); the devices are found again, so it connects
+    void funrunUseHeartBelt(const QString &name);
+    // a new search for the devices nearby (a connected device stays connected)
+    void funrunSearchDevices();
     Q_INVOKABLE void save_screenshot() {
 
         QString path = getWritableAppDir();

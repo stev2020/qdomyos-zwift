@@ -252,7 +252,7 @@ Item {
             Text {
                 id: backLabel
                 anchors.centerIn: parent
-                text: "‹ FunRun"
+                text: "‹ Zurück"
                 color: "#f3f5f7"
                 font.pixelSize: 16
                 font.bold: true

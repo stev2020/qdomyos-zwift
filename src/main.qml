@@ -1675,7 +1675,7 @@ ApplicationWindow {
                 }
 
             ItemDelegate {
-                text: qsTr("FunRun Start")
+                text: qsTr("QuestRun Start")
                 width: parent.width
                 onClicked: {
                     stackView.push("FunRunPage.qml", { "page": "start.htm", "rideId": "", "from": "" })

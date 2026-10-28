@@ -351,10 +351,10 @@ public class CustomQtActivity extends QtActivity {
             || requestCode == DOCUMENT_PICKER_MOVE_REQUEST_CODE;
     }
 
-    // Folder of the app's files on Android 14+ (Documents/QZ, Documents/FunRun for the FunRun app with
-    // its own id) as a document of the external storage provider, so the folder picker opens there.
+    // Folder of the app's files on Android 14+ (Documents/QZ, Documents/QuestRun for the app with its
+    // own id) as a document of the external storage provider, so the folder picker opens there.
     private String qzDocumentsTreeId() {
-        return "org.cagnulen.qdomyoszwift".equals(getPackageName()) ? "primary:Documents/QZ" : "primary:Documents/FunRun";
+        return "org.cagnulen.qdomyoszwift".equals(getPackageName()) ? "primary:Documents/QZ" : "primary:Documents/QuestRun";
     }
 
     // Opens the system folder picker to import every .fit file of a folder. After the app is

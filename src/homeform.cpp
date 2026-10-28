@@ -38,6 +38,7 @@
 #include <QGeoCoordinate>
 #include <QHttpMultiPart>
 #include <QImageWriter>
+#include <QBluetoothLocalDevice>
 #include <QJsonArray>
 #include <QJsonDocument>
 #include <QJsonObject>
@@ -1803,7 +1804,7 @@ QString homeform::getWritableAppDir() {
     QSettings settings;
     bool android_documents_folder = settings.value(QZSettings::android_documents_folder, QZSettings::default_android_documents_folder).toBool();
     if (android_documents_folder || QOperatingSystemVersion::current() >= QOperatingSystemVersion(QOperatingSystemVersion::Android, 14)) {
-        // QZ: Documents/QZ, the FunRun app with its own id: Documents/FunRun (files of another app are hidden there)
+        // QZ: Documents/QZ, the app with its own id (QuestRun): Documents/QuestRun (files of another app are hidden there)
         path = QStandardPaths::writableLocation(QStandardPaths::DocumentsLocation) + QStringLiteral("/") +
                FunRunMove::documentsFolder() + QStringLiteral("/");
         QDir().mkdir(path);
@@ -2011,6 +2012,126 @@ void homeform::bluetoothSearchNow() {
     const int waitSec = bluetoothManager->searchNow();
     if (waitSec > 0)
         setToastRequested(tr("Android allows 5 Bluetooth searches in 30 s, the next one starts in %1 s").arg(waitSec));
+}
+
+QJsonObject homeform::funrunDevices() {
+    QJsonObject o;
+    QSettings settings;
+    bluetoothdevice *dev = bluetoothManager ? bluetoothManager->device() : nullptr;
+    o[QStringLiteral("connected")] = dev && dev->connected();
+    o[QStringLiteral("name")] = dev ? dev->bluetoothDevice.name() : QString();
+    QString type;
+    if (dev) {
+        switch (dev->deviceType()) {
+        case BIKE:
+            type = QStringLiteral("bike");
+            break;
+        case TREADMILL:
+            type = QStringLiteral("treadmill");
+            break;
+        case ELLIPTICAL:
+            type = QStringLiteral("elliptical");
+            break;
+        case ROWING:
+            type = QStringLiteral("rower");
+            break;
+        default:
+            type = QStringLiteral("other");
+        }
+    }
+    o[QStringLiteral("type")] = type;
+    // a ride is going on: a new connection would cut it
+    o[QStringLiteral("underway")] = !stopped && dev && dev->odometer() >= 0.1;
+    o[QStringLiteral("searching")] = bluetoothManager && bluetoothManager->isSearching();
+    o[QStringLiteral("stopped")] = bluetoothManager && bluetoothManager->searchStopped();
+    const qint64 next = bluetoothManager ? bluetoothManager->nextSearchMs() : 0;
+    o[QStringLiteral("nextSearch")] =
+        next ? int(qMax<qint64>(0, next - QDateTime::currentMSecsSinceEpoch()) / 1000) : -1;
+    const QString filter = settings.value(QZSettings::filter_device, QZSettings::default_filter_device).toString();
+    o[QStringLiteral("remembered")] = filter.startsWith(QStringLiteral("Disabled")) ? QString() : filter;
+    const QString belt =
+        settings.value(QZSettings::heart_rate_belt_name, QZSettings::default_heart_rate_belt_name).toString();
+    o[QStringLiteral("belt")] = belt.startsWith(QStringLiteral("Disabled")) ? QString() : belt;
+    bluetoothdevice *heart = bluetoothManager ? bluetoothManager->heartRateDevice() : nullptr;
+    o[QStringLiteral("beltConnected")] = heart && heart->connected();
+    o[QStringLiteral("bluetooth")] = QBluetoothLocalDevice().hostMode() != QBluetoothLocalDevice::HostPoweredOff;
+
+    // the named devices nearby, strongest first, each name once; what they say they are: a trainer or bike (fitness
+    // machine, cycling power, speed and cadence, running speed) or a heart rate sensor
+    QJsonArray found;
+    if (bluetoothManager) {
+        QList<QBluetoothDeviceInfo> sorted;
+        for (const QBluetoothDeviceInfo &b : qAsConst(bluetoothManager->devices)) {
+            if (!b.name().trimmed().isEmpty()) {
+                sorted.append(b);
+            }
+        }
+        std::sort(sorted.begin(), sorted.end(),
+                  [](const QBluetoothDeviceInfo &a, const QBluetoothDeviceInfo &b) { return a.rssi() > b.rssi(); });
+        QStringList seen;
+        for (const QBluetoothDeviceInfo &b : qAsConst(sorted)) {
+            const QString name = b.name().trimmed();
+            if (seen.contains(name)) {
+                continue;
+            }
+            seen.append(name);
+            QString kind;
+            const QList<QBluetoothUuid> services = b.serviceUuids();
+            for (const QBluetoothUuid &u : services) {
+                bool ok = false;
+                const quint16 id = u.toUInt16(&ok);
+                if (!ok) {
+                    continue;
+                }
+                if (id == 0x1826 || id == 0x1818 || id == 0x1816 || id == 0x1814) {
+                    kind = QStringLiteral("trainer");
+                } else if (id == 0x180D && kind.isEmpty()) {
+                    kind = QStringLiteral("heart");
+                }
+            }
+            QJsonObject d;
+            d[QStringLiteral("name")] = name;
+            // -40 dBm = 100 %, -100 dBm = 0 %
+            d[QStringLiteral("signal")] = b.rssi() ? qBound(0, (b.rssi() + 100) * 100 / 60, 100) : 0;
+            d[QStringLiteral("kind")] = kind;
+            found.append(d);
+        }
+    }
+    o[QStringLiteral("found")] = found;
+    return o;
+}
+
+void homeform::funrunUseDevice(const QString &name) {
+    if (!bluetoothManager) {
+        return;
+    }
+    QSettings settings;
+    settings.setValue(QZSettings::filter_device, name.trimmed().isEmpty() ? QZSettings::default_filter_device : name.trimmed());
+    bluetoothManager->useDevice(name);
+}
+
+void homeform::funrunUseHeartBelt(const QString &name) {
+    if (!bluetoothManager) {
+        return;
+    }
+    QSettings settings;
+    settings.setValue(QZSettings::heart_rate_belt_name,
+                      name.trimmed().isEmpty() ? QZSettings::default_heart_rate_belt_name : name.trimmed());
+    const QString filter = settings.value(QZSettings::filter_device, QZSettings::default_filter_device).toString();
+    bluetoothManager->useDevice(filter.startsWith(QStringLiteral("Disabled")) ? QString() : filter);
+}
+
+void homeform::funrunSearchDevices() {
+    if (!bluetoothManager) {
+        return;
+    }
+    if (bluetoothManager->device()) {
+        // look around without letting the connected device go
+        bluetoothManager->onlyDiscover = true;
+        bluetoothManager->restart();
+    } else {
+        bluetoothSearchNow();
+    }
 }
 
 void homeform::selectGymModeDevice(const QString &deviceName) {

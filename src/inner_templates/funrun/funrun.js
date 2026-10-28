@@ -3,6 +3,8 @@
 (function () {
   'use strict';
   const FR = (window.FR = {});
+  // the app's name as the user sees it (not final yet: the pages take it from here)
+  FR.APP = 'QuestRun';
   FR.qs = new URLSearchParams(location.search);
   FR.$ = id => document.getElementById(id);
 
@@ -216,6 +218,10 @@
   // 'inspect' / 'schedule' ({ file }), 'pages', 'result'
   FR.move = (what, extra, timeout) => (demo ? Promise.resolve(Object.assign({ do: what }, FR.demoMove && FR.demoMove(what, extra)))
     : request('funrun_move', Object.assign({ do: what }, extra || {}), c => c && c.do === what, timeout));
+  // "Dein Rad": the bike or trainer, the devices nearby, choosing one (homeform::funrunDevices). what: 'state', 'scan',
+  // 'use' ({ name }, empty: the first supported device), 'belt' ({ name }, empty: none)
+  FR.device = (what, extra) => (demo ? Promise.resolve(Object.assign({ do: what }, FR.demoDevice && FR.demoDevice(what, extra)))
+    : request('funrun_device', Object.assign({ do: what }, extra || {}), c => c && c.do === what));
   // the storage of these pages as one JSON text (for the move)
   FR.pagesStorage = () => {
     const o = {};

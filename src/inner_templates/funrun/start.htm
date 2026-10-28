@@ -3,14 +3,15 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
-<title>FunRun – Fahren</title>
+<title>QuestRun – Fahren</title>
 <!-- FunRun start page: chosen route with its profile and best time, wind and ghost rider, start -->
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Barlow:wght@400;500;600;700&amp;family=Barlow+Condensed:wght@600;700&amp;display=swap">
 <link rel="stylesheet" href="funrun.css">
 <style>
 .brand { font-family: "Barlow Condensed", Barlow, Roboto, Arial, sans-serif; font-weight: 700; font-size: 34px; letter-spacing: .02em; line-height: 1; }
 .brand span { color: var(--accent); }
-.status { display: inline-flex; align-items: center; gap: 8px; padding: 7px 12px; border-radius: 999px; background: var(--panel); border: 1px solid var(--line); font-size: 13px; color: var(--soft); max-width: 60%; }
+.status { appearance: none; -webkit-appearance: none; font: inherit; cursor: pointer; display: inline-flex; align-items: center; gap: 8px; padding: 7px 10px 7px 12px; border-radius: 999px; background: var(--panel); border: 1px solid var(--line); font-size: 13px; color: var(--soft); max-width: 60%; min-height: 36px; }
+.status svg { width: 16px; height: 16px; flex: none; color: var(--muted); }
 .status i { width: 8px; height: 8px; border-radius: 50%; background: #5b6673; flex: none; }
 .status.on i { background: var(--good); }
 .status span { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
@@ -36,8 +37,8 @@
 <body>
 <div class="wrap">
   <div class="top" style="align-items:center">
-    <div class="brand">Fun<span>Run</span></div>
-    <div class="status" id="status"><i></i><span>Rad wird gesucht …</span></div>
+    <div class="brand">Quest<span>Run</span></div>
+    <button class="status" id="status" aria-label="Dein Rad: Verbindung und Geräte"><i></i><span>Rad wird gesucht …</span><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="m9 6 6 6-6 6"/></svg></button>
   </div>
   <p class="muted" id="week" style="margin:-4px 0 14px">&nbsp;</p>
 
@@ -214,7 +215,7 @@ function renderWeek() {
   const week = rides.filter(r => FR.date(r.start) >= from);
   const km = week.reduce((s, r) => s + (r.distance || 0), 0), up = week.reduce((s, r) => s + (r.ascent || 0), 0);
   $('week').textContent = week.length ? 'Diese Woche: ' + (week.length === 1 ? '1 Fahrt' : week.length + ' Fahrten') + ' · ' + FR.km(km) + ' km · ' + FR.num(up) + ' Hm'
-    : rides.length ? 'Diese Woche noch keine Fahrt' : 'Willkommen bei FunRun';
+    : rides.length ? 'Diese Woche noch keine Fahrt' : 'Willkommen bei ' + FR.APP;
   const last = rides[0];
   $('lastCard').classList.toggle('hidden', !last);
   if (last) {
@@ -264,6 +265,7 @@ $('btnGo').addEventListener('click', async () => {
   try { await FR.start(route.file); } catch (e) { /* the app shows the map anyway */ }
   setTimeout(() => { $('btnGo').disabled = false; }, 3000);
 });
+$('status').addEventListener('click', () => FR.go('rad.htm', 'from=start.htm'));
 $('lnkRoutes').addEventListener('click', () => FR.go('strecken.htm'));
 $('lnkFree').addEventListener('click', () => FR.open('tiles'));
 $('lnkProgram').addEventListener('click', () => FR.open('trainingprograms'));

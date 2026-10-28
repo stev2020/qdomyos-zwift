@@ -1718,6 +1718,30 @@ struct FunRunFetchState {
 };
 } // namespace
 
+// FunRun "Dein Rad". content: { do: "state" | "scan" | "use" (name; empty: the first supported device) | "belt"
+// (name; empty: none) }. Reply R_funrun_device: the state after it (homeform::funrunDevices) and { do }.
+void TemplateInfoSenderBuilder::onFunRunDevice(const QJsonValue &msgContent, TemplateInfoSender *tempSender) {
+    const QJsonObject c = msgContent.toObject();
+    const QString what = c.value(QStringLiteral("do")).toString();
+    const QString name = c.value(QStringLiteral("name")).toString();
+    homeform *home = homeform::singleton();
+    if (home) {
+        if (what == QStringLiteral("scan")) {
+            home->funrunSearchDevices();
+        } else if (what == QStringLiteral("use")) {
+            home->funrunUseDevice(name);
+        } else if (what == QStringLiteral("belt")) {
+            home->funrunUseHeartBelt(name);
+        }
+    }
+    QJsonObject content = home ? home->funrunDevices() : QJsonObject();
+    content[QStringLiteral("do")] = what;
+    QJsonObject main;
+    main[QStringLiteral("msg")] = QStringLiteral("R_funrun_device");
+    main[QStringLiteral("content")] = content;
+    tempSender->send(QJsonDocument(main).toJson(QJsonDocument::Compact));
+}
+
 // FunRun as an app of its own: the move from the QZ app (funrunmove.h).
 // content: { do: "info" | "pack" (pages: the pages' storage) | "inspect" (file) | "schedule" (file) | "pages" |
 // "result" }. Reply R_funrun_move: { do, ... }. "inspect" and "schedule" take only the file the picker put into the
@@ -2048,6 +2072,9 @@ void TemplateInfoSenderBuilder::onDataReceived(const QByteArray &data) {
                     return;
                 } else if (msg == QStringLiteral("funrun_move")) {
                     onFunRunMove(jsonObject[QStringLiteral("content")], sender);
+                    return;
+                } else if (msg == QStringLiteral("funrun_device")) {
+                    onFunRunDevice(jsonObject[QStringLiteral("content")], sender);
                     return;
                 }
                 if (msg == QStringLiteral("start")) {

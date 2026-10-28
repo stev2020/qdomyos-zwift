@@ -461,6 +461,9 @@ class bluetooth : public QObject, public SignalHandler {
   public slots:
     void restart();
     void selectGymModeDevice(const QString &deviceName);
+    // FunRun "Dein Rad": connect to this device from now on (empty: the first supported device found); the devices
+    // connected so far are let go and found again
+    void useDevice(const QString &deviceName);
     void debug(const QString &string);
     void heartRate(uint8_t heart);
     void deviceDiscovered(const QBluetoothDeviceInfo &device);

@@ -25,7 +25,7 @@ namespace {
 
 const QString qzPackage = QStringLiteral("org.cagnulen.qdomyoszwift");
 // the moving file and what it holds
-const QString moveFileName = QStringLiteral("FunRun-Umzug.zip");
+const QString moveFileName = QStringLiteral("QuestRun-Umzug.zip");
 const QString moveFormat = QStringLiteral("funrun-umzug");
 const QString manifestEntry = QStringLiteral("funrun-umzug.json");
 const QString settingsEntry = QStringLiteral("einstellungen.ini");
@@ -161,7 +161,7 @@ QString FunRunMove::packageName() {
 
 bool FunRunMove::isQzApp() { return packageName() == qzPackage; }
 
-QString FunRunMove::documentsFolder() { return isQzApp() ? QStringLiteral("QZ") : QStringLiteral("FunRun"); }
+QString FunRunMove::documentsFolder() { return isQzApp() ? QStringLiteral("QZ") : QStringLiteral("QuestRun"); }
 
 QString FunRunMove::incomingFolder() {
     const QString dir = QStandardPaths::writableLocation(QStandardPaths::AppDataLocation) + QStringLiteral("/umzug/");
@@ -272,7 +272,7 @@ QJsonObject FunRunMove::inspect(const QString &file) {
         return failed(QStringLiteral("Die Datei lässt sich nicht lesen."));
     const QJsonObject m = manifestOf(zip);
     if (m.isEmpty())
-        return failed(QStringLiteral("Das ist keine Umzugsdatei von FunRun."));
+        return failed(QStringLiteral("Das ist keine Umzugsdatei."));
     QJsonObject result;
     result[QStringLiteral("ok")] = true;
     result[QStringLiteral("file")] = file;
@@ -303,7 +303,7 @@ QJsonObject FunRunMove::unpack(const QString &file) {
         return failed(QStringLiteral("Die Umzugsdatei lässt sich nicht lesen."));
     const QJsonObject m = manifestOf(zip);
     if (m.isEmpty())
-        return failed(QStringLiteral("Das ist keine Umzugsdatei von FunRun."));
+        return failed(QStringLiteral("Das ist keine Umzugsdatei."));
     QStringList oldFolders;
     for (const QJsonValue &v : m.value(QStringLiteral("folders")).toArray())
         oldFolders << v.toString();
