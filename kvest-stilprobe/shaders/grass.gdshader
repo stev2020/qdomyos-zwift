@@ -63,11 +63,11 @@ void fragment() {
 	if (t.a * (1.0 + lod * 0.2) * smoothstep(0.02, 0.16, v_h) < alpha_cut) {
 		discard;
 	}
-	vec3 c = t.rgb * v_tint * (1.0 + v_gust * v_h * 0.18) * mix(0.62, 1.0, smoothstep(0.0, 0.5, v_h));
+	vec3 c = t.rgb * v_tint * (1.0 + v_gust * v_h * 0.18) * mix(0.8, 1.0, smoothstep(0.0, 0.5, v_h));
 	ALBEDO = c;
 	BACKLIGHT = c * 0.35 * v_h;
 	ROUGHNESS = 0.9;
 	SPECULAR = 0.15;
-	AO = mix(0.6, 1.0, v_h);
+	AO = mix(0.78, 1.0, v_h);
 	AO_LIGHT_AFFECT = 0.35;
 }

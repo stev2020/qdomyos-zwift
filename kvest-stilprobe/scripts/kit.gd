@@ -235,7 +235,7 @@ static func broadleaf(kind: int, seed_value: int, low: bool, material: Material)
 		if kind != BUSH and not low:
 			var start := Vector3(0, cy * rng.randf_range(0.5, 0.85), 0).lerp(trunk_top, 0.5)
 			var end: Vector3 = start.lerp(lc, 0.85)
-			var bc := Color(0.16, 0.15, 0.14, 0.0) if kind == BIRCH else bark
+			var bc := Color(0.62, 0.61, 0.58, 0.0) if kind == BIRCH else bark
 			b.tube([start, start.lerp(end, 0.5) + Vector3(0, 0.3, 0), end], [0.11, 0.08, 0.05], 5, bc, 0.2, 0.7)
 		var count := 2 if low else int(sp["per"])
 		for k in count:

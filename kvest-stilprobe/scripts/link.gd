@@ -11,6 +11,9 @@ var speed_kmh := 0.0
 var watts := 0.0
 var cadence := 0.0
 var app := ""
+## What the last attempt on each port found: "" (not tried yet), "offen", "zu" (refused at once:
+## nothing listens there) or "still" (no answer: the app is there but paused, e.g. by Android)
+var port_state := {6680: "", 6666: ""}
 
 var _ws := WebSocketPeer.new()
 var _state := "wait"      # wait | connecting | open
@@ -37,14 +40,18 @@ func poll() -> void:
 	match _ws.get_ready_state():
 		WebSocketPeer.STATE_OPEN:
 			_state = "open"
+			port_state[PORTS[_port]] = "offen"
 			app = "Kvestrun" if PORTS[_port] == 6680 else "QZ"
 			while _ws.get_available_packet_count() > 0:
 				_handle(_ws.get_packet().get_string_from_utf8())
 		WebSocketPeer.STATE_CONNECTING:
 			if now - _started > 4000:
+				port_state[PORTS[_port]] = "still"
 				_ws.close()
 				_next(now)
 		WebSocketPeer.STATE_CLOSED:
+			if _state != "open":
+				port_state[PORTS[_port]] = "zu" if now - _started < 1500 else "still"
 			_next(now)
 
 
@@ -73,3 +80,13 @@ func connected() -> bool:
 
 func has_data() -> bool:
 	return Time.get_ticks_msec() - _last_data < 4000
+
+
+## A short explanation for the overlay when there is no connection.
+func diagnosis() -> String:
+	var k: String = port_state[6680]
+	if k == "still":
+		return "Kvestrun antwortet nicht. Läuft das Rad dort, oder hat Android die App pausiert?"
+	if k == "zu":
+		return "Kvestrun ist nicht geöffnet (Port 6680 zu)"
+	return "Suche Kvestrun …"

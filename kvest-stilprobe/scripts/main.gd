@@ -213,7 +213,9 @@ func _make_environment() -> void:
 	sun.shadow_enabled = true
 	sun.directional_shadow_mode = DirectionalLight3D.SHADOW_PARALLEL_2_SPLITS
 	sun.directional_shadow_max_distance = 70.0
-	sun.shadow_blur = 1.6
+	sun.shadow_blur = 2.2
+	# summer shade is full of light from the sky: shadows are never black
+	sun.shadow_opacity = 0.78
 	sun.shadow_bias = 0.06
 	sun.shadow_normal_bias = 1.2
 	add_child(sun)
@@ -236,7 +238,7 @@ func _apply_light() -> void:
 	else:
 		sun.rotation_degrees = Vector3(-38.0, 158.0, 0.0)
 		sun.light_color = Color(1.0, 0.95, 0.86)
-		sun.light_energy = 1.8
+		sun.light_energy = 1.7
 		sky_mat.set_shader_parameter("zenith", Color(0.30, 0.52, 0.88))
 		sky_mat.set_shader_parameter("horizon", Color(0.80, 0.87, 0.93))
 		sky_mat.set_shader_parameter("cloud_lit", Color(1.0, 0.98, 0.95))
@@ -244,7 +246,7 @@ func _apply_light() -> void:
 		sky_mat.set_shader_parameter("sun_glow", 0.25)
 		env.fog_light_color = Color(0.74, 0.82, 0.88)
 		env.fog_sun_scatter = 0.15
-		env.ambient_light_energy = 0.6
+		env.ambient_light_energy = 0.82
 		env.glow_intensity = 0.6
 	if backdrop != null:
 		for child in backdrop.get_children():
@@ -468,7 +470,7 @@ func _update_hud() -> void:
 		sub = "Warte auf Werte: Fahrt in %s starten" % link.app
 	else:
 		status = "Demo-Fahrt · %s km/h" % _num(rider.speed * 3.6)
-		sub = "Kvestrun nicht gefunden · " + km
+		sub = link.diagnosis() + " · " + km
 		demo = "Demo %d km/h" % int(round(demo_kmh))
 	var lname: String = LEVELS[level]["name"]
 	var q: String = "Qualität: " + ("Auto (%s)" % lname if quality == "auto" else lname)

@@ -10,8 +10,8 @@ uniform sampler2D patch_noise : filter_linear_mipmap, repeat_enable;
 uniform vec3 grass_a : source_color = vec3(0.30, 0.44, 0.10);
 uniform vec3 grass_b : source_color = vec3(0.46, 0.56, 0.14);
 uniform vec3 grass_c : source_color = vec3(0.60, 0.60, 0.22);
-uniform vec3 under : source_color = vec3(0.16, 0.25, 0.06);
-uniform vec3 path_color : source_color = vec3(0.68, 0.56, 0.41);
+uniform vec3 under : source_color = vec3(0.25, 0.37, 0.09);
+uniform vec3 path_color : source_color = vec3(0.72, 0.60, 0.40);
 uniform vec3 path_rim : source_color = vec3(0.42, 0.36, 0.24);
 uniform float grass_fade = 52.0;
 uniform vec3 bed_color : source_color = vec3(0.58, 0.55, 0.47);
@@ -36,7 +36,7 @@ void fragment() {
 	// under the grass clumps the ground is in their shade
 	float cam_d = distance(wpos, CAMERA_POSITION_WORLD);
 	float near = 1.0 - smoothstep(grass_fade - 18.0, grass_fade + 6.0, cam_d);
-	col = mix(col, under * (0.85 + 0.3 * n3), near * 0.85);
+	col = mix(col, under * (0.85 + 0.3 * n3), near * 0.6);
 
 	// dirt path with a frayed edge
 	float px = path_x(u);
