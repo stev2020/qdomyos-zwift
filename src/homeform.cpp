@@ -903,6 +903,9 @@ homeform::homeform(QQmlApplicationEngine *engine, bluetooth *bl) {
     connect(bluetoothManager, &bluetooth::bluetoothDeviceDisconnected, this, &homeform::bluetoothDeviceDisconnected);
     connect(bluetoothManager, &bluetooth::deviceFound, this, &homeform::deviceFound);
     connect(bluetoothManager, &bluetooth::manualDeviceNotFound, this, [this](const QString &name) {
+        // FunRun pages: the start page shows the search, "Dein Rad" what to do (no hint to the QZ settings)
+        if (funrunStartPage())
+            return;
         setToastRequested(
             QObject::tr("QZ is looking for %1. Please wake it up or change this device under the Manual Device "
                         "setting in Advanced Settings.")
@@ -1104,7 +1107,8 @@ homeform::homeform(QQmlApplicationEngine *engine, bluetooth *bl) {
     qDebug() << "getBluetoothName()" << bluetoothName;
 
     QRegularExpression regex("^[A-Za-z0-9 ]+$");
-    if(bluetoothName.length() > 9 || !regex.match(bluetoothName).hasMatch()) {
+    // (for the virtual device that other apps see; not with the FunRun pages, which connect to the bike themselves)
+    if((bluetoothName.length() > 9 || !regex.match(bluetoothName).hasMatch()) && !funrunStartPage()) {
         setToastRequested(QObject::tr("Bluetooth name too long, change it to a 4 letters one in the android settings and use only A-Z or 0-9 characters"));
     }
     
