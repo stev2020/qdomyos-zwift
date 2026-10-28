@@ -223,6 +223,9 @@ private slots:
     int32_t offset = 0;
     double lastOdometer = 0;
     double currentStepDistance = 0;
+    // distance (km) ridden past the start of the row the program just moved to: it looks once a second, the position on
+    // the route goes on from there instead of jumping back to the row's start (applyCurrentStepSettings)
+    double geoOvershoot = 0;
     QTimer timer;
     double lastGpxRateSetAt = 0.0;
     double lastGpxRateSet = 0.0;

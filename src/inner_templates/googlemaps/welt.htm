@@ -626,8 +626,12 @@ const rider = {
   update(dt) {
     if (this.s == null || !route) return;
     const v = performance.now() - this.lastMeas > 4000 ? 0 : this.v;
-    let ds = v * dt + this.corr * (1 - Math.exp(-dt / 0.9));
-    if (ds < 0 && this.corr > -25) ds = 0; // never roll backwards for small corrections
+    // behind the app's position: catch up within about a second; ahead of it (the position comes once a second and
+    // can lag a few metres): slow down gently over a few seconds, never below 60 % of the speed and never backwards,
+    // so a steady ride looks steady
+    const tau = this.corr < 0 ? 2.5 : 0.9;
+    let ds = v * dt + this.corr * (1 - Math.exp(-dt / tau));
+    if (this.corr > -25) ds = Math.max(ds, 0.6 * v * dt);
     this.corr -= ds - v * dt;
     this.s = clamp(this.s + ds, 0, route.total);
   },

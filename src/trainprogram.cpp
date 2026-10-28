@@ -1202,8 +1202,10 @@ void trainprogram::scheduler() {
             if (isBlockingTransitionRow(rows.at(calculatedLine)) || calculateTimeForRow(calculatedLine) ||
                 calculateDistanceForRow(calculatedLine) > 0) {
 
-                if(rows.at(currentStep).distance != -1)
+                if(rows.at(currentStep).distance != -1) {
                     lastOdometer -= (currentStepDistance - rows.at(currentStep).distance);
+                    geoOvershoot = qMax(0.0, currentStepDistance - rows.at(currentStep).distance);
+                }
 
                 rows[currentStep].ended = QDateTime::currentDateTime();
 
@@ -1507,6 +1509,9 @@ void trainprogram::decreaseElapsedTime(int32_t i) {
 }
 
 void trainprogram::applyCurrentStepSettings() {
+    // taken once: a skip to another row later starts at that row's start
+    const double overshoot = geoOvershoot;
+    geoOvershoot = 0;
     if (!bluetoothManager || !bluetoothManager->device() || currentStep >= (uint16_t)rows.length())
         return;
 
@@ -1653,6 +1658,13 @@ void trainprogram::applyCurrentStepSettings() {
         p.setLatitude(rows.at(currentStep).latitude);
         p.setLongitude(rows.at(currentStep).longitude);
         p.setAltitude(rows.at(currentStep).altitude);
+        // the program noticed the new row up to a second late: the position starts where the rider is by now,
+        // not back at the row's start (a jump back every few metres made the rider on the FunRun map stutter)
+        if (overshoot > 0 && p.isValid() && !isnan(rows.at(currentStep).azimuth)) {
+            QGeoCoordinate ahead = p.atDistanceAndAzimuth(overshoot * 1000.0, rows.at(currentStep).azimuth);
+            ahead.setAltitude(p.altitude());
+            p = ahead;
+        }
         emit changeGeoPosition(p, rows.at(currentStep).azimuth, avgAzimuthNext300Meters());
     }
 }
@@ -1700,6 +1712,7 @@ int trainprogram::totalLogicalSteps() const {
 void trainprogram::onTapeStarted() { started = true; }
 
 void trainprogram::restart() {
+    geoOvershoot = 0;
     trainingProgramPowerOffset = 0;
     trainingProgramResistanceOffset = 0;
     for (int i = 0; i < rows.length() && i < loadedRows.length(); i++) {
