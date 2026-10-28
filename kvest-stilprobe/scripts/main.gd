@@ -44,6 +44,7 @@ var _capture_i := 0
 var _capture_wait := -1
 var _movie := false
 var _gallery := ""
+var _no_hud := false
 
 
 func _ready() -> void:
@@ -67,6 +68,7 @@ func _ready() -> void:
 	hud.quality_pressed.connect(_on_quality)
 	hud.light_pressed.connect(_on_light)
 	hud.demo_step.connect(func(d): demo_kmh = clampf(demo_kmh + d, 4.0, 60.0))
+	hud.visible = not _no_hud
 	_apply_level(0 if quality == "auto" else ["hoch", "mittel", "niedrig"].find(quality))
 	_apply_light()
 	if _gallery != "":
@@ -137,7 +139,9 @@ func _read_args() -> void:
 				rider.u = float(val)
 			"--gallery":
 				_gallery = val
-	_movie = OS.get_cmdline_args().has("--write-movie")
+			"--no-hud":
+				_no_hud = true
+	_movie = Engine.get_write_movie_path() != ""
 	if _capture_dir != "" and _capture_at.is_empty():
 		_capture_at = [0.0]
 
