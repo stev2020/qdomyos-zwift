@@ -46,12 +46,12 @@ func setup(materials: Dictionary) -> void:
 	for kind in Kit.COUNT:
 		var p := {}
 		match kind:
-			Kit.ROUND, Kit.TALL, Kit.WIDE, Kit.BUSH:
+			Kit.BEECH, Kit.BIRCH, Kit.OAK, Kit.MAPLE, Kit.ROWAN, Kit.BUSH:
 				p["high"] = Kit.broadleaf(kind, 100 + kind, false, mat_nature)
 				p["low"] = Kit.broadleaf(kind, 100 + kind, true, mat_nature)
-			Kit.FIR_A, Kit.FIR_B:
-				p["high"] = Kit.fir(200 + kind, false, mat_nature)
-				p["low"] = Kit.fir(200 + kind, true, mat_nature)
+			Kit.SPRUCE, Kit.FIR:
+				p["high"] = Kit.conifer(kind, 200 + kind, false, mat_nature)
+				p["low"] = Kit.conifer(kind, 200 + kind, true, mat_nature)
 			_:
 				p["high"] = Kit.rock(300 + kind, mat_nature)
 				p["low"] = p["high"]
@@ -500,8 +500,39 @@ static func _job_grass(key: Vector2i) -> Dictionary:
 	return {"type": "grass", "key": key, "buf": out, "hmin": hmin if count > 0 else 0.0, "hmax": hmax if count > 0 else 0.0}
 
 
-const GREENS := [Color(0.52, 0.70, 0.17), Color(0.40, 0.60, 0.14), Color(0.30, 0.48, 0.12), Color(0.60, 0.74, 0.19), Color(0.46, 0.64, 0.15)]
-const AUTUMN := [Color(1.0, 0.62, 0.14), Color(0.96, 0.76, 0.2), Color(0.92, 0.5, 0.12)]
+## Summer greens and the share of trees that already turn (per species).
+const LEAF_TINTS := {
+	Kit.BEECH: [[Color(0.50, 0.68, 0.17), Color(0.44, 0.62, 0.15), Color(0.56, 0.72, 0.19)], [Color(0.95, 0.70, 0.20)], 0.08],
+	Kit.BIRCH: [[Color(0.62, 0.78, 0.22), Color(0.56, 0.74, 0.20)], [Color(1.0, 0.84, 0.28)], 0.15],
+	Kit.OAK: [[Color(0.40, 0.58, 0.15), Color(0.34, 0.52, 0.13)], [Color(0.85, 0.62, 0.22)], 0.05],
+	Kit.MAPLE: [[Color(0.40, 0.62, 0.15), Color(0.34, 0.55, 0.13)], [Color(1.0, 0.52, 0.12), Color(0.95, 0.40, 0.10)], 0.15],
+	Kit.ROWAN: [[Color(0.48, 0.64, 0.18)], [Color(0.95, 0.32, 0.10), Color(1.0, 0.55, 0.15)], 0.35],
+	Kit.BUSH: [[Color(0.46, 0.64, 0.16), Color(0.38, 0.56, 0.14), Color(0.55, 0.70, 0.18)], [Color(0.9, 0.55, 0.18)], 0.05],
+}
+const BROADLEAF_WEIGHTS := [[Kit.BEECH, 0.32], [Kit.MAPLE, 0.22], [Kit.BIRCH, 0.2], [Kit.OAK, 0.14], [Kit.ROWAN, 0.12]]
+
+
+static func _pick_broadleaf(rng: RandomNumberGenerator) -> int:
+	var r := rng.randf()
+	for w in BROADLEAF_WEIGHTS:
+		r -= w[1]
+		if r <= 0.0:
+			return w[0]
+	return Kit.BEECH
+
+
+static func _tint(kind: int, rng: RandomNumberGenerator) -> Color:
+	var c := Color(1, 1, 1)
+	if LEAF_TINTS.has(kind):
+		var t: Array = LEAF_TINTS[kind]
+		var pool: Array = t[1] if rng.randf() < t[2] else t[0]
+		c = pool[rng.randi() % pool.size()] * rng.randf_range(0.92, 1.08)
+	elif kind == Kit.SPRUCE:
+		c = Color(0.86, 0.9, 0.84) * rng.randf_range(0.9, 1.08)
+	elif kind == Kit.FIR:
+		c = Color(1.0, 1.0, 0.94) * rng.randf_range(0.9, 1.08)
+	c.a = rng.randf()
+	return c
 
 
 static func _job_trees(key: Vector2i) -> Dictionary:
@@ -530,11 +561,11 @@ static func _job_trees(key: Vector2i) -> Dictionary:
 			var scale := rng.randf_range(0.82, 1.18)
 			if dp > 5.5 and rng.randf() < smoothstep(0.06, 0.42, f) * 0.85 + 0.02:
 				if Land.firs.get_noise_2d(x, u) > 0.38 and rng.randf() < 0.8:
-					kind = Kit.FIR_A + rng.randi() % 2
+					kind = Kit.SPRUCE if rng.randf() < 0.55 else Kit.FIR
 				else:
-					kind = rng.randi() % 3
+					kind = _pick_broadleaf(rng)
 			elif dp > 6.0 and dp < 11.0 and rng.randf() < 0.035:
-				kind = Kit.ROUND if rng.randf() < 0.6 else Kit.WIDE
+				kind = [Kit.BEECH, Kit.OAK, Kit.MAPLE][rng.randi() % 3]
 				scale *= 1.4
 			elif (dp < 12.0 or f > -0.08) and rng.randf() < 0.16:
 				kind = Kit.BUSH
@@ -543,13 +574,7 @@ static func _job_trees(key: Vector2i) -> Dictionary:
 			var h := Land.height(x, u, r)
 			hmin = minf(hmin, h)
 			hmax = maxf(hmax, h)
-			var tint: Color
-			if kind <= Kit.BUSH:
-				tint = AUTUMN[rng.randi() % AUTUMN.size()] if (kind != Kit.BUSH and rng.randf() < 0.09) else GREENS[rng.randi() % GREENS.size()]
-				tint = tint * rng.randf_range(0.92, 1.08)
-			else:
-				tint = Color(1, 1, 1) * rng.randf_range(0.85, 1.1)
-			tint.a = rng.randf()
+			var tint := _tint(kind, rng)
 			var sx := scale * rng.randf_range(0.9, 1.1)
 			var basis := Basis(Vector3.UP, rng.randf() * TAU).scaled(Vector3(sx, scale, sx))
 			_put(bufs[kind], basis, Vector3(x - x0, h - 0.1, -(u - u0)), tint)

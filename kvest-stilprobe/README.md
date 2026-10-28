@@ -9,7 +9,7 @@ APK: https://github.com/stev2020/qdomyos-zwift/releases/download/kvest-stilprobe
 ## So ist sie gebaut
 
 - **Gras:** Büschel aus sechs sich kreuzenden Flächen (12 Dreiecke) mit gemalten Grashalmen. Es gibt sechs Sorten: üppig, mit Samen, kurz, mit Blüten, mit lila Rispen und Schilf am Bach.
-- **Bäume und Büsche:** Blätterbüschel aus drei sich kreuzenden Flächen mit gemalten Blättern und deren Normalen. Die Tannen bestehen aus gemalten Zweigen. Wind bewegt Gras, Blätter und Zweige.
+- **Bäume und Büsche:** Blätterbüschel aus drei sich kreuzenden Flächen mit gemalten Blättern und deren Normalen. Arten: Buche, Birke, Eiche, Ahorn, Eberesche, Busch, Fichte und Tanne; ein Teil der Laubbäume ist schon herbstlich. Fichten und Tannen bestehen aus gemalten Zweigen. Wind bewegt Gras, Blätter und Zweige.
 - **Landschaft:** Weg, Hügel und Bach sind Formeln (`scripts/land.gd`, für die Shader in `shaders/land.gdshaderinc`). Das Gelände entsteht in Kacheln rund um die aktuelle Position, in einem eigenen Thread (`scripts/world.gd`).
 - **Texturen:** `tools/make_textures.py` malt Gras, Blätter und Zweige (Python mit Pillow).
 - **Qualität:** Hoch, Mittel und Niedrig ändern die Dichte des Grases, die Sichtweite, die Schatten und die Auflösung. „Auto“ schaltet herunter, wenn weniger als 27 Bilder pro Sekunde gelingen.
@@ -22,4 +22,5 @@ Am Rechner reicht der Godot-Editor 4.7: Ordner öffnen und starten. Vorschaubild
 
 ```
 godot --path . -- --capture <Ordner> --at 0,400,900 [--light abend] [--quality mittel]
+godot --path . -- --capture <Ordner> --gallery sommer      (alle Baumarten nebeneinander, auch: herbst)
 ```

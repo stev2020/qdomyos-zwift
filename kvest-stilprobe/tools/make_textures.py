@@ -3,8 +3,8 @@
 textures/grass.png    grass clumps for the crossing cards, 2 x 3 cells of 512 x 256:
                       0 lush meadow, 1 seed heads, 2 short and dense,
                       3 with small white and yellow flowers, 4 pink and violet flowers, 5 reeds
-textures/leaves.png   leaf clusters for the trees and bushes, 2 x 2 cells of 512 x 512 (light grey,
-                      the shader tints them per tree)
+textures/leaves.png   leaf clusters and fir branches, 2 x 4 cells of 512 x 512: oval leaves, small leaves,
+                      fir branches, maple leaves (leaves light grey, the shader tints them per tree)
 textures/leaves_n.png the matching normals (every leaf is tilted a bit and bent along its midrib)
 
 Run: python3 tools/make_textures.py
@@ -156,13 +156,27 @@ def normal_rgb(n):
     return (int((n[0] / ln * 0.5 + 0.5) * 255), int((n[1] / ln * 0.5 + 0.5) * 255), int((n[2] / ln * 0.5 + 0.5) * 255), 255)
 
 
-def leaf_cluster(rng, size):
+def maple_leaf(cx, cy, length, angle, steps=60):
+    """Star shaped leaf with five pointed lobes."""
+    ca, sa = math.cos(angle), math.sin(angle)
+    pts = []
+    for i in range(steps):
+        t = 2 * math.pi * i / steps
+        r = length * 0.5 * (0.5 + 0.5 * abs(math.cos(2.5 * t)) ** 3) * (0.8 + 0.2 * math.cos(t))
+        x, y = math.cos(t) * r, math.sin(t) * r
+        pts.append((cx + x * ca - y * sa, cy + x * sa + y * ca))
+    return pts
+
+
+def leaf_cluster(rng, size, kind="oval"):
+    """kind: oval (beech and most trees), small (birch and rowan, airy), maple (star leaves)."""
     col = Image.new("RGBA", (size, size), (0, 0, 0, 0))
     nrm = Image.new("RGBA", (size, size), (128, 128, 255, 0))
     dc, dn = ImageDraw.Draw(col), ImageDraw.Draw(nrm)
     c = size / 2
-    radius = size * 0.43
-    lobes = [(rng.uniform(0.07, 0.15), rng.randint(3, 6), rng.uniform(0, 6.3)) for _ in range(2)]
+    radius = size * (0.37 if kind == "small" else 0.43)
+    amp = (0.12, 0.24) if kind == "small" else (0.07, 0.15)
+    lobes = [(rng.uniform(*amp), rng.randint(3, 6), rng.uniform(0, 6.3)) for _ in range(2)]
 
     def outline(a):
         r = 1.0
@@ -176,13 +190,14 @@ def leaf_cluster(rng, size):
         dc.line([(c, c + size * 0.12), (c + math.cos(a) * r, c + math.sin(a) * r)], fill=(70, 58, 46, 255), width=max(2, size // 170))
 
     leaves = []
-    for _ in range(260):
+    count = {"oval": 260, "small": 210, "maple": 120}[kind]
+    for _ in range(count):
         a = rng.uniform(0, 2 * math.pi)
         rr = outline(a) * math.sqrt(rng.uniform(0, 1))
         leaves.append((rr / outline(a), c + math.cos(a) * rr, c + math.sin(a) * rr, a))
     leaves.sort()
     for depth, x, y, a in leaves:
-        length = size * rng.uniform(0.07, 0.1)
+        length = size * (rng.uniform(0.05, 0.068) if kind == "small" else rng.uniform(0.11, 0.15) if kind == "maple" else rng.uniform(0.07, 0.1))
         width = length * rng.uniform(0.5, 0.62)
         ang = a + rng.uniform(-0.9, 0.9)
         shade = max(0.45, min(1.0, 0.6 + 0.4 * depth + rng.uniform(-0.08, 0.08)))
@@ -195,6 +210,16 @@ def leaf_cluster(rng, size):
         ca, sa = math.cos(ang), math.sin(ang)
         # the across-leaf direction in texture space (x right, y down) -> normal space (y up)
         ax, ay = -sa, -ca
+        if kind == "maple":
+            poly = maple_leaf(x, y, length, ang)
+            dc.polygon(poly, fill=rgb255(colour))
+            dn.polygon(poly, fill=normal_rgb((tx, ty, 1.0)))
+            dc.line(poly + [poly[0]], fill=rgb255(tuple(v * 0.74 for v in colour)), width=max(1, size // 420))
+            for k in range(5):
+                va = ang + k * 2 * math.pi / 5
+                dc.line([(x, y), (x + math.cos(va) * length * 0.4, y + math.sin(va) * length * 0.4)],
+                        fill=rgb255(tuple(v * 0.8 for v in colour)), width=max(1, size // 520))
+            continue
         for k, half in enumerate(leaf_halves(x, y, length, width, ang)):
             s = 1 if k == 0 else -1
             n = (tx + ax * bend * s, ty + ay * bend * s, 1.0)
@@ -208,9 +233,9 @@ def leaf_cluster(rng, size):
     return col, nrm
 
 
-FIR_DARK = (0.08, 0.17, 0.07)
-FIR_MID = (0.20, 0.34, 0.12)
-FIR_TIP = (0.40, 0.52, 0.19)
+FIR_DARK = (0.12, 0.20, 0.08)
+FIR_MID = (0.30, 0.42, 0.14)
+FIR_TIP = (0.55, 0.64, 0.24)
 
 
 def fir_branch(rng, size):
@@ -272,20 +297,24 @@ def fir_branch(rng, size):
     return col, nrm
 
 
+LEAF_CELLS = ["oval", "oval", "small", "small", "fir", "fir", "maple", "maple"]
+
+
 def make_leaves():
-    """2 x 3 cells: four leaf clusters, then two fir branches."""
+    """2 x 4 cells: oval leaves, small leaves, fir branches, maple leaves (two of each)."""
     cell = 512
-    bigc = Image.new("RGBA", (2 * cell * SS, 3 * cell * SS), (0, 0, 0, 0))
-    bign = Image.new("RGBA", (2 * cell * SS, 3 * cell * SS), (128, 128, 255, 0))
+    rows = len(LEAF_CELLS) // 2
+    bigc = Image.new("RGBA", (2 * cell * SS, rows * cell * SS), (0, 0, 0, 0))
+    bign = Image.new("RGBA", (2 * cell * SS, rows * cell * SS), (128, 128, 255, 0))
     rng = random.Random(7)
-    for k in range(6):
-        c, n = leaf_cluster(rng, cell * SS) if k < 4 else fir_branch(rng, cell * SS)
+    for k, kind in enumerate(LEAF_CELLS):
+        c, n = fir_branch(rng, cell * SS) if kind == "fir" else leaf_cluster(rng, cell * SS, kind)
         pos = ((k % 2) * cell * SS, (k // 2) * cell * SS)
         bigc.paste(c, pos, c)
         bign.paste(n, pos, n)
-    col = bleed(bigc.resize((2 * cell, 3 * cell), Image.LANCZOS), 9)
+    col = bleed(bigc.resize((2 * cell, rows * cell), Image.LANCZOS), 9)
     col.save(os.path.join(TEX, "leaves.png"))
-    nrm = bign.resize((2 * cell, 3 * cell), Image.LANCZOS)
+    nrm = bign.resize((2 * cell, rows * cell), Image.LANCZOS)
     flat = Image.new("RGB", nrm.size, (128, 128, 255))
     nrm = Image.composite(nrm.convert("RGB"), flat, nrm.getchannel("A").point(lambda v: 255 if v > 8 else 0))
     nrm.save(os.path.join(TEX, "leaves_n.png"))

@@ -43,6 +43,7 @@ var _capture_at: Array = []
 var _capture_i := 0
 var _capture_wait := -1
 var _movie := false
+var _gallery := ""
 
 
 func _ready() -> void:
@@ -68,10 +69,51 @@ func _ready() -> void:
 	hud.demo_step.connect(func(d): demo_kmh = clampf(demo_kmh + d, 4.0, 60.0))
 	_apply_level(0 if quality == "auto" else ["hoch", "mittel", "niedrig"].find(quality))
 	_apply_light()
+	if _gallery != "":
+		_make_gallery()
+		return
 	_shift_to(rider.u)
 	rider.place(cam, world.origin_u, 0.0, true)
 	world.update(rider.u, Land.path_x(rider.u), 0)
 	hud.show_loading(_capture_dir == "")
+
+
+## All tree kinds in a row on a plain meadow (previews only): --gallery sommer|herbst
+func _make_gallery() -> void:
+	hud.visible = false
+	backdrop.visible = false
+	pollen.visible = false
+	var ground := MeshInstance3D.new()
+	var plane := PlaneMesh.new()
+	plane.size = Vector2(400, 400)
+	ground.mesh = plane
+	var gm := StandardMaterial3D.new()
+	gm.albedo_color = Color(0.3, 0.42, 0.12)
+	ground.material_override = gm
+	add_child(ground)
+	var kinds := [Kit.BEECH, Kit.BIRCH, Kit.OAK, Kit.MAPLE, Kit.ROWAN, Kit.BUSH, Kit.SPRUCE, Kit.FIR]
+	for i in kinds.size():
+		var kind: int = kinds[i]
+		var tint := Color(1, 1, 1, 0.3)
+		if World.LEAF_TINTS.has(kind):
+			var pool: Array = World.LEAF_TINTS[kind][1 if _gallery == "herbst" else 0]
+			tint = pool[0]
+			tint.a = 0.3
+		elif kind == Kit.SPRUCE:
+			tint = Color(0.86, 0.9, 0.84, 0.3)
+		var mm := MultiMesh.new()
+		mm.transform_format = MultiMesh.TRANSFORM_3D
+		mm.use_custom_data = true
+		mm.mesh = world.protos[kind]["high"]
+		mm.instance_count = 1
+		mm.set_instance_transform(0, Transform3D(Basis(), Vector3((i - 3.5) * 9.5, 0.0, 0.0)))
+		mm.set_instance_custom_data(0, tint)
+		var mmi := MultiMeshInstance3D.new()
+		mmi.multimesh = mm
+		add_child(mmi)
+	cam.global_transform = Transform3D(Basis.looking_at(Vector3(0, -0.02, -1).normalized(), Vector3.UP), Vector3(0, 6.0, 38))
+	cam.fov = 60.0
+	_capture_at = [0.0]
 
 
 func _read_args() -> void:
@@ -93,6 +135,8 @@ func _read_args() -> void:
 				demo_kmh = float(val)
 			"--start":
 				rider.u = float(val)
+			"--gallery":
+				_gallery = val
 	_movie = OS.get_cmdline_args().has("--write-movie")
 	if _capture_dir != "" and _capture_at.is_empty():
 		_capture_at = [0.0]
@@ -431,6 +475,9 @@ func _update_hud() -> void:
 func _capture_tick() -> void:
 	if _capture_i >= _capture_at.size():
 		get_tree().quit()
+		return
+	if _capture_wait < 0 and _gallery != "":
+		_capture_wait = 8
 		return
 	if _capture_wait < 0:
 		rider.u = float(_capture_at[_capture_i])
