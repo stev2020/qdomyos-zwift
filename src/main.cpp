@@ -15,6 +15,7 @@
 #include "bluetooth.h"
 #include "devices/domyostreadmill/domyostreadmill.h"
 #include "homeform.h"
+#include "funrunmove.h"
 #include "mainwindow.h"
 #include "qfit.h"
 #include "virtualdevices/virtualtreadmill.h"
@@ -629,6 +630,10 @@ int main(int argc, char *argv[]) {
     app->setOrganizationName(QStringLiteral("Roberto Viola"));
     app->setOrganizationDomain(QStringLiteral("robertoviola.cloud"));
     app->setApplicationName(QStringLiteral("qDomyos-Zwift"));
+
+    // FunRun: the app with its own id gets its own web server port; a moving file from the QZ app, taken at the
+    // last start, is unpacked now, before anything reads the settings
+    FunRunMove::prepare();
 
     QSettings settings;
 

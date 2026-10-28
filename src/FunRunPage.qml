@@ -76,14 +76,27 @@ Item {
         browseUrl = ""
     }
 
-    // Android's back key: in the browser one page back, from its first page back to the FunRun page
+    // Android's back key: in the browser one page back, from its first page back to the FunRun page. Otherwise the
+    // page itself first (an open sheet closes: window.funrunBack in funrun.js), then from the other tabs to "Fahren",
+    // then one page back or, from the FunRun pages at the bottom, out of the app (main.qml funrunBackOut). The page
+    // answers later, so the key is always taken here.
     function handleBack() {
-        if (!browsing)
-            return false
-        if (browser.item && browser.item.canGoBack)
-            browser.item.goBack()
-        else
-            closeBrowser()
+        if (browsing) {
+            if (browser.item && browser.item.canGoBack)
+                browser.item.goBack()
+            else
+                closeBrowser()
+            return true
+        }
+        webView.runJavaScript("window.funrunBack ? window.funrunBack() : false", function(handled) {
+            if (handled === true || stackView.currentItem !== funrunPage)
+                return
+            if (funrunPage.page === "start.htm" && webView.url.toString().indexOf("/funrun/start.htm") < 0) {
+                webView.url = funrunPage.pageUrl()
+                return
+            }
+            window.funrunBackOut(funrunPage)
+        })
         return true
     }
 
@@ -132,11 +145,21 @@ Item {
         webView.runJavaScript("window.funrunHandoff && window.funrunHandoff(" + data + ")")
     }
 
+    // the system's status bar: the QZ bar is not shown above the FunRun pages (main.qml), the pages start below it
+    Rectangle {
+        id: topInset
+        anchors.left: parent.left
+        anchors.right: parent.right
+        anchors.top: parent.top
+        height: headerToolbar.visible ? 0 : window.getTopPadding()
+        color: "#0b0f14"
+    }
+
     WebView {
         id: webView
         anchors.left: parent.left
         anchors.right: parent.right
-        anchors.top: parent.top
+        anchors.top: topInset.bottom
         anchors.bottom: browseBar.top
         visible: !funrunPage.browsing
         onLoadingChanged: {
@@ -160,7 +183,7 @@ Item {
         id: browser
         anchors.left: parent.left
         anchors.right: parent.right
-        anchors.top: parent.top
+        anchors.top: topInset.bottom
         anchors.bottom: browseBar.top
         active: funrunPage.browsing
         sourceComponent: Component {
@@ -296,13 +319,19 @@ Item {
             else
                 stackView.pop(null)
         }
-        // a GPX file was imported (FunRun "GPX importieren"): it becomes the chosen route and the page shows it
+        // a GPX file was imported (FunRun "GPX importieren"): it becomes the chosen route and the page shows it.
+        // The moving file of the QZ app goes to the settings page, which checks it (funrunMovePicked).
         function onAndroidDocumentPicked(kind, localUrl) {
-            if (stackView.currentItem !== funrunPage || kind !== "gpx")
+            if (stackView.currentItem !== funrunPage || (kind !== "gpx" && kind !== "umzug"))
                 return
             var path = localUrl.toString()
             if (path.indexOf("file://") === 0)
                 path = path.substring(7)
+            if (kind === "umzug") {
+                webView.runJavaScript("window.funrunMovePicked && window.funrunMovePicked(" +
+                                      JSON.stringify(decodeURIComponent(path)) + ")")
+                return
+            }
             settings.setValue("funrun_selected_route", decodeURIComponent(path))
             webView.runJavaScript("window.funrunRefresh && window.funrunRefresh()")
         }
@@ -323,7 +352,6 @@ Item {
     }
 
     Component.onCompleted: {
-        headerToolbar.visible = true
         webView.url = pageUrl()
     }
 }

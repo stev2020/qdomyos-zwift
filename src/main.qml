@@ -475,6 +475,11 @@ ApplicationWindow {
             return true
         }
         if (stackView.depth <= 1) {
+            // FunRun: from the tiles (Expertenmodus) back to the FunRun pages
+            if (rootItem.funrunStartPage()) {
+                stackView.push("FunRunPage.qml", { "page": "start.htm", "rideId": "", "from": "" })
+                return true
+            }
             return false
         }
 
@@ -524,6 +529,46 @@ ApplicationWindow {
         id: backToExitTimer
         repeat: false
         interval: 2000 // ms
+    }
+
+    // Out of the app with the back key: once more within the interval
+    function backToExit() {
+        if (backToExitTimer.running) {
+            Qt.quit()
+            return
+        }
+        backToExitTimer.start()
+        toast.show(qsTr("Press back again to exit"), backToExitTimer.interval)
+    }
+
+    // FunRun pages: the back key found nothing more to go back to on the page (FunRunPage.handleBack). Above other
+    // pages one page back; at the bottom (right above the tiles) the start page leaves the app and the other FunRun
+    // pages become the start page, unless the app opens with the tiles (Expertenmodus)
+    function funrunBackOut(page) {
+        if (stackView.currentItem !== page)
+            return
+        if (stackView.depth > 2 || !rootItem.funrunStartPage()) {
+            navigateBack(false)
+        } else if (page.page === "start.htm") {
+            backToExit()
+        } else {
+            stackView.replace(page, "FunRunPage.qml", { "page": "start.htm", "rideId": "", "from": "" })
+        }
+    }
+
+    // FunRun pages bring their own navigation: no QZ bar above them. The page after them gets it back (the map and
+    // others set it themselves when they show).
+    property bool funrunPageOnTop: false
+    Connections {
+        target: stackView
+        function onCurrentItemChanged() {
+            var onFunRun = !!(stackView.currentItem && stackView.currentItem.objectName === "funrunPage")
+            if (onFunRun)
+                headerToolbar.visible = false
+            else if (window.funrunPageOnTop)
+                headerToolbar.visible = true
+            window.funrunPageOnTop = onFunRun
+        }
     }
 
     Popup {
@@ -1003,6 +1048,13 @@ ApplicationWindow {
                     gpx_open.clicked()
             } else if (what === "tiles") {
                 stackView.pop(null)
+            } else if (what === "umzug") {
+                // FunRun: the moving file of the QZ app (FunRunPage hands it to the settings page)
+                if (OS_VERSION === "Android")
+                    rootItem.openAndroidDocumentPicker("umzug")
+            } else if (what === "quit") {
+                // after the move was prepared: it is unpacked at the next start
+                Qt.quit()
             }
         }
     }

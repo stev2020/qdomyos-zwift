@@ -41,6 +41,14 @@
   </div>
   <p class="muted" id="week" style="margin:-4px 0 14px">&nbsp;</p>
 
+  <!-- the move from the QZ app: done (once), or the hint where to start it (FunRun app, no ride yet) -->
+  <section class="card hidden" id="moveCard" role="status" style="margin-bottom:14px;display:flex;flex-direction:column;gap:6px">
+    <div class="chead"><h2 id="moveHead"></h2><button class="iconbtn" id="moveClose" aria-label="Schließen" style="width:40px;height:40px">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M6 6l12 12M18 6 6 18"/></svg></button></div>
+    <div class="muted" id="moveBody" style="font-size:14px"></div>
+    <button class="link hidden" id="moveGo" style="padding:0;min-height:44px;color:var(--accent);font-weight:600">Daten übernehmen<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="m9 6 6 6-6 6"/></svg></button>
+  </section>
+
   <div class="cols">
     <div class="col">
       <section class="card route hidden" id="routeCard">
@@ -283,7 +291,35 @@ async function load() {
   renderGoal();
 }
 FR.onRefresh(load);
-load();
+const firstLoad = load();
+
+// ------------------------------------------------------------------ move from the QZ app
+function moveCard(head, body, go) {
+  $('moveHead').textContent = head;
+  $('moveBody').textContent = body;
+  $('moveGo').classList.toggle('hidden', !go);
+  $('moveCard').classList.remove('hidden');
+}
+$('moveClose').addEventListener('click', () => { $('moveCard').classList.add('hidden'); try { localStorage.setItem('funrun.moveHint', '0'); } catch (e) { /* none */ } });
+$('moveGo').addEventListener('click', () => FR.go('einstellungen.htm', 'umzug=1'));
+(async () => {
+  try {
+    const r = await FR.move('result');
+    if (r && r.date) {
+      const n = (v, one, many) => FR.num(+v || 0) + ' ' + ((+v || 0) === 1 ? one : many);
+      moveCard(r.ok ? 'Umzug abgeschlossen' : 'Umzug mit Problemen',
+        n(r.rides, 'Fahrt', 'Fahrten') + ', ' + n(r.routes, 'Strecke', 'Strecken') + ', ' + n(r.workouts, 'Workout', 'Workouts') + ' und ' +
+        n(r.settings, 'Einstellung', 'Einstellungen') + ' übernommen.' + (r.error ? ' ' + r.error : ''), false);
+      return;
+    }
+    const info = await FR.move('info');
+    await firstLoad;
+    let dismissed = false;
+    try { dismissed = localStorage.getItem('funrun.moveHint') === '0'; } catch (e) { /* none */ }
+    if (info && info.qz === false && !dismissed && !rides.length)
+      moveCard('Neu hier?', 'Kommst du von der bisherigen App, nimm deine Fahrten, Strecken und Einstellungen mit.', true);
+  } catch (e) { /* an older app */ }
+})();
 })();
 </script>
 </body>

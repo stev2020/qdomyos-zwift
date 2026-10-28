@@ -203,6 +203,36 @@
   // the app calls window.funrunRefresh() when the page shows again (back from a ride, from the settings)
   FR.onRefresh = f => { window.funrunRefresh = f; };
 
+  // Android's back key (FunRunPage.qml asks window.funrunBack()): the page's own handlers first, newest first (an open
+  // sheet closes); true when one of them took it, otherwise the app goes back a page or out of the app
+  const backHandlers = [];
+  FR.onBack = f => backHandlers.push(f);
+  window.funrunBack = () => {
+    for (let i = backHandlers.length - 1; i >= 0; i--) if (backHandlers[i]()) return true;
+    return false;
+  };
+
+  // FunRun as an app of its own: the move from the QZ app (funrunmove.cpp). what: 'info', 'pack' ({ pages }),
+  // 'inspect' / 'schedule' ({ file }), 'pages', 'result'
+  FR.move = (what, extra, timeout) => (demo ? Promise.resolve(Object.assign({ do: what }, FR.demoMove && FR.demoMove(what, extra)))
+    : request('funrun_move', Object.assign({ do: what }, extra || {}), c => c && c.do === what, timeout));
+  // the storage of these pages as one JSON text (for the move)
+  FR.pagesStorage = () => {
+    const o = {};
+    try { for (let i = 0; i < localStorage.length; i++) { const k = localStorage.key(i); o[k] = localStorage.getItem(k); } } catch (e) { /* none */ }
+    return JSON.stringify(o);
+  };
+  // after a move the first page takes the storage of the old app's pages (map view, choices) and shows itself again
+  if (!demo) {
+    FR.move('pages').then(c => {
+      let o = null;
+      try { o = c && c.pages ? JSON.parse(c.pages) : null; } catch (e) { o = null; }
+      if (!o) return;
+      try { for (const k of Object.keys(o)) localStorage.setItem(k, o[k]); } catch (e) { return; }
+      location.reload();
+    }).catch(() => { /* an older app */ });
+  }
+
   // bottom navigation of the FunRun pages
   FR.tabs = active => {
     const items = [

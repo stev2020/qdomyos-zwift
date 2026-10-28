@@ -1,9 +1,13 @@
 #include "templateinfosenderbuilder.h"
 #include "funrunstore.h"
+#include "funrunmove.h"
 #include "webtranslation.h"
 #include "devices/bike.h"
 #include "treadmill.h"
+#include <QDir>
 #include <QDirIterator>
+#include <QFutureWatcher>
+#include <QtConcurrent/QtConcurrentRun>
 #include <QDateTime>
 #include <QFile>
 #include <QFileInfo>
@@ -1714,6 +1718,57 @@ struct FunRunFetchState {
 };
 } // namespace
 
+// FunRun as an app of its own: the move from the QZ app (funrunmove.h).
+// content: { do: "info" | "pack" (pages: the pages' storage) | "inspect" (file) | "schedule" (file) | "pages" |
+// "result" }. Reply R_funrun_move: { do, ... }. "inspect" and "schedule" take only the file the picker put into the
+// app's own moving folder.
+void TemplateInfoSenderBuilder::onFunRunMove(const QJsonValue &msgContent, TemplateInfoSender *tempSender) {
+    const QJsonObject c = msgContent.toObject();
+    const QString what = c.value(QStringLiteral("do")).toString();
+    QPointer<TemplateInfoSender> sender(tempSender);
+    auto answer = [sender, what](QJsonObject content) {
+        if (!sender) {
+            return;
+        }
+        content[QStringLiteral("do")] = what;
+        QJsonObject main;
+        main[QStringLiteral("msg")] = QStringLiteral("R_funrun_move");
+        main[QStringLiteral("content")] = content;
+        sender->send(QJsonDocument(main).toJson(QJsonDocument::Compact));
+    };
+    if (what == QStringLiteral("pack")) {
+        // all workouts of years can take a while: packed off the app's thread
+        const QString pages = c.value(QStringLiteral("pages")).toString();
+        auto *watcher = new QFutureWatcher<QJsonObject>(this);
+        connect(watcher, &QFutureWatcher<QJsonObject>::finished, this, [watcher, answer]() {
+            answer(watcher->result());
+            watcher->deleteLater();
+        });
+        watcher->setFuture(QtConcurrent::run([pages]() { return FunRunMove::pack(pages); }));
+        return;
+    }
+    QJsonObject content;
+    const QString file = c.value(QStringLiteral("file")).toString();
+    const bool fileInMovingFolder =
+        !file.isEmpty() && QDir::cleanPath(QFileInfo(file).absolutePath()) == QDir::cleanPath(FunRunMove::incomingFolder());
+    if (what == QStringLiteral("info")) {
+        content[QStringLiteral("qz")] = FunRunMove::isQzApp();
+        content[QStringLiteral("package")] = FunRunMove::packageName();
+    } else if (what == QStringLiteral("inspect") || what == QStringLiteral("schedule")) {
+        if (!fileInMovingFolder) {
+            content[QStringLiteral("ok")] = false;
+            content[QStringLiteral("error")] = QStringLiteral("Keine Umzugsdatei gewählt.");
+        } else {
+            content = what == QStringLiteral("inspect") ? FunRunMove::inspect(file) : FunRunMove::schedule(file);
+        }
+    } else if (what == QStringLiteral("pages")) {
+        content[QStringLiteral("pages")] = FunRunMove::takePages();
+    } else if (what == QStringLiteral("result")) {
+        content = FunRunMove::takeResult();
+    }
+    answer(content);
+}
+
 // content: { url, method ("GET" or "POST"), body, type (of the body), stopAfter, stopExtra, tag }
 // The trackers' pages hold all riders and can be several MB: with stopAfter the download ends stopExtra bytes
 // after that text. Reply R_funrun_fetch: { ok, status, text, error, tag }
@@ -1990,6 +2045,9 @@ void TemplateInfoSenderBuilder::onDataReceived(const QByteArray &data) {
                     return;
                 } else if (msg == QStringLiteral("funrun_fetch")) {
                     onFunRunFetch(jsonObject[QStringLiteral("content")], sender);
+                    return;
+                } else if (msg == QStringLiteral("funrun_move")) {
+                    onFunRunMove(jsonObject[QStringLiteral("content")], sender);
                     return;
                 }
                 if (msg == QStringLiteral("start")) {

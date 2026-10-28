@@ -31,6 +31,7 @@ public class CustomQtActivity extends QtActivity {
     private static final int DOCUMENT_PICKER_SETTINGS_REQUEST_CODE = 4104;
     private static final int DOCUMENT_PICKER_FIT_REQUEST_CODE = 4105;
     private static final int DOCUMENT_PICKER_FIT_FOLDER_REQUEST_CODE = 4106;
+    private static final int DOCUMENT_PICKER_MOVE_REQUEST_CODE = 4107;
     private final SparseArray<String> pendingImportDirectories = new SparseArray<>();
 
     // Declare the native method that will be implemented in C++
@@ -346,12 +347,15 @@ public class CustomQtActivity extends QtActivity {
             || requestCode == DOCUMENT_PICKER_GPX_REQUEST_CODE
             || requestCode == DOCUMENT_PICKER_SETTINGS_REQUEST_CODE
             || requestCode == DOCUMENT_PICKER_FIT_REQUEST_CODE
-            || requestCode == DOCUMENT_PICKER_FIT_FOLDER_REQUEST_CODE;
+            || requestCode == DOCUMENT_PICKER_FIT_FOLDER_REQUEST_CODE
+            || requestCode == DOCUMENT_PICKER_MOVE_REQUEST_CODE;
     }
 
-    // Folder of the QZ files on Android 14+ (Documents/QZ) as a document of the external storage
-    // provider, so the folder picker opens there.
-    private static final String QZ_DOCUMENTS_TREE_ID = "primary:Documents/QZ";
+    // Folder of the app's files on Android 14+ (Documents/QZ, Documents/FunRun for the FunRun app with
+    // its own id) as a document of the external storage provider, so the folder picker opens there.
+    private String qzDocumentsTreeId() {
+        return "org.cagnulen.qdomyoszwift".equals(getPackageName()) ? "primary:Documents/QZ" : "primary:Documents/FunRun";
+    }
 
     // Opens the system folder picker to import every .fit file of a folder. After the app is
     // reinstalled, the workouts left in Documents/QZ by the previous install are hidden from the
@@ -377,7 +381,7 @@ public class CustomQtActivity extends QtActivity {
                 // a granted single document, not a folder
             }
             // removing the old database needs a grant with write access
-            if (permission.isReadPermission() && QZ_DOCUMENTS_TREE_ID.equals(treeId)
+            if (permission.isReadPermission() && qzDocumentsTreeId().equals(treeId)
                 && (!removeOldDatabase || permission.isWritePermission())) {
                 Intent data = new Intent();
                 data.setData(treeUri);
@@ -404,7 +408,7 @@ public class CustomQtActivity extends QtActivity {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
             intent.putExtra(android.provider.DocumentsContract.EXTRA_INITIAL_URI,
                 android.provider.DocumentsContract.buildDocumentUri("com.android.externalstorage.documents",
-                                                                    QZ_DOCUMENTS_TREE_ID));
+                                                                    qzDocumentsTreeId()));
         }
         startActivityForResult(intent, requestCode);
     }
@@ -446,7 +450,7 @@ public class CustomQtActivity extends QtActivity {
                     String rootId = android.provider.DocumentsContract.getTreeDocumentId(treeUri);
                     importFitFilesFromTree(treeUri, rootId, destinationDir, localPaths, true);
                     // only in the QZ folder itself, never in another folder the user picked
-                    if (removeOldDatabase && localPaths.length() > 0 && QZ_DOCUMENTS_TREE_ID.equals(rootId)) {
+                    if (removeOldDatabase && localPaths.length() > 0 && qzDocumentsTreeId().equals(rootId)) {
                         deleteOldHistoryDatabase(treeUri, rootId, keepDatabase);
                     }
                 } catch (Exception e) {

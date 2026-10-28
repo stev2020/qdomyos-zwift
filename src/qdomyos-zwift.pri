@@ -2,6 +2,8 @@ include(../defaults.pri)
 QT += bluetooth widgets xml positioning quick networkauth websockets texttospeech location multimedia
 QTPLUGIN += qavfmediaplayer
 QT+= charts core-private sql concurrent
+# QZipReader and QZipWriter for the FunRun moving file (funrunmove.cpp)
+QT+= gui-private
 
 qtHaveModule(httpserver) {
     QT += httpserver
@@ -114,6 +116,7 @@ SOURCES += \
     $$PWD/devices/trxappgateusbelliptical/trxappgateusbelliptical.cpp \
     $$PWD/fitdatabaseprocessor.cpp \
     $$PWD/funrunstore.cpp \
+    $$PWD/funrunmove.cpp \
     $$PWD/devices/trxappgateusbrower/trxappgateusbrower.cpp \
     $$PWD/logwriter.cpp \
     $$PWD/fitbackupwriter.cpp \
@@ -418,6 +421,7 @@ HEADERS += \
     $$PWD/ergtable.h \
     $$PWD/fitdatabaseprocessor.h \
     $$PWD/funrunstore.h \
+    $$PWD/funrunmove.h \
     $$PWD/inclinationresistancetable.h \
     $$PWD/logwriter.h \
     $$PWD/fitbackupwriter.h \

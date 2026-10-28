@@ -14,6 +14,7 @@
 #endif
 #include "fitdatabaseprocessor.h"
 #include "funrunstore.h"
+#include "funrunmove.h"
 #include <QSqlDatabase>
 #include <QSqlQuery>
 #include "material.h"
@@ -229,6 +230,7 @@ constexpr int AndroidDocumentPickerGpxRequestCode = 4103;
 constexpr int AndroidDocumentPickerSettingsRequestCode = 4104;
 constexpr int AndroidDocumentPickerFitRequestCode = 4105;
 constexpr int AndroidDocumentPickerFitFolderRequestCode = 4106;
+constexpr int AndroidDocumentPickerMoveRequestCode = 4107;
 constexpr jint AndroidActivityResultOk = -1;
 #endif
 double interpolatedHeartZone(double percentHeartRate, double zone1, double zone2, double zone3, double zone4) {
@@ -1801,7 +1803,9 @@ QString homeform::getWritableAppDir() {
     QSettings settings;
     bool android_documents_folder = settings.value(QZSettings::android_documents_folder, QZSettings::default_android_documents_folder).toBool();
     if (android_documents_folder || QOperatingSystemVersion::current() >= QOperatingSystemVersion(QOperatingSystemVersion::Android, 14)) {
-        path = QStandardPaths::writableLocation(QStandardPaths::DocumentsLocation) + "/QZ/";
+        // QZ: Documents/QZ, the FunRun app with its own id: Documents/FunRun (files of another app are hidden there)
+        path = QStandardPaths::writableLocation(QStandardPaths::DocumentsLocation) + QStringLiteral("/") +
+               FunRunMove::documentsFolder() + QStringLiteral("/");
         QDir().mkdir(path);
         // Create .nomedia file to prevent gallery indexing
         QFile nomediaFile(path + ".nomedia");
@@ -9114,6 +9118,10 @@ void homeform::openAndroidDocumentPicker(const QString &kind) {
     } else if (kind == QStringLiteral("fit")) {
         requestCode = AndroidDocumentPickerFitRequestCode;
         destinationDir = getWritableAppDir() + QStringLiteral("fit/");
+    } else if (kind == QStringLiteral("umzug")) {
+        // FunRun: the moving file of the QZ app, into the app's private folder (FunRunMove)
+        requestCode = AndroidDocumentPickerMoveRequestCode;
+        destinationDir = FunRunMove::incomingFolder();
     } else {
         qWarning() << "Unknown Android document picker kind" << kind;
         return;
@@ -9160,6 +9168,9 @@ void homeform::handleAndroidDocumentPicked(int requestCode, const QString &local
         break;
     case AndroidDocumentPickerSettingsRequestCode:
         kind = QStringLiteral("settings");
+        break;
+    case AndroidDocumentPickerMoveRequestCode:
+        kind = QStringLiteral("umzug");
         break;
     default:
         qWarning() << "Unknown Android document picker request code" << requestCode << localPath;

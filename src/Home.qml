@@ -323,11 +323,12 @@ HomeForm {
     Timer {
         interval: 200; running: true; repeat: false
         onTriggered: {
-            if(rootItem.firstRun()) {
-                stackView.push("Wizard.qml")
-            } else if (rootItem.funrunStartPage()) {
-                // FunRun: the start page (route, wind, ghost rider) on top of the tiles
+            if (rootItem.funrunStartPage()) {
+                // FunRun: the start page (route, wind, ghost rider) on top of the tiles; the QZ wizard is not needed,
+                // the bike is found on its own
                 stackView.push("FunRunPage.qml", { "page": "start.htm", "rideId": "", "from": "" })
+            } else if (rootItem.firstRun()) {
+                stackView.push("Wizard.qml")
             }
         }
     }

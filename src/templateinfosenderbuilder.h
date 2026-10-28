@@ -128,6 +128,8 @@ class TemplateInfoSenderBuilder : public QObject {
     // FunRun ultra races: pages and route data of DotWatcher and the trackers it shows (the page cannot load them itself)
     void onFunRunFetch(const QJsonValue &msgContent, TemplateInfoSender *tempSender);
     QNetworkAccessManager *funrunNet = nullptr;
+    // FunRun as an app of its own: the move from the QZ app (funrunmove.h)
+    void onFunRunMove(const QJsonValue &msgContent, TemplateInfoSender *tempSender);
     void onGetLatLon(TemplateInfoSender *tempSender);
     void onNextInclination300Meters(TemplateInfoSender *tempSender);
     void onGetGPXBase64(TemplateInfoSender *tempSender);
