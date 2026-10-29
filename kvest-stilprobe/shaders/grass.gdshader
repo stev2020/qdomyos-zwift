@@ -13,8 +13,6 @@ uniform float fade_end = 52.0;
 uniform vec2 wind_dir = vec2(0.8, 0.6);
 uniform float wind_strength = 1.0;
 uniform vec3 dry_tint : source_color = vec3(1.0, 0.9, 0.62);
-// test button of the style test: 2 = the backs of the cards lit as before, with the normal pointing down
-global uniform int kvest_test;
 
 varying float v_h;
 varying vec3 v_tint;
@@ -69,9 +67,7 @@ void fragment() {
 	ALBEDO = c;
 	// every card is lit like the meadow under it, also from behind: there the normal would point down, and the
 	// Adreno 740 (Galaxy Tab S9) draws such blades black
-	if (kvest_test != 2) {
-		NORMAL = normalize((VIEW_MATRIX * vec4(0.0, 1.0, 0.0, 0.0)).xyz);
-	}
+	NORMAL = normalize((VIEW_MATRIX * vec4(0.0, 1.0, 0.0, 0.0)).xyz);
 	BACKLIGHT = c * 0.35 * v_h;
 	ROUGHNESS = 0.9;
 	SPECULAR = 0.15;

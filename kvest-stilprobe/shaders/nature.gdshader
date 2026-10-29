@@ -32,8 +32,15 @@ void vertex() {
 
 void fragment() {
 	vec3 c = v_col;
+	// the crowns are lit like round volumes: the normals of the mesh, also on the back side. Built here with care
+	// (no NaN from a length near zero): on the Adreno 740 (Galaxy Tab S9) such leaves turned black.
+	vec3 n = v_n;
+	float n_len = length(n);
+	n = n_len > 0.0001 ? n / n_len : vec3(0.0, 1.0, 0.0);
 	if (v_leaf > 0.5) {
 		vec4 t = texture(leaf_tex, UV);
+		// sampled before the discard: after it the derivatives for the mip level are undefined
+		vec2 relief = texture(leaf_normal, UV).rg * 2.0 - 1.0;
 		vec2 sz = vec2(textureSize(leaf_tex, 0));
 		vec2 dx = dFdx(UV * sz);
 		vec2 dy = dFdy(UV * sz);
@@ -42,8 +49,12 @@ void fragment() {
 			discard;
 		}
 		c *= t.rgb;
-		NORMAL_MAP = texture(leaf_normal, UV).rgb;
-		NORMAL_MAP_DEPTH = normal_strength;
+		// the painted relief of the leaves, in a frame of the crown normal: the tangents of the mesh lie in the card
+		// and can be almost parallel to that normal, and the frame Godot builds from them then fell apart
+		vec3 side = cross(vec3(0.0, 1.0, 0.0), n);
+		float side_len = length(side);
+		side = side_len > 0.0001 ? side / side_len : vec3(1.0, 0.0, 0.0);
+		n = normalize(n + (side * relief.x + cross(n, side) * relief.y) * normal_strength);
 		BACKLIGHT = v_col * 0.32;
 		SPECULAR = 0.12;
 		ROUGHNESS = 0.85;
@@ -52,7 +63,6 @@ void fragment() {
 		ROUGHNESS = 0.95;
 		BACKLIGHT = c * 0.12;
 	}
-	// the crowns are lit like round volumes: use the normals of the mesh, also on the back side
-	NORMAL = normalize((VIEW_MATRIX * vec4(v_n, 0.0)).xyz);
+	NORMAL = normalize((VIEW_MATRIX * vec4(n, 0.0)).xyz);
 	ALBEDO = c;
 }

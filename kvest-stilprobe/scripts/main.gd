@@ -12,10 +12,9 @@ const LEVELS := [
 	{"name": "Mittel", "density": 0.6, "fade": 44.0, "ahead": 432.0, "side": 216.0, "tree_lod": 130.0, "shadows": true, "scale": 0.75, "msaa": Viewport.MSAA_2X, "pollen": true, "fog": 0.0024},
 	{"name": "Niedrig", "density": 0.35, "fade": 34.0, "ahead": 336.0, "side": 168.0, "tree_lod": 95.0, "shadows": false, "scale": 0.65, "msaa": Viewport.MSAA_DISABLED, "pollen": false, "fog": 0.0034},
 ]
-## The test button: each step brings back one thing as it was before the fix for the Galaxy Tab S9 (Adreno 740),
-## which drew everything facing down black: backs of grass blades, undersides of tree crowns. The index goes to the
-## shaders as kvest_test.
-const TESTS := ["normal", "Himmelslicht wie früher", "Gras wie früher", "ohne Spiegelung"]
+## The test button: "Bäume wie früher" brings back the tree shader as it was before the fix for the Galaxy Tab S9
+## (Adreno 740), which drew some leaves black
+const TESTS := ["normal", "Bäume wie früher"]
 
 var world: World
 var rider := Rider.new()
@@ -199,9 +198,7 @@ func _make_environment() -> void:
 	env = Environment.new()
 	env.background_mode = Environment.BG_SKY
 	env.sky = sky
-	# the ambient light is a colour of the sky, the same from every direction: with the light of the sky itself, the
-	# Adreno 740 (Galaxy Tab S9) draws everything facing down black (undersides of the crowns, backs of grass blades)
-	env.ambient_light_source = Environment.AMBIENT_SOURCE_COLOR
+	env.ambient_light_source = Environment.AMBIENT_SOURCE_SKY
 	env.ambient_light_sky_contribution = 1.0
 	env.reflected_light_source = Environment.REFLECTION_SOURCE_SKY
 	env.tonemap_mode = Environment.TONE_MAPPER_FILMIC
@@ -245,8 +242,7 @@ func _apply_light() -> void:
 		sky_mat.set_shader_parameter("sun_glow", 0.55)
 		env.fog_light_color = Color(0.96, 0.80, 0.62)
 		env.fog_sun_scatter = 0.45
-		env.ambient_light_color = Color(0.67, 0.67, 0.65)
-		env.ambient_light_energy = 0.76
+		env.ambient_light_energy = 0.7
 		env.glow_intensity = 0.95
 	else:
 		sun.rotation_degrees = Vector3(-38.0, 158.0, 0.0)
@@ -259,8 +255,7 @@ func _apply_light() -> void:
 		sky_mat.set_shader_parameter("sun_glow", 0.25)
 		env.fog_light_color = Color(0.74, 0.82, 0.88)
 		env.fog_sun_scatter = 0.15
-		env.ambient_light_color = Color(0.56, 0.68, 0.81)
-		env.ambient_light_energy = 0.9
+		env.ambient_light_energy = 0.82
 		env.glow_intensity = 0.6
 	if backdrop != null:
 		for child in backdrop.get_children():
@@ -291,12 +286,10 @@ func _on_test() -> void:
 	_apply_level(level)
 
 
-## The current test: the grass shader reads it as kvest_test, the light from the sky is set here
+## The current test: the tree shader of today or the one from before
 func _apply_test() -> void:
-	var t: String = TESTS[test]
-	RenderingServer.global_shader_parameter_set("kvest_test", test)
-	env.ambient_light_source = Environment.AMBIENT_SOURCE_SKY if t == "Himmelslicht wie früher" else Environment.AMBIENT_SOURCE_COLOR
-	env.reflected_light_source = Environment.REFLECTION_SOURCE_DISABLED if t == "ohne Spiegelung" else Environment.REFLECTION_SOURCE_SKY
+	var old: bool = TESTS[test] == "Bäume wie früher"
+	mats["nature"].shader = load("res://shaders/nature_old.gdshader" if old else "res://shaders/nature.gdshader")
 
 
 func _on_quality() -> void:
