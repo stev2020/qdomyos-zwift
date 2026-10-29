@@ -9,15 +9,21 @@ enum { BEECH, BIRCH, OAK, MAPLE, ROWAN, BUSH, SPRUCE, FIR, ROCK_A, ROCK_B, COUNT
 ## Cells of textures/leaves.png (2 x 4): 0-1 oval leaves, 2-3 small leaves, 4-5 fir branches, 6-7 maple leaves.
 const ATLAS_ROWS := 4.0
 
-## Crown centre height, radii, sub-crowns, clusters per sub-crown, card size, leaf cells, bark, trunk radius, stems.
+## Crown centre height, radii, sub-crowns, clusters per sub-crown, card size, leaf cells, bark, trunk radius, stems,
+## ridges (depth of the furrows in the bark) and roots (size of the root buttresses at the foot).
 const SPECIES := {
-	BEECH: {"cy": 5.6, "rx": 4.0, "ry": 3.5, "lobes": 8, "per": 5, "size": 1.75, "cells": [0, 1], "bark": Color(0.30, 0.29, 0.27, 0.0), "trunk": 0.34, "stems": 1},
-	BIRCH: {"cy": 6.6, "rx": 2.3, "ry": 3.8, "lobes": 7, "per": 4, "size": 1.45, "cells": [2, 3], "bark": Color(0.86, 0.86, 0.82, 0.0), "trunk": 0.2, "stems": 1},
-	OAK: {"cy": 5.6, "rx": 5.0, "ry": 2.9, "lobes": 9, "per": 5, "size": 1.8, "cells": [0, 1], "bark": Color(0.24, 0.19, 0.15, 0.0), "trunk": 0.42, "stems": 1},
-	MAPLE: {"cy": 5.2, "rx": 3.8, "ry": 3.6, "lobes": 9, "per": 6, "size": 1.75, "cells": [6, 7], "bark": Color(0.28, 0.23, 0.19, 0.0), "trunk": 0.3, "stems": 1},
-	ROWAN: {"cy": 3.9, "rx": 2.4, "ry": 2.2, "lobes": 6, "per": 4, "size": 1.3, "cells": [2, 3], "bark": Color(0.33, 0.31, 0.29, 0.0), "trunk": 0.15, "stems": 3},
-	BUSH: {"cy": 0.85, "rx": 1.55, "ry": 1.0, "lobes": 3, "per": 5, "size": 1.15, "cells": [0, 1, 2, 3], "bark": Color(0.3, 0.25, 0.2, 0.0), "trunk": 0.0, "stems": 0},
+	BEECH: {"cy": 5.6, "rx": 4.0, "ry": 3.5, "lobes": 8, "per": 5, "size": 1.75, "cells": [0, 1], "bark": Color(0.25, 0.245, 0.215, 0.0), "trunk": 0.34, "stems": 1, "ridges": 0.0, "roots": 0.45},
+	BIRCH: {"cy": 6.6, "rx": 2.3, "ry": 3.8, "lobes": 7, "per": 4, "size": 1.45, "cells": [2, 3], "bark": Color(0.8, 0.78, 0.71, 0.0), "trunk": 0.2, "stems": 1, "ridges": 0.0, "roots": 0.2},
+	OAK: {"cy": 5.6, "rx": 5.0, "ry": 2.9, "lobes": 9, "per": 5, "size": 1.8, "cells": [0, 1], "bark": Color(0.11, 0.08, 0.045, 0.0), "trunk": 0.42, "stems": 1, "ridges": 0.22, "roots": 0.45},
+	MAPLE: {"cy": 5.2, "rx": 3.8, "ry": 3.6, "lobes": 9, "per": 6, "size": 1.75, "cells": [6, 7], "bark": Color(0.15, 0.1, 0.05, 0.0), "trunk": 0.3, "stems": 1, "ridges": 0.14, "roots": 0.4},
+	ROWAN: {"cy": 3.9, "rx": 2.4, "ry": 2.2, "lobes": 6, "per": 4, "size": 1.3, "cells": [2, 3], "bark": Color(0.19, 0.175, 0.14, 0.0), "trunk": 0.15, "stems": 3, "ridges": 0.0, "roots": 0.15},
+	BUSH: {"cy": 0.85, "rx": 1.55, "ry": 1.0, "lobes": 3, "per": 5, "size": 1.15, "cells": [0, 1, 2, 3], "bark": Color(0.3, 0.25, 0.2, 0.0), "trunk": 0.0, "stems": 0, "ridges": 0.0, "roots": 0.0},
 }
+
+## Birch branches, the dark dashes in birch bark, and the moss at the foot of the trunks.
+const BIRCH_BRANCH := Color(0.55, 0.52, 0.47, 0.0)
+const BIRCH_MARK := Color(0.035, 0.032, 0.03, 0.0)
+const MOSS := Color(0.075, 0.11, 0.03, 0.0)
 
 
 class Builder:
@@ -61,39 +67,87 @@ class Builder:
 		m.surface_set_material(0, material)
 		return m
 
-	## A tapered tube along the points (trunks and branches).
-	func tube(points: Array, radii: Array, sides: int, col: Color, sway_from: float, sway_to: float, ring_cols: Array = []) -> void:
-		var rings := []
+	## A tapered trunk or branch along the points, carved in flat faces: every face between two rings has
+	## its own normal and its own shade, so the bark catches the light face by face. The faces wind slowly
+	## around the tube and its corners lie unevenly. ridges sets every other corner deeper (furrowed bark),
+	## roots adds three root buttresses at the foot. marks: for each segment, the chance of a dark dash
+	## (birch bark).
+	func bark(points: Array, radii: Array, sides: int, col: Color, sway_from: float, sway_to: float,
+			rng: RandomNumberGenerator, ridges := 0.0, roots := 0.0, marks: Array = []) -> void:
 		var count := points.size()
+		# how far the faces wind around the tube per metre
+		var twist := rng.randf_range(0.06, 0.14) * (1.0 if rng.randf() < 0.5 else -1.0)
+		var along := 0.0
+		var lobes := rng.randf() * TAU
+		# an uneven cross-section that stays the same all the way up, so the faces run on in long strips
+		var shape := []
+		for s in sides:
+			shape.append(rng.randf_range(0.88, 1.08))
+		var rings := []
+		var dirs := []
+		var side := Vector3.ZERO
 		for i in count:
 			var p: Vector3 = points[i]
 			var ahead: Vector3 = points[mini(i + 1, count - 1)]
 			var behind: Vector3 = points[maxi(i - 1, 0)]
 			var dir := (ahead - behind).normalized()
-			var side := dir.cross(Vector3.FORWARD)
-			if side.length() < 0.1:
-				side = dir.cross(Vector3.RIGHT)
-			side = side.normalized()
-			var side2 := dir.cross(side).normalized()
-			var t := float(i) / float(count - 1)
-			var shade := lerpf(0.78, 1.05, t)
-			var rc := Color(col.r * shade, col.g * shade, col.b * shade, 0.0)
-			if not ring_cols.is_empty():
-				rc = ring_cols[i]
+			if i == 0:
+				side = dir.cross(Vector3.FORWARD)
+				if side.length() < 0.1:
+					side = dir.cross(Vector3.RIGHT)
+			# the frame travels along the tube, so the faces do not wind where it bends
+			side = (side - dir * side.dot(dir)).normalized()
+			var side2 := dir.cross(side)
+			if i > 0:
+				along += p.distance_to(points[i - 1])
+			var foot := pow(1.0 - clampf(p.y / 0.9, 0.0, 1.0), 2.0)
 			var ring := []
 			for s in sides:
-				var a := TAU * s / sides
-				var off := side * cos(a) + side2 * sin(a)
-				ring.append(vert(p + off * float(radii[i]), off, dir, rc, Vector2.ZERO, lerpf(sway_from, sway_to, t)))
+				var a0 := TAU * s / sides
+				var a := a0 + twist * along
+				var r: float = radii[i] * float(shape[s]) * rng.randf_range(0.98, 1.02)
+				if s % 2 == 1:
+					r *= 1.0 - ridges
+				r *= 1.0 + roots * foot * maxf(0.0, cos(3.0 * a0 + lobes))
+				ring.append(p + (side * cos(a) + side2 * sin(a)) * r)
 			rings.append(ring)
+			dirs.append(dir)
+		# streaks running up the bark: every side of the tube a little lighter or darker
+		var streaks := []
+		for s in sides:
+			streaks.append(rng.randf_range(0.8, 1.12))
 		for i in count - 1:
+			var sway_a := lerpf(sway_from, sway_to, float(i) / float(count - 1))
+			var sway_b := lerpf(sway_from, sway_to, float(i + 1) / float(count - 1))
+			var centre: Vector3 = ((points[i] as Vector3) + (points[i + 1] as Vector3)) * 0.5
+			var chance: float = marks[i] if i < marks.size() else 0.0
+			var dash := false
 			for s in sides:
-				var a: int = rings[i][s]
-				var b: int = rings[i][(s + 1) % sides]
-				var d: int = rings[i + 1][s]
-				var e: int = rings[i + 1][(s + 1) % sides]
-				tri(a, d, b)
-				tri(b, d, e)
+				var a: Vector3 = rings[i][s]
+				var b: Vector3 = rings[i][(s + 1) % sides]
+				var d: Vector3 = rings[i + 1][s]
+				var e: Vector3 = rings[i + 1][(s + 1) % sides]
+				var nn := (e - a).cross(b - d)
+				if nn.dot((a + b + d + e) * 0.25 - centre) < 0.0:
+					nn = -nn
+				nn = nn.normalized()
+				var y := (a.y + b.y + d.y + e.y) * 0.25
+				var f: float = streaks[s] * rng.randf_range(0.9, 1.1) * lerpf(0.7, 1.0, smoothstep(-0.2, 0.9, y))
+				var c := Color(col.r * f, col.g * f, col.b * f, 0.0)
+				if roots > 0.0:
+					# moss on the shady side of the foot
+					c = c.lerp(MOSS, clampf(nn.z * 1.4, 0.0, 1.0) * (1.0 - smoothstep(0.1, 1.3, y)) * 0.6)
+				# dashes are wider than high: a dark face often continues on the next side
+				dash = rng.randf() < (maxf(chance, 0.55) if dash else chance)
+				if dash:
+					c = BIRCH_MARK
+				var up: Vector3 = dirs[i]
+				var ia := vert(a, nn, up, c, Vector2.ZERO, sway_a)
+				var ib := vert(b, nn, up, c, Vector2.ZERO, sway_a)
+				var id := vert(d, nn, up, c, Vector2.ZERO, sway_b)
+				var ie := vert(e, nn, up, c, Vector2.ZERO, sway_b)
+				tri(ia, id, ib)
+				tri(ib, id, ie)
 
 	## One card of a leaf cluster. Corner normals point away from the crown centre, so the crown
 	## is lit like a soft round volume; COLOR.r darkens the inside of the crown.
@@ -202,29 +256,18 @@ static func broadleaf(kind: int, seed_value: int, low: bool, material: Material)
 	var crown_c := Vector3(lean.x, cy, lean.z)
 	var crown_r := Vector3(rx, ry, rx)
 	var trunk_top := Vector3(lean.x * 0.9, cy * 0.92, lean.z * 0.9)
-	var sides := 5 if low else 8
+	var sides := 5 if low else (6 if kind == ROWAN else (10 if kind == OAK else 8))
 	var stems: int = sp["stems"]
+	# the bark draws from random numbers of its own
+	var brng := RandomNumberGenerator.new()
+	brng.seed = seed_value * 31 + 7
 	for st in stems:
 		var spread := Vector3.ZERO
 		if stems > 1:
 			var a := TAU * st / stems + rng.randf_range(-0.3, 0.3)
 			spread = Vector3(cos(a), 0.0, sin(a)) * rx * 0.35
-		var top := trunk_top + spread
-		var steps := 17 if kind == BIRCH and not low else 4
-		var pts := []
-		var radii := []
-		var cols := []
-		for i in steps:
-			var t := float(i) / float(steps - 1)
-			var p := Vector3(0, -0.5, 0).lerp(top, t)
-			p += Vector3(rng.randf_range(-0.08, 0.08), 0.0, rng.randf_range(-0.08, 0.08)) * (1.0 - absf(t - 0.5) * 2.0)
-			pts.append(p)
-			radii.append(lerpf(trunk_r * 1.25, trunk_r * 0.38, pow(t, 0.8)))
-			if kind == BIRCH:
-				var dark := i == 0 or (i % 2 == 1 and rng.randf() < 0.55)
-				cols.append(Color(0.16, 0.15, 0.14, 0.0) if dark else bark * rng.randf_range(0.92, 1.04))
 		if kind != BUSH:
-			b.tube(pts, radii, sides, bark, 0.0, 0.25, cols)
+			_trunk(b, kind, trunk_top + spread, trunk_r, sides, low, sp, brng)
 	var centres := []
 	for i in int(sp["lobes"]):
 		var dir := Vector3(rng.randf_range(-1, 1), rng.randf_range(-0.6, 1.0), rng.randf_range(-1, 1)).normalized()
@@ -235,14 +278,54 @@ static func broadleaf(kind: int, seed_value: int, low: bool, material: Material)
 		if kind != BUSH and not low:
 			var start := Vector3(0, cy * rng.randf_range(0.5, 0.85), 0).lerp(trunk_top, 0.5)
 			var end: Vector3 = start.lerp(lc, 0.85)
-			var bc := Color(0.62, 0.61, 0.58, 0.0) if kind == BIRCH else bark
-			b.tube([start, start.lerp(end, 0.5) + Vector3(0, 0.3, 0), end], [0.11, 0.08, 0.05], 5, bc, 0.2, 0.7)
+			var bc := BIRCH_BRANCH if kind == BIRCH else bark
+			b.bark([start, start.lerp(end, 0.5) + Vector3(0, 0.3, 0), end], [trunk_r * 0.42, trunk_r * 0.28, trunk_r * 0.12], 5, bc, 0.2, 0.7, brng)
 		var count := 2 if low else int(sp["per"])
 		for k in count:
 			var off := Vector3(rng.randf_range(-1, 1), rng.randf_range(-0.8, 1), rng.randf_range(-1, 1)).limit_length(1.0)
 			var size: float = float(sp["size"]) * (1.55 if low else 1.0) * rng.randf_range(0.85, 1.15) * scale
 			b.cluster(lc + off * lr * 0.7, size, rng, crown_c, crown_r, 2 if low else 3, cells)
 	return b.to_mesh(material)
+
+
+## The trunk of a broadleaf tree, from below the ground up into the crown: a wide foot with root
+## buttresses, then even steps. Birches get thin bands between the steps for the dark dashes of their bark,
+## and a dark foot.
+static func _trunk(b: Builder, kind: int, top: Vector3, trunk_r: float, sides: int, low: bool, sp: Dictionary,
+		rng: RandomNumberGenerator) -> void:
+	var ys := [-0.5, 0.0]
+	if low:
+		ys.append_array([0.4, top.y * 0.5, top.y])
+	elif kind == BIRCH:
+		ys.append_array([0.12, 0.3])
+		var y := 0.42
+		while y < top.y - 0.6:
+			ys.append_array([y, y + 0.07])
+			y += 0.42
+		ys.append(top.y)
+	else:
+		ys.append_array([0.12, 0.3, 0.6, 1.0])
+		for k in 5:
+			ys.append(lerpf(1.0, top.y, float(k + 1) / 5.0))
+	var pts := []
+	var radii := []
+	var marks := []
+	# the trunk bends in a gentle wave on its way up
+	var wave := Vector3(rng.randf() * TAU, rng.randf_range(0.9, 1.5), rng.randf() * TAU)
+	for i in ys.size():
+		var y: float = ys[i]
+		var t := (y + 0.5) / (top.y + 0.5)
+		var p := Vector3(top.x * t, y, top.z * t)
+		p += Vector3(sin(y * wave.y + wave.x), 0.0, sin(y * wave.y * 0.8 + wave.z)) * 0.08 * (1.0 - absf(t - 0.5) * 2.0)
+		pts.append(p)
+		# the foot widens in a soft curve into the ground
+		var flare := 1.0 + 0.5 * pow(1.0 - clampf(y, 0.0, 1.0), 3.0)
+		radii.append(lerpf(trunk_r * 1.2, trunk_r * 0.38, pow(t, 0.8)) * flare)
+		if kind == BIRCH and i + 1 < ys.size():
+			# dark foot, then dark dashes in the thin bands, more of them low down
+			var thin: bool = float(ys[i + 1]) - y < 0.1
+			marks.append(1.0 if y < 0.1 else (0.5 if y < 0.25 else (lerpf(0.7, 0.25, t) if thin else lerpf(0.12, 0.0, t))))
+	b.bark(pts, radii, sides, sp["bark"], 0.0, 0.25, rng, sp["ridges"], sp["roots"], marks)
 
 
 ## Spruces (narrow, drooping) and firs (wider, flatter): whorls of branches, each branch two
@@ -254,7 +337,12 @@ static func conifer(kind: int, seed_value: int, low: bool, material: Material) -
 	var spruce := kind == SPRUCE
 	var h := rng.randf_range(11.0, 14.0) if spruce else rng.randf_range(9.0, 12.0)
 	var r0 := rng.randf_range(2.2, 2.6) if spruce else rng.randf_range(2.9, 3.4)
-	b.tube([Vector3(0, -0.5, 0), Vector3(0, h * 0.5, 0), Vector3(0, h * 0.97, 0)], [0.26, 0.17, 0.05], 5 if low else 7, Color(0.17, 0.12, 0.09, 0), 0.0, 0.3)
+	# red-brown spruce bark, grey fir bark
+	var brng := RandomNumberGenerator.new()
+	brng.seed = seed_value * 31 + 7
+	var bark := Color(0.17, 0.078, 0.04, 0.0) if spruce else Color(0.16, 0.135, 0.1, 0.0)
+	b.bark([Vector3(0, -0.5, 0), Vector3(0, 0.0, 0), Vector3(0, 0.45, 0), Vector3(0, h * 0.5, 0), Vector3(0, h * 0.97, 0)],
+		[0.4, 0.38, 0.29, 0.17, 0.05], 5 if low else 7, bark, 0.0, 0.3, brng, 0.12, 0.3)
 	var layers := (7 if low else 13) if spruce else (6 if low else 11)
 	for l in layers:
 		var t := float(l) / float(layers - 1)

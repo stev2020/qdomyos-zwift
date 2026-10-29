@@ -2,8 +2,11 @@
 // COLOR.a = 1: leaf card with the painted leaf clusters (COLOR.r = shade inside the crown).
 // COLOR.a = 0: solid part (bark, fir branches, rock) in the vertex colour.
 // UV2.x: how much the wind moves the vertex. INSTANCE_CUSTOM: rgb = leaf tint, a = wind phase.
+// No gloss from the sun (specular_disabled): on the Adreno 740 (Galaxy Tab S9) Godot computes it in half precision,
+// and for faces turned away from the camera and the sun a product in it overflows; times the light of 0 that gives
+// no number at all, and the pixel turns black. Rough bark and leaves hardly show that gloss anyway.
 shader_type spatial;
-render_mode cull_disabled, world_vertex_coords, diffuse_lambert_wrap;
+render_mode cull_disabled, world_vertex_coords, diffuse_lambert_wrap, specular_disabled;
 
 uniform sampler2D leaf_tex : source_color, filter_linear_mipmap, repeat_disable;
 uniform sampler2D leaf_normal : hint_normal, filter_linear_mipmap, repeat_disable;
@@ -59,9 +62,9 @@ void fragment() {
 		SPECULAR = 0.12;
 		ROUGHNESS = 0.85;
 	} else {
+		// bark and rock: a smaller light wrap than the leaves, so the carved faces stand apart
 		SPECULAR = 0.15;
-		ROUGHNESS = 0.95;
-		BACKLIGHT = c * 0.12;
+		ROUGHNESS = 0.5;
 	}
 	NORMAL = normalize((VIEW_MATRIX * vec4(n, 0.0)).xyz);
 	ALBEDO = c;

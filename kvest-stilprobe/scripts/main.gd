@@ -12,9 +12,9 @@ const LEVELS := [
 	{"name": "Mittel", "density": 0.6, "fade": 44.0, "ahead": 432.0, "side": 216.0, "tree_lod": 130.0, "shadows": true, "scale": 0.75, "msaa": Viewport.MSAA_2X, "pollen": true, "fog": 0.0024},
 	{"name": "Niedrig", "density": 0.35, "fade": 34.0, "ahead": 336.0, "side": 168.0, "tree_lod": 95.0, "shadows": false, "scale": 0.65, "msaa": Viewport.MSAA_DISABLED, "pollen": false, "fog": 0.0034},
 ]
-## The test button: "Bäume wie früher" brings back the tree shader as it was before the fix for the Galaxy Tab S9
-## (Adreno 740), which drew some leaves black
-const TESTS := ["normal", "Bäume wie früher"]
+## The test button: "Glanz wie früher" gives trees, bushes and rocks the gloss of the sun again, which drew some
+## leaves black on the Galaxy Tab S9 (Adreno 740), see shaders/nature.gdshader
+const TESTS := ["normal", "Glanz wie früher"]
 
 var world: World
 var rider := Rider.new()
@@ -27,6 +27,7 @@ var hud: Hud
 var backdrop: Node3D
 var pollen: GPUParticles3D
 var mats := {}
+var _gloss_shader: Shader
 
 var quality := "auto"
 var level := 0
@@ -286,10 +287,16 @@ func _on_test() -> void:
 	_apply_level(level)
 
 
-## The current test: the tree shader of today or the one from before
+## The current test: the tree shader of today, or the same shader with the gloss of the sun
 func _apply_test() -> void:
-	var old: bool = TESTS[test] == "Bäume wie früher"
-	mats["nature"].shader = load("res://shaders/nature_old.gdshader" if old else "res://shaders/nature.gdshader")
+	var nature: Shader = load("res://shaders/nature.gdshader")
+	if TESTS[test] == "Glanz wie früher":
+		if _gloss_shader == null:
+			_gloss_shader = Shader.new()
+			_gloss_shader.code = nature.code.replace(", specular_disabled;", ";")
+		mats["nature"].shader = _gloss_shader
+	else:
+		mats["nature"].shader = nature
 
 
 func _on_quality() -> void:
