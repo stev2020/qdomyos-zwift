@@ -8,10 +8,11 @@ extends Node3D
 ##   --demo <km/h> --start <metres>                                        for recordings with --write-movie
 
 const SHIFT := 1024.0
+## gravel: share of the pebbles on the path that are drawn, gravel_range: up to which distance (0: none).
 const LEVELS := [
-	{"name": "Hoch", "density": 1.0, "fade": 52.0, "ahead": 528.0, "side": 264.0, "tree_lod": 170.0, "shadows": true, "scale": 0.85, "msaa": Viewport.MSAA_2X, "pollen": true, "fog": 0.0019},
-	{"name": "Mittel", "density": 0.6, "fade": 44.0, "ahead": 432.0, "side": 216.0, "tree_lod": 130.0, "shadows": true, "scale": 0.75, "msaa": Viewport.MSAA_2X, "pollen": true, "fog": 0.0024},
-	{"name": "Niedrig", "density": 0.35, "fade": 34.0, "ahead": 336.0, "side": 168.0, "tree_lod": 95.0, "shadows": false, "scale": 0.65, "msaa": Viewport.MSAA_DISABLED, "pollen": false, "fog": 0.0034},
+	{"name": "Hoch", "density": 1.0, "fade": 52.0, "ahead": 528.0, "side": 264.0, "tree_lod": 170.0, "shadows": true, "scale": 0.85, "msaa": Viewport.MSAA_2X, "pollen": true, "fog": 0.0019, "gravel": 1.0, "gravel_range": 46.0},
+	{"name": "Mittel", "density": 0.6, "fade": 44.0, "ahead": 432.0, "side": 216.0, "tree_lod": 130.0, "shadows": true, "scale": 0.75, "msaa": Viewport.MSAA_2X, "pollen": true, "fog": 0.0024, "gravel": 0.6, "gravel_range": 32.0},
+	{"name": "Niedrig", "density": 0.35, "fade": 34.0, "ahead": 336.0, "side": 168.0, "tree_lod": 95.0, "shadows": false, "scale": 0.65, "msaa": Viewport.MSAA_DISABLED, "pollen": false, "fog": 0.0034, "gravel": 0.0, "gravel_range": 0.0},
 ]
 ## Names for --land, in the order of Land.LAUB .. Land.HOCH
 const LAND_ARGS := ["laub", "heide", "fluss", "hoch"]
@@ -26,6 +27,7 @@ const GROUND := {
 	"path_color": [Color(0.46, 0.36, 0.25), Color(0.76, 0.67, 0.50), Color(0.58, 0.55, 0.49), Color(0.52, 0.47, 0.40)],
 	"path_rim": [Color(0.31, 0.24, 0.16), Color(0.58, 0.50, 0.36), Color(0.42, 0.40, 0.35), Color(0.38, 0.34, 0.28)],
 	"bed_color": [Color(0.58, 0.55, 0.47), Color(0.72, 0.65, 0.50), Color(0.60, 0.58, 0.52), Color(0.52, 0.51, 0.47)],
+	"stone_color": [Color(0.56, 0.54, 0.50), Color(0.84, 0.80, 0.70), Color(0.66, 0.64, 0.60), Color(0.60, 0.58, 0.55)],
 }
 ## Height of the far hills and mountains per landscape: low over the heath, high around the valley and the highland.
 const BACKDROP_SCALE := [1.0, 0.6, 1.45, 1.8]
@@ -105,7 +107,7 @@ func _ready() -> void:
 
 
 ## All plants on a plain meadow (previews only): --gallery sommer|herbst
-## Back row: the trees. Front row: bush, juniper, mountain pine, two rocks, heather and tussocks.
+## Back row: the trees. Front row: bush, juniper, mountain pine, two rocks, heather, tussocks and a fallen trunk.
 func _make_gallery() -> void:
 	hud.visible = false
 	backdrop.visible = false
@@ -124,6 +126,7 @@ func _make_gallery() -> void:
 	var front := [Kit.BUSH, Kit.JUNIPER, Kit.MUGO, Kit.ROCK_A, Kit.ROCK_C]
 	for i in front.size():
 		_gallery_plant(front[i], Vector3((i - 3.5) * 6.0, 0.0, 16.0))
+	_gallery_plant(Kit.LOG, Vector3(21.0, 0.0, 16.0))
 	# heather (6) and tussocks (7) as small patches of grass clumps
 	var mm := MultiMesh.new()
 	mm.transform_format = MultiMesh.TRANSFORM_3D
@@ -221,6 +224,8 @@ func _make_materials() -> void:
 	var patch := _noise_tex(5, 0.025, 256, 4)
 	mats["terrain"] = _shader_mat("res://shaders/terrain.gdshader")
 	mats["terrain"].set_shader_parameter("patch_noise", patch)
+	mats["terrain"].set_shader_parameter("path_tex", load("res://textures/path.png"))
+	mats["terrain"].set_shader_parameter("hoof_tex", load("res://textures/hoof.png"))
 	for key in GROUND:
 		mats["terrain"].set_shader_parameter(key, PackedColorArray(GROUND[key]))
 	mats["grass"] = _shader_mat("res://shaders/grass.gdshader")
@@ -231,6 +236,7 @@ func _make_materials() -> void:
 	mats["nature"].set_shader_parameter("leaf_normal", load("res://textures/leaves_n.png"))
 	mats["water"] = _shader_mat("res://shaders/water.gdshader")
 	mats["water"].set_shader_parameter("water_noise", _noise_tex(9, 0.045, 256, 3))
+	mats["pebble"] = _shader_mat("res://shaders/pebble.gdshader")
 
 
 func _make_environment() -> void:
@@ -318,6 +324,8 @@ func _apply_level(l: int) -> void:
 	mats["grass"].set_shader_parameter("fade_start", p["fade"] - 12.0)
 	mats["grass"].set_shader_parameter("fade_end", p["fade"])
 	mats["terrain"].set_shader_parameter("grass_fade", p["fade"])
+	mats["pebble"].set_shader_parameter("fade_start", p["gravel_range"] - 12.0)
+	mats["pebble"].set_shader_parameter("fade_end", p["gravel_range"])
 	if pollen != null:
 		pollen.emitting = p["pollen"]
 		pollen.visible = p["pollen"]

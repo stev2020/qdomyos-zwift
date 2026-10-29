@@ -9,6 +9,9 @@ extends RefCounted
 ## over BLEND metres, the relief over RELIEF_BLEND metres, so the climb into the highland stays long and even.
 ## Land.mode can hold a single landscape instead (button "Landschaft", --land).
 ##
+## The path itself changes every few hundred metres between a busy cart track, a quiet one with a strip of grass in the
+## middle and a narrow footpath (path_style).
+##
 ## Coordinates: u is the distance forward along the main direction, x is sideways (right = +x).
 ## In the scene, z = -(u - origin_u); the world shifts its origin now and then (see World).
 ## The same path and stream formulas live in shaders/land.gdshaderinc for the shaders.
@@ -21,7 +24,14 @@ const STREAM_BASE := 36.0
 const STREAM_A := [24.0, 3.0]
 const STREAM_L := [430.0, 41.0]
 const STREAM_P := [2.0, 0.7]
+## Half the width of a cart track, of the mule track of the highland and of a footpath.
 const PATH_HALF := 1.3
+const MULE_HALF := 0.9
+const FOOT_HALF := 0.45
+## The noise lanes picks the kind of path: below FOOT_BELOW a footpath (about 12 % of the way), above QUIET_ABOVE a
+## quiet track with a grass strip (about 45 %), in between a busy cart track.
+const FOOT_BELOW := -0.39
+const QUIET_ABOVE := 0.03
 ## The noise textures of the shaders repeat every NOISE_PERIOD metres.
 const NOISE_PERIOD := 256.0
 
@@ -37,10 +47,14 @@ const RELIEF_BLEND := 1800.0
 const STREAM_WIDTH := [1.0, 0.0, 1.6, 0.6]
 
 ## Fields of row(u): path x, 1/length of the path tangent, path height, stream x, 1/length of the stream tangent,
-## water level, then the share of each landscape in the look (W) and in the relief (RW), and the stream width (SW).
+## water level, then the share of each landscape in the look (W) and in the relief (RW), the stream width (SW), and the
+## kind of path: half its width (PH), the grass strip in the middle (QUIET) and the cart ruts (RUTS), see path_style.
 const W := 6
 const RW := 10
 const SW := 14
+const PH := 15
+const QUIET := 16
+const RUTS := 17
 
 ## -1: the landscapes take turns along the path; LAUB .. HOCH: only this landscape.
 static var mode := -1
@@ -54,6 +68,7 @@ static var firs: FastNoiseLite
 static var huge: FastNoiseLite      # the long climbs of the highland
 static var humps: FastNoiseLite     # the short climbs in the river valley
 static var patches: FastNoiseLite   # sand in the heath, scree in the highland
+static var lanes: FastNoiseLite     # the kind of path along the way
 
 
 static func init() -> void:
@@ -66,6 +81,7 @@ static func init() -> void:
 	huge = _noise(101, 0.0004, 1)
 	humps = _noise(113, 0.005, 1)
 	patches = _noise(127, 0.028, 2)
+	lanes = _noise(131, 0.002, 2)
 
 
 static func _noise(seed_value: int, frequency: float, octaves: int) -> FastNoiseLite:
@@ -228,7 +244,8 @@ static func path_height(u: float) -> float:
 	return h
 
 
-## Water level of the stream.
+## Water level of the stream. It always stays half a metre below the path beside it, so the water never seems to stand
+## higher than the way.
 static func stream_level(u: float) -> float:
 	var sx := stream_x(u)
 	var px := path_x(u)
@@ -238,13 +255,43 @@ static func stream_level(u: float) -> float:
 	for k in KINDS:
 		if w[k] > 0.0:
 			h += w[k] * _base(k, sx, u, px, nb)
-	return h - 0.9
+	return minf(h - 0.9, path_height(u) - 0.5)
 
 
-## Everything that only depends on u, shared by a whole row of points (see the fields W, RW and SW above).
+## The path at u: [half its width, grass strip in the middle (0 .. 1), cart ruts (0 .. 1)]. The kind changes every few
+## hundred metres: a busy cart track with a trodden middle full of hoof prints, a quiet one with a strip of grass in
+## the middle, and now and then a narrow footpath. Grass strips grow only on earth and sand; the river valley has gravel
+## roads, the highland mule tracks without cart ruts.
+static func path_style(u: float) -> Vector3:
+	var n := lanes.get_noise_1d(u)
+	var foot := 1.0 - smoothstep(FOOT_BELOW - 0.06, FOOT_BELOW + 0.06, n)
+	var calm := smoothstep(QUIET_ABOVE - 0.06, QUIET_ABOVE + 0.06, n)
+	var w := weights(u, BLEND)
+	var half := 0.0
+	var quiet := 0.0
+	var ruts := 0.0
+	for k in KINDS:
+		if w[k] <= 0.0:
+			continue
+		var track := PATH_HALF
+		var grass := calm
+		var carts := 1.0
+		if k == FLUSS:
+			grass = 0.0
+		elif k == HOCH:
+			track = MULE_HALF
+			grass = 0.0
+			carts = 0.0
+		half += w[k] * lerpf(track, FOOT_HALF, foot)
+		quiet += w[k] * grass * (1.0 - foot)
+		ruts += w[k] * carts * (1.0 - foot)
+	return Vector3(half, quiet, ruts)
+
+
+## Everything that only depends on u, shared by a whole row of points (see the fields W .. RUTS above).
 static func row(u: float) -> PackedFloat64Array:
 	var r := PackedFloat64Array()
-	r.resize(15)
+	r.resize(18)
 	var pdx := path_dx(u)
 	var sdx := stream_dx(u)
 	r[0] = path_x(u)
@@ -261,6 +308,10 @@ static func row(u: float) -> PackedFloat64Array:
 		r[RW + k] = wr[k]
 		sw += w[k] * STREAM_WIDTH[k]
 	r[SW] = sw
+	var style := path_style(u)
+	r[PH] = style.x
+	r[QUIET] = style.y
+	r[RUTS] = style.z
 	return r
 
 
@@ -297,8 +348,9 @@ static func height(x: float, u: float, r: PackedFloat64Array) -> float:
 		if wk > 0.0:
 			h += wk * _ground(k, x, u, r[0], r[3], nb, nm, ns)
 	var dp := absf(x - r[0]) * r[1]
-	if dp < PATH_HALF + 7.0:
-		h = lerpf(r[2] - 0.05, h, smoothstep(PATH_HALF + 0.3, PATH_HALF + 7.0, dp))
+	var half: float = r[PH]
+	if dp < half + 7.0:
+		h = lerpf(r[2] - 0.05, h, smoothstep(half + 0.3, half + 7.0, dp))
 	var sw: float = r[SW]
 	if sw > 0.01:
 		var ds := absf(x - r[3]) * r[4]

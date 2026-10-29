@@ -8,6 +8,10 @@ textures/leaves.png   leaf clusters and branches, 2 x 6 cells of 512 x 512: oval
                       fir branches, maple leaves, pine needles (long tufts, short dense tufts), willow leaves
                       (leaves and needles light grey, the shader tints them per tree)
 textures/leaves_n.png the matching normals (every leaf is tilted a bit and bent along its midrib)
+textures/path.png     the painted surface of paths and bare ground, tiles seamlessly (1.7 m in the game):
+                      R brightness, G pebbles, B and A the slope across and along (128 = flat)
+textures/hoof.png     hoof prints in the middle of the path, a strip 0.8 m wide and 4 m long that tiles along the path:
+                      R darkening, G trodden ground, B and A the slope across and along (128 = flat)
 
 Run: python3 tools/make_textures.py
 """
@@ -15,7 +19,7 @@ import math
 import os
 import random
 
-from PIL import Image, ImageDraw, ImageFilter
+from PIL import Image, ImageChops, ImageDraw, ImageFilter
 
 SS = 2  # supersampling
 HERE = os.path.dirname(os.path.abspath(__file__))
@@ -467,8 +471,180 @@ def make_leaves():
     nrm.save(os.path.join(TEX, "leaves_n.png"))
 
 
+# ------------------------------------------------------------------ paths
+PATH_SIZE = 512
+PATH_METRES = 1.7
+HOOF_W, HOOF_H = 128, 640
+HOOF_METRES = 0.8
+
+
+def tile_noise(rng, size, cells):
+    """Smooth noise that tiles seamlessly: a small random grid, repeated 3 x 3, enlarged and cut out in the middle."""
+    small = Image.new("L", (cells, cells))
+    small.putdata([rng.randint(0, 255) for _ in range(cells * cells)])
+    big = Image.new("L", (cells * 3, cells * 3))
+    for i in range(3):
+        for j in range(3):
+            big.paste(small, (i * cells, j * cells))
+    big = big.resize((size * 3, size * 3), Image.BICUBIC)
+    return big.crop((size, size, size * 2, size * 2))
+
+
+def wrapped(points, w, h, wrap_x=True):
+    """The shape and its copies across the edges, so the texture tiles seamlessly."""
+    copies = []
+    for dx in ((-w, 0, w) if wrap_x else (0,)):
+        for dy in (-h, 0, h):
+            copies.append([(x + dx, y + dy) for x, y in points])
+    return copies
+
+
+def slopes(height, k):
+    """The slope of a height field across (x) and along (y) as 128 + k * half the difference of the neighbours;
+    it wraps around the edges."""
+    left = ImageChops.offset(height, 1, 0)
+    right = ImageChops.offset(height, -1, 0)
+    up = ImageChops.offset(height, 0, 1)
+    down = ImageChops.offset(height, 0, -1)
+    return (ImageChops.subtract(right, left, scale=2.0 / k, offset=128),
+            ImageChops.subtract(down, up, scale=2.0 / k, offset=128))
+
+
+def blend(images, weights, offset=0.0):
+    """Weighted sum of greyscale images (values around 128 count as zero when centred is set per weight)."""
+    data = [list(img.tobytes()) for img in images]
+    out = []
+    for values in zip(*data):
+        v = offset
+        for value, (wt, centre) in zip(values, weights):
+            v += (value - centre) * wt
+        out.append(max(0, min(255, int(v))))
+    img = Image.new("L", images[0].size)
+    img.putdata(out)
+    return img
+
+
+def make_path():
+    """The surface of the paths: light and dark patches in three sizes, fine grains, pebbles and a few small cracks."""
+    n = PATH_SIZE * SS
+    px_m = n / PATH_METRES
+    rng = random.Random(23)
+    patches = blend([tile_noise(rng, n, 5), tile_noise(rng, n, 13), tile_noise(rng, n, 36)],
+                    [(0.45, 128), (0.35, 128), (0.2, 128)], 128)
+    grain = Image.new("L", (n, n))
+    grain.putdata([int(max(0, min(255, rng.gauss(128, 40)))) for _ in range(n * n)])
+    grain = grain.filter(ImageFilter.GaussianBlur(0.8))
+    pebbles = Image.new("L", (n, n), 0)
+    shade = Image.new("L", (n, n), 128)
+    dp, ds = ImageDraw.Draw(pebbles), ImageDraw.Draw(shade)
+    for _ in range(300):
+        r = (rng.uniform(0.004, 0.012) if rng.random() < 0.75 else rng.uniform(0.012, 0.026)) * px_m
+        x, y = rng.uniform(0, n), rng.uniform(0, n)
+        sides = rng.randint(6, 9)
+        a0, rot, squash = rng.uniform(0, 6.3), rng.uniform(0, 3.2), rng.uniform(0.6, 1.0)
+        shape = []
+        for k in range(sides):
+            a = a0 + 2 * math.pi * k / sides + rng.uniform(-0.25, 0.25)
+            rr = r * rng.uniform(0.75, 1.1)
+            ox, oy = math.cos(a) * rr, math.sin(a) * rr * squash
+            shape.append((x + ox * math.cos(rot) - oy * math.sin(rot), y + ox * math.sin(rot) + oy * math.cos(rot)))
+        bright = rng.randint(150, 235)
+        for poly in wrapped(shape, n, n):
+            dp.polygon(poly, fill=255)
+            ds.polygon(poly, fill=bright)
+    cracks = Image.new("L", (n, n), 0)
+    dc = ImageDraw.Draw(cracks)
+    for _ in range(14):
+        x, y = rng.uniform(0, n), rng.uniform(0, n)
+        a = rng.uniform(0, 6.3)
+        line = [(x, y)]
+        for _ in range(rng.randint(6, 16)):
+            a += rng.gauss(0, 0.5)
+            step = rng.uniform(0.01, 0.022) * px_m
+            x, y = x + math.cos(a) * step, y + math.sin(a) * step
+            line.append((x, y))
+        width = rng.choice([2, 2, 3])
+        for copy in wrapped(line, n, n):
+            dc.line(copy, fill=255, width=width)
+    domes = pebbles.filter(ImageFilter.GaussianBlur(3))
+    grooves = cracks.filter(ImageFilter.GaussianBlur(1.2))
+    # height: gentle undulation, grains, pebbles standing out, cracks cut in
+    height = blend([patches, grain, domes, grooves], [(0.25, 128), (0.15, 128), (0.45, 0), (-0.35, 0)], 100)
+    # brightness: patches and grains, lighter pebbles with a dark rim, dark cracks
+    rim = ImageChops.subtract(pebbles.filter(ImageFilter.GaussianBlur(4)), pebbles)
+    peb_light = ImageChops.multiply(shade, pebbles)
+    bright = blend([patches, grain, peb_light, pebbles, rim, grooves],
+                   [(0.55, 128), (0.3, 128), (0.9, 0), (-0.9 * 128 / 255, 0), (-0.25, 0), (-0.3, 0)], 128)
+    size = (PATH_SIZE, PATH_SIZE)
+    height = height.resize(size, Image.BICUBIC)
+    gx, gy = slopes(height, 2.5)
+    img = Image.merge("RGBA", (bright.resize(size, Image.LANCZOS), pebbles.resize(size, Image.LANCZOS), gx, gy))
+    img.save(os.path.join(TEX, "path.png"))
+
+
+def make_hoof():
+    """Hoof prints of horses walking both ways, in two lanes (left and right hooves) along the middle line, old ones
+    and new ones, and the trodden ground around them."""
+    w, h = HOOF_W * SS, HOOF_H * SS
+    px_m = w / HOOF_METRES
+    rng = random.Random(29)
+    depth = Image.new("L", (w, h), 0)
+    # trodden ground: many small dents, most of them near the middle line
+    dents = Image.new("L", (w, h), 0)
+    dd = ImageDraw.Draw(dents)
+    for _ in range(700):
+        r = rng.uniform(0.008, 0.025) * px_m
+        x = w / 2 + rng.gauss(0, 0.14) * px_m
+        y = rng.uniform(0, h)
+        v = rng.randint(40, 110)
+        for copy in wrapped([(x - r, y - r), (x + r, y + r)], w, h, wrap_x=False):
+            dd.ellipse(copy, fill=v)
+    dents = dents.filter(ImageFilter.GaussianBlur(3))
+    # the prints: a dent with the horseshoe a little deeper at its rim and the frog at the heel
+    size = int(0.26 * px_m)
+    c = size / 2
+    band = 0.018 * px_m
+    for _ in range(52):
+        s = rng.uniform(0.9, 1.1)
+        rx, ry = 0.06 * px_m * s, 0.068 * px_m * s
+        p = Image.new("L", (size, size), 0)
+        d = ImageDraw.Draw(p)
+        d.ellipse([c - rx, c - ry, c + rx, c + ry], fill=255)
+        d.ellipse([c - rx + band, c - ry + band * 0.8, c + rx - band, c + ry - band * 1.4], fill=205)
+        d.rectangle([c - rx * 0.55, c + ry * 0.45, c + rx * 0.55, c + ry + 2], fill=205)
+        d.polygon([(c - rx * 0.32, c + ry * 0.85), (c + rx * 0.32, c + ry * 0.85), (c, c - ry * 0.15)], fill=230)
+        p = p.filter(ImageFilter.GaussianBlur(3.0))
+        # older prints are shallower
+        age = rng.uniform(0.45, 1.0)
+        p = p.point(lambda v: int(v * age))
+        facing = 0 if rng.random() < 0.5 else 180
+        p = p.rotate(facing + rng.gauss(0, 12), resample=Image.BICUBIC)
+        lane = 0.1 if rng.random() < 0.5 else -0.1
+        x = w / 2 + (lane + rng.gauss(0, 0.06)) * px_m - c
+        y = rng.uniform(0, h) - c
+        for dy in (-h, 0, h):
+            layer = Image.new("L", (w, h), 0)
+            layer.paste(p, (int(x), int(y + dy)))
+            depth = ImageChops.lighter(depth, layer)
+    depth = ImageChops.lighter(depth, dents)
+    # everything fades out towards the edges of the strip
+    fade = Image.new("L", (w, h), 0)
+    fade.putdata([int(255 * math.exp(-((x - w / 2) / (0.22 * px_m)) ** 2)) for _ in range(h) for x in range(w)])
+    depth = ImageChops.multiply(depth, fade)
+    trodden = ImageChops.multiply(fade, Image.new("L", (w, h), 200))
+    size2 = (HOOF_W, HOOF_H)
+    depth = depth.resize(size2, Image.BICUBIC)
+    # slopes of the ground (which goes down where it is deep)
+    hx, hy = slopes(ImageChops.invert(depth), 1.6)
+    dark = depth.point(lambda v: int(v * 0.55))
+    img = Image.merge("RGBA", (dark, trodden.resize(size2, Image.LANCZOS), hx, hy))
+    img.save(os.path.join(TEX, "hoof.png"))
+
+
 if __name__ == "__main__":
     os.makedirs(TEX, exist_ok=True)
     make_grass()
     make_leaves()
+    make_path()
+    make_hoof()
     print("textures written to", os.path.abspath(TEX))

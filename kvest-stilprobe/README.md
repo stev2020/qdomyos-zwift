@@ -8,7 +8,7 @@ APK: https://github.com/stev2020/qdomyos-zwift/releases/download/kvest-stilprobe
 
 ## Die Knöpfe
 
-- **Qualität:** Auto, Hoch, Mittel, Niedrig. Sie ändern die Dichte des Grases, die Sichtweite, die Schatten und die Auflösung. „Auto“ schaltet herunter, wenn weniger als 27 Bilder pro Sekunde gelingen.
+- **Qualität:** Auto, Hoch, Mittel, Niedrig. Sie ändern die Dichte des Grases, die Sichtweite, die Schatten, den Kies auf dem Weg und die Auflösung. „Auto“ schaltet herunter, wenn weniger als 27 Bilder pro Sekunde gelingen.
 - **Licht:** Sommertag oder Abendsonne.
 - **Landschaft:** „Wechsel“ fährt durch alle Landschaften, jede 4 km lang: Laubland, Heide, Laubland, Flusstal, Hochland, Flusstal. Oder eine Landschaft bleibt fest. Nach dem Umschalten wird die Welt neu aufgebaut.
 
@@ -23,14 +23,25 @@ APK: https://github.com/stev2020/qdomyos-zwift/releases/download/kvest-stilprobe
 
 Die Übergänge sind weich: Das Aussehen wechselt über 600 m, die Höhen über 1,8 km.
 
+## Die Wege
+
+Der Weg wechselt alle paar hundert Meter seine Art:
+
+- **viel befahrener Fahrweg:** zwei Kutschenspuren, in der Mitte zertretener Boden mit vielen Hufabdrücken,
+- **ruhiger Fahrweg:** Kutschenspuren und in der Mitte ein Grasstreifen (nur auf Erde und Sand),
+- **Trampelpfad:** schmal, ohne Spuren.
+
+Im Flusstal ist der Fahrweg ein Schotterweg ohne Grasstreifen, im Hochland ein schmaler Saumpfad ohne Kutschenspuren, nur mit Hufabdrücken. Auf dem Weg liegt Kies, am Rand ab und zu ein Stein oder ein umgestürzter Stamm.
+
 ## So ist sie gebaut
 
 - **Landschaften:** `scripts/land.gd` beschreibt Weg, Bach und die vier Landschaften als Formeln: ihren Anteil an jeder Stelle, die Höhen, die Breite des Wassers und den kahlen Boden (Sand, Geröll). Für die Shader steht der Weg in `shaders/land.gdshaderinc`.
 - **Gelände:** `scripts/world.gd` baut Gelände, Gras, Bäume und Wasser in Kacheln, in einem eigenen Thread. Die Anteile der Landschaften stecken in den Farben der Gelände-Punkte, und `shaders/terrain.gdshader` mischt damit Boden-, Weg- und Bachfarben (Farben in `GROUND` in `scripts/main.gd`).
+- **Wege:** `Land.path_style` wählt die Wegart. Breite, Grasstreifen und Spuren stecken in den Gelände-Punkten, und `shaders/terrain.gdshader` malt den Weg in vier Schichten: die Oberfläche aus `textures/path.png`, die Kutschenspuren und Hufabdrücke (`textures/hoof.png`), die feinen Unebenheiten und den Kies als Modelle (`shaders/pebble.gdshader`). Spuren und Unebenheiten entstehen nur im Licht; das Gelände bleibt flach.
 - **Gras:** Büschel aus sechs sich kreuzenden Flächen (12 Dreiecke) mit gemalten Halmen. Acht Sorten: üppig, mit Samen, kurz, mit Blüten, mit lila Rispen, Schilf, Heidekraut und Borstgras.
 - **Bäume und Büsche:** Blätterbüschel aus drei sich kreuzenden Flächen mit gemalten Blättern und deren Normalen. Arten: Buche, Birke, Eiche, Ahorn, Eberesche, Busch, Weide, Fichte, Tanne, Kiefer, Wacholder und Latsche; ein Teil der Laubbäume ist schon herbstlich. Stämme und Äste sind aus flachen Flächen geschnitzt. Wind bewegt Gras, Blätter und Zweige.
-- **Felsen:** runde, bemooste Steine und kantige, graue Felsen aus flachen Flächen.
-- **Texturen:** `tools/make_textures.py` malt Gras, Blätter, Nadeln und Zweige (Python mit Pillow).
+- **Felsen und Stämme:** runde, bemooste Steine und kantige, graue Felsen aus flachen Flächen, liegende Stämme am Wegrand und kleine Kiesel auf dem Weg.
+- **Texturen:** `tools/make_textures.py` malt Gras, Blätter, Nadeln und Zweige, die Oberfläche der Wege und die Hufabdrücke (Python mit Pillow). Danach einmal `godot --headless --path . --import` laufen lassen, sonst zeigt die Vorschau noch die alten Texturen.
 
 ## Bauen
 

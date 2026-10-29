@@ -7,7 +7,6 @@ global uniform float noise_shift;
 
 const vec3 PATH_A = vec3(38.0, 17.0, 6.0);
 const vec3 PATH_L = vec3(173.0, 71.0, 29.0);
-const float PATH_HALF = 1.3;
 
 float path_x(float u) {
 	return dot(PATH_A, sin(vec3(u) / PATH_L + path_phase));

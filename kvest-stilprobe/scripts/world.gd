@@ -1,13 +1,16 @@
 class_name World
 extends Node3D
-## Streams the land around the rider: terrain tiles, grass, trees and the stream, each in the plants and colours of
-## its landscape (see Land). The number crunching runs in a worker thread; the main thread only turns the finished
-## arrays into meshes, a few per frame, so the ride stays smooth.
+## Streams the land around the rider: terrain tiles, grass, trees, the stream and the things on and beside the path
+## (pebbles, stones, fallen trunks), each in the plants and colours of its landscape (see Land). The number crunching
+## runs in a worker thread; the main thread only turns the finished arrays into meshes, a few per frame, so the ride
+## stays smooth.
 
 const T := Land.TILE
 const BLOCK := 3                 # trees and rocks are grouped in blocks of 3 x 1 tiles
 const LOD_CELLS := [32, 16, 8]   # terrain cells per tile side for the three levels of detail
 const FLOATS := 16               # per instance: 12 for the transform, 4 custom
+const CHUNK := 12.0              # the pebbles are drawn in pieces of 12 m of path
+const PEBBLE_SHAPES := 3
 
 var origin_u := 0.0
 var view_ahead := 528.0
@@ -16,17 +19,21 @@ var grass_density := 1.0
 var grass_range := 120.0
 var tree_lod := 170.0
 var shadows := true
+var gravel := 1.0                # share of the pebbles that are drawn
+var gravel_range := 46.0         # the pebbles are drawn up to this distance; 0: none
 
 var mat_terrain: ShaderMaterial
 var mat_grass: ShaderMaterial
 var mat_nature: ShaderMaterial
 var mat_water: ShaderMaterial
+var mat_pebble: ShaderMaterial
 var grass_mesh: ArrayMesh
+var pebble_meshes: Array = []    # a few shapes of pebbles
 var protos: Array = []           # per kind: {"high": ArrayMesh, "low": ArrayMesh}
 
 var tiles := {}                  # Vector2i(ix, iu) -> {"node", "lod", "want", "grass", "mmi"}
 var blocks := {}                 # Vector2i(bx, iu) -> {"node"}
-var rows := {}                   # iu -> {"node"}
+var rows := {}                   # iu -> {"node"}: the stream and the things on and beside the path
 
 var _thread := Thread.new()
 var _mutex := Mutex.new()
@@ -43,7 +50,10 @@ func setup(materials: Dictionary) -> void:
 	mat_grass = materials["grass"]
 	mat_nature = materials["nature"]
 	mat_water = materials["water"]
+	mat_pebble = materials["pebble"]
 	grass_mesh = Kit.grass_clump(mat_grass)
+	for shape in PEBBLE_SHAPES:
+		pebble_meshes.append(Kit.pebble(shape, mat_pebble))
 	for kind in Kit.COUNT:
 		var p := {}
 		match kind:
@@ -62,6 +72,9 @@ func setup(materials: Dictionary) -> void:
 			Kit.MUGO:
 				p["high"] = Kit.mugo(420, false, mat_nature)
 				p["low"] = Kit.mugo(420, true, mat_nature)
+			Kit.LOG:
+				p["high"] = Kit.fallen_trunk(430, false, mat_nature)
+				p["low"] = Kit.fallen_trunk(430, true, mat_nature)
 			Kit.ROCK_C:
 				p["high"] = Kit.rock(330, mat_nature, true)
 				p["low"] = p["high"]
@@ -104,6 +117,8 @@ func set_quality(p: Dictionary) -> void:
 	view_side = p["side"]
 	tree_lod = p["tree_lod"]
 	shadows = p["shadows"]
+	gravel = p["gravel"]
+	gravel_range = p["gravel_range"]
 	for key in tiles:
 		var t: Dictionary = tiles[key]
 		if t.has("mmi") and is_instance_valid(t["mmi"]):
@@ -115,10 +130,23 @@ func set_quality(p: Dictionary) -> void:
 			continue
 		for child in node.get_children():
 			_set_lod(child)
+	for iu in rows:
+		var node = rows[iu]["node"]
+		if node == null or not is_instance_valid(node):
+			continue
+		# the water lies in the same node and keeps its settings
+		for child in node.get_children():
+			if child is MultiMeshInstance3D:
+				_set_lod(child)
 
 
 func _set_lod(mmi: GeometryInstance3D) -> void:
-	if mmi.has_meta("rock"):
+	if mmi.has_meta("pebble"):
+		mmi.visible = gravel_range > 0.0
+		mmi.visibility_range_end = gravel_range + CHUNK * 0.5
+		var mm: MultiMesh = (mmi as MultiMeshInstance3D).multimesh
+		mm.visible_instance_count = int(mm.instance_count * gravel)
+	elif mmi.has_meta("rock"):
 		mmi.visibility_range_end = tree_lod
 		mmi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 	elif mmi.has_meta("low"):
@@ -161,6 +189,7 @@ func update(cam_u: float, cam_x: float, max_apply: int) -> void:
 		if not rows.has(iu):
 			rows[iu] = {"node": null}
 			_request({"type": "water", "key": iu, "prio": absf(du) + 5.0})
+			_request({"type": "path", "key": iu, "prio": absf(du) + 3.0})
 		var corridor := _corridor(iu)
 		for ix in range(ixc - side, ixc + side + 1):
 			var key := Vector2i(ix, iu)
@@ -239,6 +268,8 @@ func _apply(max_apply: int) -> void:
 				_apply_trees(res)
 			"water":
 				_apply_water(res)
+			"path":
+				_apply_path(res)
 
 
 func _node_for(dict: Dictionary, key, pos: Vector3) -> Node3D:
@@ -271,6 +302,7 @@ func _apply_terrain(res: Dictionary) -> void:
 	arr[Mesh.ARRAY_NORMAL] = res["n"]
 	arr[Mesh.ARRAY_COLOR] = res["c"]
 	arr[Mesh.ARRAY_TEX_UV] = res["uv"]
+	arr[Mesh.ARRAY_TEX_UV2] = res["uv2"]
 	arr[Mesh.ARRAY_INDEX] = res["i"]
 	var mesh := ArrayMesh.new()
 	mesh.add_surface_from_arrays(Mesh.PRIMITIVE_TRIANGLES, arr)
@@ -316,23 +348,28 @@ func _apply_trees(res: Dictionary) -> void:
 	var aabb := AABB(Vector3(-8, res["hmin"] - 2.0, -T - 8), Vector3(BLOCK * T + 16, res["hmax"] - res["hmin"] + 22.0, T + 16))
 	for kind in Kit.COUNT:
 		var buf: PackedFloat32Array = res["bufs"][kind]
-		if buf.is_empty():
-			continue
-		var high := MultiMeshInstance3D.new()
-		high.multimesh = _multimesh(protos[kind]["high"], buf, aabb)
-		high.visibility_range_end_margin = 8.0
-		if kind >= Kit.ROCK_A:
-			high.set_meta("rock", true)
-		node.add_child(high)
-		_set_lod(high)
-		if kind >= Kit.ROCK_A:
-			continue
-		var low := MultiMeshInstance3D.new()
-		low.set_meta("low", true)
-		low.multimesh = _multimesh(protos[kind]["low"], buf, aabb)
-		low.visibility_range_begin_margin = 8.0
-		node.add_child(low)
-		_set_lod(low)
+		if not buf.is_empty():
+			_add_models(node, kind, buf, aabb)
+
+
+## Trees, rocks or trunks of one kind: the detailed models near the rider, the simple ones further away (rocks have
+## only one).
+func _add_models(node: Node3D, kind: int, buf: PackedFloat32Array, aabb: AABB) -> void:
+	var high := MultiMeshInstance3D.new()
+	high.multimesh = _multimesh(protos[kind]["high"], buf, aabb)
+	high.visibility_range_end_margin = 8.0
+	if kind >= Kit.ROCK_A:
+		high.set_meta("rock", true)
+	node.add_child(high)
+	_set_lod(high)
+	if kind >= Kit.ROCK_A:
+		return
+	var low := MultiMeshInstance3D.new()
+	low.set_meta("low", true)
+	low.multimesh = _multimesh(protos[kind]["low"], buf, aabb)
+	low.visibility_range_begin_margin = 8.0
+	node.add_child(low)
+	_set_lod(low)
 
 
 func _apply_water(res: Dictionary) -> void:
@@ -355,6 +392,25 @@ func _apply_water(res: Dictionary) -> void:
 	mi.mesh = mesh
 	mi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 	node.add_child(mi)
+
+
+func _apply_path(res: Dictionary) -> void:
+	var iu: int = res["key"]
+	if not rows.has(iu):
+		return
+	var node := _node_for(rows, iu, Vector3(0.0, 0.0, -(iu * T - origin_u)))
+	for c in res["chunks"]:
+		var mmi := MultiMeshInstance3D.new()
+		mmi.multimesh = _multimesh(pebble_meshes[c["shape"]], c["buf"], c["aabb"])
+		mmi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+		mmi.set_meta("pebble", true)
+		node.add_child(mmi)
+		_set_lod(mmi)
+	var props: Array = res["props"]
+	for kind in Kit.COUNT:
+		var buf: PackedFloat32Array = props[kind]
+		if not buf.is_empty():
+			_add_models(node, kind, buf, res["aabb"])
 
 
 # ------------------------------------------------------------------ worker thread
@@ -384,6 +440,8 @@ func _worker() -> void:
 				res = _job_grass(job["key"])
 			"trees":
 				res = _job_trees(job["key"])
+			"path":
+				res = _job_path(job["key"])
 			_:
 				res = _job_water(job["key"])
 		res["gen"] = job["gen"]
@@ -409,18 +467,22 @@ static func _job_terrain(key: Vector2i, lod: int) -> Dictionary:
 			hs[j * w + i] = Land.height(x0 + (i - 1) * step, u, r)
 	var verts := PackedVector3Array()
 	var norms := PackedVector3Array()
-	# colour: the share of each landscape (r Laubland, g Heide, b Flusstal, a Hochland); uv.x: bare ground
+	# colour: the share of each landscape (r Laubland, g Heide, b Flusstal, a Hochland); uv.x: bare ground, uv.y: the
+	# grass strip in the middle of the path; uv2: half the width of the path and its cart ruts (see Land.path_style)
 	var cols := PackedColorArray()
 	var uvs := PackedVector2Array()
+	var uv2s := PackedVector2Array()
 	for j in n + 1:
 		var r: PackedFloat64Array = rws[j + 1]
 		var wc := Color(r[Land.W], r[Land.W + 1], r[Land.W + 2], r[Land.W + 3])
+		var style := Vector2(r[Land.PH], r[Land.RUTS])
 		for i in n + 1:
 			var c := (j + 1) * w + (i + 1)
 			verts.append(Vector3(i * step, hs[c], -j * step))
 			norms.append(Vector3(hs[c - 1] - hs[c + 1], 2.0 * step, hs[c + w] - hs[c - w]).normalized())
 			cols.append(wc)
-			uvs.append(Vector2(Land.bare(x0 + i * step, u0 + j * step, r), 0.0))
+			uvs.append(Vector2(Land.bare(x0 + i * step, u0 + j * step, r), r[Land.QUIET]))
+			uv2s.append(style)
 	var idx := PackedInt32Array()
 	for j in n:
 		for i in n:
@@ -445,9 +507,10 @@ static func _job_terrain(key: Vector2i, lod: int) -> Dictionary:
 			norms.append(norms[vi])
 			cols.append(cols[vi])
 			uvs.append(uvs[vi])
+			uv2s.append(uv2s[vi])
 		for k in edge.size() - 1:
 			idx.append_array([edge[k], first + k, edge[k + 1], edge[k + 1], first + k, first + k + 1])
-	return {"type": "terrain", "key": key, "lod": lod, "v": verts, "n": norms, "c": cols, "uv": uvs, "i": idx}
+	return {"type": "terrain", "key": key, "lod": lod, "v": verts, "n": norms, "c": cols, "uv": uvs, "uv2": uv2s, "i": idx}
 
 
 static func _grid_height(hs: PackedFloat32Array, w: int, fx: float, fu: float) -> float:
@@ -496,7 +559,8 @@ static func _job_grass(key: Vector2i) -> Dictionary:
 			var x := x0 + (gi + rng.randf()) * spacing
 			var uu := u + (rng.randf() - 0.5) * spacing
 			var dp := Land.dist_path(x, r)
-			if dp < Land.PATH_HALF - 0.2 or dp > 46.0:
+			var half: float = r[Land.PH]
+			if dp < half - 0.2 or dp > 46.0:
 				continue
 			var sw: float = r[Land.SW]
 			var ds := Land.dist_stream(x, r)
@@ -554,7 +618,7 @@ static func _job_grass(key: Vector2i) -> Dictionary:
 				# Laubland and Flusstal: the meadows; a few thinner patches, so the meadow is not a carpet
 				if rng.randf() > 0.62 + 0.38 * smoothstep(-0.6, -0.1, mval):
 					continue
-				if dp < Land.PATH_HALF + 0.5:
+				if dp < half + 0.5:
 					variant = 2
 				elif mval > 0.3 and rng.randf() < 0.5:
 					variant = 3
@@ -567,13 +631,39 @@ static func _job_grass(key: Vector2i) -> Dictionary:
 					variant = 2
 				if k == Land.FLUSS:
 					dry *= 0.6
-			hscale *= lerpf(0.5, 1.0, smoothstep(Land.PATH_HALF - 0.2, Land.PATH_HALF + 2.0, dp))
+			hscale *= lerpf(0.5, 1.0, smoothstep(half - 0.2, half + 2.0, dp))
 			var h := _grid_height(hs, w, (x - x0) / step, (uu - u0) / step)
 			hmin = minf(hmin, h)
 			hmax = maxf(hmax, h)
 			var ws := rng.randf_range(0.85, 1.25)
 			var basis := Basis(Vector3.UP, rng.randf() * TAU).scaled(Vector3(ws, hscale, ws))
 			_put(buf, basis, Vector3(x - x0, h - 0.02, -(uu - u0)), Color(variant, bright, rng.randf(), dry))
+	# the grass strip in the middle of quiet cart tracks: short, dense clumps in a narrow line
+	var along := 0.3
+	for gj in int(T / along):
+		var u := u0 + (gj + rng.randf()) * along
+		var px := Land.path_x(u)
+		if px < x0 - 1.0 or px > x0 + T + 1.0:
+			continue
+		var r := Land.row(u)
+		if rng.randf() >= r[Land.QUIET]:
+			continue
+		var x: float = px + rng.randf_range(-0.1, 0.1) / r[1]
+		if x < x0 or x >= x0 + T:
+			continue
+		var k := _pick(r, Land.W, rng.randf())
+		var variant := 2 if rng.randf() < 0.8 else (7 if k == Land.HEIDE else 0)
+		var dry := rng.randf() * 0.3
+		var bright := rng.randf_range(0.82, 1.0)
+		if k == Land.HEIDE:
+			dry += 0.35
+			bright *= 0.85
+		var h := _grid_height(hs, w, (x - x0) / step, (u - u0) / step)
+		hmin = minf(hmin, h)
+		hmax = maxf(hmax, h)
+		var ws := rng.randf_range(0.35, 0.5)
+		var basis := Basis(Vector3.UP, rng.randf() * TAU).scaled(Vector3(ws, rng.randf_range(0.35, 0.7), ws))
+		_put(buf, basis, Vector3(x - x0, h - 0.02, -(u - u0)), Color(variant, bright, rng.randf(), dry))
 	# shuffle, so that drawing only the first part of the list thins the meadow out evenly
 	var count := buf.size() / FLOATS
 	var out := PackedFloat32Array()
@@ -606,6 +696,26 @@ const NEEDLE_TINTS := {
 }
 ## The trees of the broadleaf woods.
 const BROADLEAF_WEIGHTS := [[Kit.BEECH, 0.45], [Kit.OAK, 0.3], [Kit.MAPLE, 0.25]]
+## The pebbles on the paths, per landscape: how many lie on a square metre at most, how evenly they spread (1: all
+## over the path; 0: pushed to its edges and out of the ruts), their size in metres, the share of bigger stones and
+## their size.
+const GRAVEL_MAX := [16.0, 8.0, 45.0, 32.0]
+const GRAVEL_EVEN := [0.25, 0.3, 0.55, 0.8]
+const GRAVEL_SIZE := [Vector2(0.02, 0.045), Vector2(0.015, 0.035), Vector2(0.02, 0.05), Vector2(0.025, 0.06)]
+const GRAVEL_BIG := [0.12, 0.08, 0.15, 0.2]
+const GRAVEL_BIG_SIZE := [Vector2(0.05, 0.09), Vector2(0.04, 0.07), Vector2(0.05, 0.1), Vector2(0.06, 0.14)]
+## Their colours (linear): brown and grey stones in the Laubland, sandstone and grey flint in the heath, grey river
+## gravel in the valley, grey-brown rock in the highland. All a little warm: the blue light of the sky cools them down.
+const GRAVEL_COLORS := [
+	[Color(0.2, 0.15, 0.1), Color(0.27, 0.23, 0.18), Color(0.16, 0.13, 0.1)],
+	[Color(0.46, 0.4, 0.3), Color(0.34, 0.3, 0.25), Color(0.52, 0.46, 0.36)],
+	[Color(0.3, 0.28, 0.25), Color(0.42, 0.39, 0.34), Color(0.2, 0.18, 0.16)],
+	[Color(0.28, 0.24, 0.19), Color(0.36, 0.32, 0.27), Color(0.2, 0.17, 0.14)],
+]
+## Beside the path, per landscape: the chance of a stone on either side every 4 m and of a fallen trunk every 8 m
+## (trunks only near woods).
+const EDGE_STONES := [0.07, 0.05, 0.1, 0.15]
+const EDGE_LOGS := [0.05, 0.03, 0.035, 0.0]
 
 
 static func _pick_broadleaf(rng: RandomNumberGenerator) -> int:
@@ -773,12 +883,193 @@ static func _job_trees(key: Vector2i) -> Dictionary:
 						p = 0.35
 						size = rng.randf_range(0.35, 1.0)
 			# big rocks keep off the path
-			if dp < maxf(2.2, Land.PATH_HALF + size * 1.2) or rng.randf() > p:
+			if dp < maxf(2.2, r[Land.PH] + size * 1.2) or rng.randf() > p:
 				continue
 			var h := Land.height(x, u, r)
 			var basis := Basis(Vector3(rng.randf_range(-0.2, 0.2), 1, rng.randf_range(-0.2, 0.2)).normalized(), rng.randf() * TAU).scaled(Vector3(size, size, size))
 			_put(bufs[kind], basis, Vector3(x - x0, h - 0.25 * size, -(u - u0)), Color(1, 1, 1, 0))
 	return {"type": "trees", "key": key, "bufs": bufs, "hmin": hmin if hmin < INF else 0.0, "hmax": hmax if hmax > -INF else 0.0}
+
+
+## Pebbles on the path, stones and fallen trunks beside it, for one row of tiles. The pebbles come in pieces of CHUNK
+## metres, so only the pieces near the rider are drawn.
+static func _job_path(iu: int) -> Dictionary:
+	var u0 := iu * T
+	var rng := RandomNumberGenerator.new()
+	rng.seed = hash(Vector3i(iu, 0, 7))
+	var heights := {}
+	var row_cache := {}
+	var chunks := []
+	var pieces := int(T / CHUNK)
+	var along := 0.5
+	for c in pieces:
+		var buf := PackedFloat32Array()
+		var lo := Vector3(INF, INF, INF)
+		var hi := -lo
+		for k in int(CHUNK / along):
+			var u := u0 + c * CHUNK + (k + 0.5) * along
+			var r := Land.row(u)
+			var half: float = r[Land.PH]
+			var quiet: float = r[Land.QUIET]
+			var ruts: float = r[Land.RUTS]
+			# footpaths have fewer pebbles, spread evenly
+			var narrow := clampf((0.9 - half) / 0.45, 0.0, 1.0)
+			var most := 0.0
+			for lk in Land.KINDS:
+				most += r[Land.W + lk] * GRAVEL_MAX[lk]
+			most *= lerpf(1.0, 0.4, narrow)
+			var span := half - 0.05
+			for i in int(most * 2.0 * span * along + rng.randf()):
+				var s := rng.randf_range(-span, span)
+				var kind := _pick(r, Land.W, rng.randf())
+				if rng.randf() >= _gravel_share(s, half, quiet, ruts, lerpf(GRAVEL_EVEN[kind], 1.0, narrow)):
+					continue
+				var uu := u + (rng.randf() - 0.5) * along
+				var x: float = Land.path_x(uu) + s / r[1]
+				var sz: Vector2 = GRAVEL_BIG_SIZE[kind] if rng.randf() < GRAVEL_BIG[kind] else GRAVEL_SIZE[kind]
+				var size := rng.randf_range(sz.x, sz.y)
+				var h := _mesh_height(heights, row_cache, x, uu)
+				var tilt := Vector3(rng.randf_range(-0.3, 0.3), 1.0, rng.randf_range(-0.3, 0.3)).normalized()
+				var stretch := Vector3(rng.randf_range(0.8, 1.25), rng.randf_range(0.7, 1.1), rng.randf_range(0.8, 1.25))
+				var palette: Array = GRAVEL_COLORS[kind]
+				var col: Color = palette[rng.randi() % palette.size()] * rng.randf_range(0.82, 1.15)
+				col.a = 1.0
+				var p := Vector3(x, h - 0.05 * size, -(uu - u0))
+				_put(buf, Basis(tilt, rng.randf() * TAU).scaled(stretch * size), p, col)
+				lo = lo.min(p)
+				hi = hi.max(p)
+		if not buf.is_empty():
+			var aabb := AABB(lo - Vector3(0.2, 0.2, 0.2), hi - lo + Vector3(0.4, 0.4, 0.4))
+			chunks.append({"buf": _shuffled(buf), "aabb": aabb, "shape": posmod(iu * pieces + c, PEBBLE_SHAPES)})
+
+	var bufs := []
+	for k in Kit.COUNT:
+		bufs.append(PackedFloat32Array())
+	var xmin := INF
+	var xmax := -INF
+	var hmin := INF
+	var hmax := -INF
+	# stones beside the path, now and then on either side
+	for k in int(T / 4.0):
+		var u := u0 + (k + rng.randf()) * 4.0
+		var r := Land.row(u)
+		var kind := _pick(r, Land.W, rng.randf())
+		for side in [-1.0, 1.0]:
+			if rng.randf() >= EDGE_STONES[kind]:
+				continue
+			var size := rng.randf_range(0.18, 0.4) if rng.randf() < 0.88 else rng.randf_range(0.45, 0.65)
+			# right at the edge, where the grass is short
+			var x: float = r[0] + side * (r[Land.PH] + rng.randf_range(-0.05, 0.45) + size * 0.6) / r[1]
+			var sw: float = r[Land.SW]
+			if sw > 0.01 and Land.dist_stream(x, r) < 3.0 * sw + 1.0:
+				continue
+			# grey stones, in the Laubland and the valley also mossy ones
+			var rock := Kit.ROCK_C
+			if (kind == Land.LAUB or kind == Land.FLUSS) and rng.randf() < 0.4:
+				rock = Kit.ROCK_A + rng.randi() % 2
+			var h := _mesh_height(heights, row_cache, x, u)
+			var tilt := Vector3(rng.randf_range(-0.2, 0.2), 1.0, rng.randf_range(-0.2, 0.2)).normalized()
+			_put(bufs[rock], Basis(tilt, rng.randf() * TAU).scaled(Vector3.ONE * size), Vector3(x, h - 0.25 * size, -(u - u0)), Color(1, 1, 1, 0))
+			xmin = minf(xmin, x)
+			xmax = maxf(xmax, x)
+			hmin = minf(hmin, h)
+			hmax = maxf(hmax, h)
+	# fallen trunks near woods, lying at a slant to the path, so the rider sees them along their length
+	for k in int(T / 8.0):
+		var u := u0 + (k + rng.randf()) * 8.0
+		var r := Land.row(u)
+		var kind := _pick(r, Land.W, rng.randf())
+		var side := -1.0 if rng.randf() < 0.5 else 1.0
+		var woods := smoothstep(-0.15, 0.25, Land.forest.get_noise_2d(r[0] + side * 6.0, u))
+		if rng.randf() >= EDGE_LOGS[kind] * woods:
+			continue
+		var scale := rng.randf_range(0.8, 1.15)
+		var yaw := rng.randf_range(0.35, 1.2) * (1.0 if rng.randf() < 0.5 else -1.0)
+		# the trunk keeps 0.4 m off the path with both ends
+		var reach := 2.5 * scale * absf(sin(yaw)) + 0.35 * scale
+		var x: float = r[0] + side * (r[Land.PH] + 0.4 + reach + rng.randf_range(0.0, 1.5)) / r[1]
+		var sw: float = r[Land.SW]
+		if sw > 0.01 and Land.dist_stream(x, r) < 3.0 * sw + 4.0:
+			continue
+		var dir := Vector3(Land.path_dx(u), 0.0, -1.0).normalized().rotated(Vector3.UP, yaw)
+		if rng.randf() < 0.5:
+			dir = -dir
+		# it lies on the ground with both ends: tilted up or down along its length
+		var foot := Vector3(x, 0.0, -u) - dir * 2.5 * scale
+		var tip := Vector3(x, 0.0, -u) + dir * 2.5 * scale
+		var hf := _mesh_height(heights, row_cache, foot.x, -foot.z)
+		var ht := _mesh_height(heights, row_cache, tip.x, -tip.z)
+		var pitch := atan2(ht - hf, 5.0 * scale)
+		var xa := dir * cos(pitch) + Vector3.UP * sin(pitch)
+		var ya := Vector3.UP * cos(pitch) - dir * sin(pitch)
+		var h := (hf + ht) * 0.5 - 0.06 * scale
+		_put(bufs[Kit.LOG], Basis(xa, ya, xa.cross(ya)).scaled(Vector3.ONE * scale), Vector3(x, h, -(u - u0)), Color(1, 1, 1, 0))
+		xmin = minf(xmin, x)
+		xmax = maxf(xmax, x)
+		hmin = minf(hmin, h)
+		hmax = maxf(hmax, h)
+	var aabb := AABB()
+	if xmin < INF:
+		aabb = AABB(Vector3(xmin - 4.0, hmin - 2.0, -T - 4.0), Vector3(xmax - xmin + 8.0, hmax - hmin + 4.0, T + 8.0))
+	return {"type": "path", "key": iu, "chunks": chunks, "props": bufs, "aabb": aabb}
+
+
+## How many of the pebbles stay at s (across the path, 0 = middle), from 0 to 1: wheels and hooves push them to the
+## edges and out of the ruts, and the grass strip of quiet tracks has none. even: see GRAVEL_EVEN.
+static func _gravel_share(s: float, half: float, quiet: float, ruts: float, even: float) -> float:
+	var a := absf(s)
+	var f := 0.45
+	if a > half - 0.35:
+		f = 1.0
+	elif a < 0.25:
+		f = lerpf(0.35, 0.5 * (1.0 - quiet), ruts)
+	if absf(a - 0.7) < 0.14:
+		f *= lerpf(1.0, 0.15, ruts)
+	return lerpf(f, 1.0, even) * (1.0 - quiet * (1.0 - smoothstep(0.2, 0.32, a)))
+
+
+## The height of the terrain at x, u as it is drawn near the rider (the finest level of detail), so the pebbles lie
+## on the drawn ground. heights and row_cache keep the grid points and rows already computed.
+static func _mesh_height(heights: Dictionary, row_cache: Dictionary, x: float, u: float) -> float:
+	var step: float = T / LOD_CELLS[0]
+	var fx := x / step
+	var fu := u / step
+	var i := floori(fx)
+	var j := floori(fu)
+	var a := fx - i
+	var b := fu - j
+	var h00 := _grid_point(heights, row_cache, i, j)
+	var h10 := _grid_point(heights, row_cache, i + 1, j)
+	var h01 := _grid_point(heights, row_cache, i, j + 1)
+	var h11 := _grid_point(heights, row_cache, i + 1, j + 1)
+	if a + b <= 1.0:
+		return h00 + (h10 - h00) * a + (h01 - h00) * b
+	return h11 + (h01 - h11) * (1.0 - a) + (h10 - h11) * (1.0 - b)
+
+
+static func _grid_point(heights: Dictionary, row_cache: Dictionary, i: int, j: int) -> float:
+	var key := Vector2i(i, j)
+	if not heights.has(key):
+		var step: float = T / LOD_CELLS[0]
+		if not row_cache.has(j):
+			row_cache[j] = Land.row(j * step)
+		heights[key] = Land.height(i * step, j * step, row_cache[j])
+	return heights[key]
+
+
+## The instances of buf in random order, so that drawing only the first part of the list thins them out evenly.
+static func _shuffled(buf: PackedFloat32Array) -> PackedFloat32Array:
+	var count := buf.size() / FLOATS
+	var out := PackedFloat32Array()
+	out.resize(buf.size())
+	var order := range(count)
+	order.shuffle()
+	for k in count:
+		var src: int = order[k] * FLOATS
+		var dst := k * FLOATS
+		for f in FLOATS:
+			out[dst + f] = buf[src + f]
+	return out
 
 
 static func _job_water(iu: int) -> Dictionary:

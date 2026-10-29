@@ -4,8 +4,8 @@ extends RefCounted
 ## leaf-cluster cards, spruces and firs of branch cards, pines, junipers and mountain pines of needle tufts,
 ## and rocks. Every tree is one surface (see shaders/nature.gdshader).
 
-## The rocks stay at the end: World treats every kind from ROCK_A on as a rock.
-enum { BEECH, BIRCH, OAK, MAPLE, ROWAN, BUSH, SPRUCE, FIR, PINE, JUNIPER, WILLOW, MUGO, ROCK_A, ROCK_B, ROCK_C, COUNT }
+## The rocks stay at the end: World treats every kind from ROCK_A on as a rock. LOG is a fallen trunk beside the path.
+enum { BEECH, BIRCH, OAK, MAPLE, ROWAN, BUSH, SPRUCE, FIR, PINE, JUNIPER, WILLOW, MUGO, LOG, ROCK_A, ROCK_B, ROCK_C, COUNT }
 
 ## Cells of textures/leaves.png (2 x 6): 0-1 oval leaves, 2-3 small leaves, 4-5 fir branches, 6-7 maple leaves,
 ## 8 long pine needles, 9 short dense needles, 10-11 willow leaves.
@@ -32,6 +32,16 @@ const MOSS := Color(0.075, 0.11, 0.03, 0.0)
 const PINE_BARK := Color(0.12, 0.085, 0.06, 0.0)
 const PINE_BARK_TOP := Color(0.42, 0.13, 0.04, 0.0)
 const MUGO_BARK := Color(0.09, 0.065, 0.045, 0.0)
+## Fallen trunks: weathered bark, moss on the upper side, the wood of the broken foot.
+const LOG_BARK := Color(0.12, 0.1, 0.075, 0.0)
+const LOG_MOSS := Color(0.06, 0.1, 0.025, 0.0)
+const LOG_WOOD := Color(0.3, 0.2, 0.11, 0.0)
+## An icosahedron, the start of rocks and pebbles: its corners (not yet of length 1) and faces.
+const ICO_VERTS := [Vector3(-1, 1.618, 0), Vector3(1, 1.618, 0), Vector3(-1, -1.618, 0), Vector3(1, -1.618, 0),
+	Vector3(0, -1, 1.618), Vector3(0, 1, 1.618), Vector3(0, -1, -1.618), Vector3(0, 1, -1.618),
+	Vector3(1.618, 0, -1), Vector3(1.618, 0, 1), Vector3(-1.618, 0, -1), Vector3(-1.618, 0, 1)]
+const ICO_FACES := [[0, 11, 5], [0, 5, 1], [0, 1, 7], [0, 7, 10], [0, 10, 11], [1, 5, 9], [5, 11, 4], [11, 10, 2], [10, 7, 6], [7, 1, 8],
+	[3, 9, 4], [3, 4, 2], [3, 2, 6], [3, 6, 8], [3, 8, 9], [4, 9, 5], [2, 4, 11], [6, 2, 10], [8, 6, 7], [9, 8, 1]]
 
 
 class Builder:
@@ -532,13 +542,10 @@ static func rock(seed_value: int, material: Material, faceted := false) -> Array
 	var noise := FastNoiseLite.new()
 	noise.seed = seed_value
 	noise.frequency = 0.9
-	var verts := [Vector3(-1, 1.618, 0), Vector3(1, 1.618, 0), Vector3(-1, -1.618, 0), Vector3(1, -1.618, 0),
-		Vector3(0, -1, 1.618), Vector3(0, 1, 1.618), Vector3(0, -1, -1.618), Vector3(0, 1, -1.618),
-		Vector3(1.618, 0, -1), Vector3(1.618, 0, 1), Vector3(-1.618, 0, -1), Vector3(-1.618, 0, 1)]
+	var verts := ICO_VERTS.duplicate()
 	for i in verts.size():
 		verts[i] = verts[i].normalized()
-	var faces := [[0, 11, 5], [0, 5, 1], [0, 1, 7], [0, 7, 10], [0, 10, 11], [1, 5, 9], [5, 11, 4], [11, 10, 2], [10, 7, 6], [7, 1, 8],
-		[3, 9, 4], [3, 4, 2], [3, 2, 6], [3, 6, 8], [3, 8, 9], [4, 9, 5], [2, 4, 11], [6, 2, 10], [8, 6, 7], [9, 8, 1]]
+	var faces := ICO_FACES.duplicate()
 	for level in (1 if faceted else 2):
 		var cache := {}
 		var next := []
@@ -601,4 +608,79 @@ static func rock(seed_value: int, material: Material, faceted := false) -> Array
 		b.vert(pos[i], nn, Vector3.RIGHT, col, Vector2.ZERO, 0.0)
 	for f in faces:
 		b.tri(f[0], f[1], f[2])
+	return b.to_mesh(material)
+
+
+## Fallen trunks beside the path, lying along +x (5 m long, the foot at -x) on the ground at y = 0: carved bark like the
+## standing trees, moss on the upper side, the broken wood of the foot as a disc, and two branch stubs.
+static func fallen_trunk(seed_value: int, low: bool, material: Material) -> ArrayMesh:
+	var rng := RandomNumberGenerator.new()
+	rng.seed = seed_value
+	var brng := RandomNumberGenerator.new()
+	brng.seed = seed_value * 31 + 7
+	var b := Builder.new()
+	var length := 5.0
+	var r0 := 0.3
+	var bend := rng.randf_range(-0.25, 0.25)
+	var steps := 4 if low else 7
+	var pts := []
+	var radii := []
+	for i in steps + 1:
+		var t := float(i) / float(steps)
+		var r := r0 * lerpf(1.0, 0.55, t) * (1.0 + 0.3 * pow(1.0 - t, 6.0))
+		pts.append(Vector3(lerpf(-length * 0.5, length * 0.5, t), r * 0.85, bend * sin(PI * t)))
+		radii.append(r)
+	var first := b.v.size()
+	b.bark(pts, radii, 5 if low else 8, LOG_BARK, 0.0, 0.0, brng, 0.12)
+	# moss on the upper side
+	for i in range(first, b.v.size()):
+		var c: Color = b.c[i]
+		b.c[i] = Color(c.r, c.g, c.b, 0.0).lerp(LOG_MOSS, smoothstep(0.3, 0.9, b.n[i].y) * 0.4)
+	# the foot: a disc of wood
+	var foot: Vector3 = pts[0]
+	var fr: float = radii[0] * 0.86
+	var centre := b.vert(foot, Vector3.LEFT, Vector3.UP, LOG_WOOD, Vector2.ZERO, 0.0)
+	var ring := []
+	for k in 8:
+		var a := TAU * k / 8.0
+		ring.append(b.vert(foot + Vector3(0.0, cos(a), sin(a)) * fr, Vector3.LEFT, Vector3.UP, LOG_WOOD * 0.8, Vector2.ZERO, 0.0))
+	for k in 8:
+		b.tri(centre, ring[k], ring[(k + 1) % 8])
+	if not low:
+		for k in 2:
+			var p: Vector3 = pts[2 + k * 3]
+			var dir := Vector3(rng.randf_range(-0.3, 0.3), 0.7, (1.0 if k == 0 else -1.0) * 0.6).normalized()
+			b.bark([p, p + dir * rng.randf_range(0.35, 0.6)], [0.07, 0.025], 4, LOG_BARK, 0.0, 0.0, brng)
+	return b.to_mesh(material)
+
+
+## A pebble for the paths: a small, flattish stone of 12 corners and 20 faces, 1 m across here and scaled down when it
+## is placed. COLOR holds only its shade; World gives each pebble its colour (see shaders/pebble.gdshader). Each shape
+## number gives a stone of its own.
+static func pebble(shape: int, material: Material) -> ArrayMesh:
+	var noise := FastNoiseLite.new()
+	noise.seed = 500 + shape
+	noise.frequency = 1.3
+	var pos := []
+	for p in ICO_VERTS:
+		var q: Vector3 = p.normalized()
+		var r := 1.0 + noise.get_noise_3dv(q) * 0.35
+		pos.append(Vector3(q.x * r, q.y * r * 0.6, q.z * r * 0.85) * 0.5)
+	var normals := []
+	normals.resize(pos.size())
+	normals.fill(Vector3.ZERO)
+	for f in ICO_FACES:
+		var fn: Vector3 = (pos[f[1]] - pos[f[0]]).cross(pos[f[2]] - pos[f[0]])
+		for k in 3:
+			normals[f[k]] += fn
+	var b := Builder.new()
+	for i in pos.size():
+		var nn: Vector3 = normals[i].normalized()
+		if nn.dot(pos[i]) < 0.0:
+			nn = -nn
+		var shade := 0.9 + noise.get_noise_3dv(pos[i] * 4.0) * 0.2
+		b.vert(pos[i], nn, Vector3.RIGHT, Color(shade, shade, shade, 0.0), Vector2.ZERO, 0.0)
+	# clockwise seen from outside: the front faces for Godot, so the shader can skip the back faces
+	for f in ICO_FACES:
+		b.tri(f[0], f[2], f[1])
 	return b.to_mesh(material)
