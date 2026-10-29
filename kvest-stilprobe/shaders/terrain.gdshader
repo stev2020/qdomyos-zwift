@@ -4,6 +4,7 @@
 // COLOR: the share of each landscape (r Laubland, g Heide, b Flusstal, a Hochland).
 // UV.x: bare ground (0 .. 1), UV.y: grass strip in the middle of the path (0 .. 1).
 // UV2.x: half the width of the path, UV2.y: cart ruts (0 .. 1), see Land.path_style.
+// CUSTOM0.x: how dense the wood is (0 .. 1, see Land.woods); the ground under the trees lies in their shade.
 //
 // The path has four layers: the painted surface (textures/path.png in two sizes), the cart ruts with hoof prints in the
 // middle (textures/hoof.png), the fine relief of grains, pebbles and cracks, and the pebbles as models (World). Ruts,
@@ -26,6 +27,7 @@ uniform vec3 path_color[4] : source_color;
 uniform vec3 path_rim[4] : source_color;
 uniform vec3 bed_color[4] : source_color;
 uniform vec3 stone_color[4] : source_color;
+uniform vec3 wood_floor[4] : source_color;
 uniform float grass_fade = 52.0;
 
 // width of the stream per landscape, as Land.STREAM_WIDTH
@@ -40,6 +42,8 @@ const vec4 PEBBLES = vec4(0.45, 0.35, 1.0, 1.0);
 const vec4 RELIEF = vec4(0.9, 0.55, 1.0, 1.2);
 // how much of the bare path shows through the grass strip (the grass on sand is sparse)
 const vec4 STRIP_SOIL = vec4(0.2, 0.45, 0.3, 0.3);
+// how dark the ground is in the wood: the beeches and oaks of the Laubland cast the deepest shade
+const vec4 WOOD_SHADE = vec4(0.62, 0.74, 0.68, 1.0);
 // half the distance between the wheels of a cart (1.4 m)
 const float GAUGE = 0.7;
 // the painted surface repeats every 1.7 m; a second, larger and blurred copy every 4.3 m breaks up the repeat. The hoof
@@ -55,9 +59,11 @@ const float HOOF_SLOPE = 2.4;
 #define LAND(c) (c[0] * w.x + c[1] * w.y + c[2] * w.z + c[3] * w.w)
 
 varying vec3 wpos;
+varying float v_wood;
 
 void vertex() {
 	wpos = (MODEL_MATRIX * vec4(VERTEX, 1.0)).xyz;
+	v_wood = CUSTOM0.x;
 }
 
 void fragment() {
@@ -178,6 +184,10 @@ void fragment() {
 		vec3 pebbles = LAND(bed_color) * (0.75 + 0.5 * n4);
 		col = mix(col, pebbles, bed);
 	}
+
+	// in the wood the ground is darker and duller: in the shade of the trees the grass grows thin
+	col = mix(col, LAND(wood_floor) * (0.8 + 0.4 * n3), v_wood * 0.5 * (1.0 - on_path) * (1.0 - bare));
+	col *= mix(1.0, dot(w, WOOD_SHADE), v_wood);
 
 	// tilt the normal: on bare ground along x and u, on the path across and along it
 	if (detail > 0.0 && (bare > 0.0 || on_path > 0.0)) {

@@ -33,6 +33,8 @@ Der Weg wechselt alle paar hundert Meter seine Art:
 
 Im Flusstal ist der Fahrweg ein Schotterweg ohne Grasstreifen, im Hochland ein schmaler Saumpfad ohne Kutschenspuren, nur mit Hufabdrücken. Auf dem Weg liegt Kies, am Rand ab und zu ein Stein oder ein umgestürzter Stamm.
 
+Ab und zu führt der Weg einige hundert Meter durch einen Wald: im Laubland durch Buchen, Eichen und Ahorn, in der Heide durch Kiefern und Birken, im Flusstal durch Fichten und Tannen. Dort stehen die Bäume dicht am Weg, der Boden ist dunkler, und Wurzeln laufen über den Weg.
+
 ## So ist sie gebaut
 
 - **Landschaften:** `scripts/land.gd` beschreibt Weg, Bach und die vier Landschaften als Formeln: ihren Anteil an jeder Stelle, die Höhen, die Breite des Wassers und den kahlen Boden (Sand, Geröll). Für die Shader steht der Weg in `shaders/land.gdshaderinc`.
@@ -40,7 +42,7 @@ Im Flusstal ist der Fahrweg ein Schotterweg ohne Grasstreifen, im Hochland ein s
 - **Wege:** `Land.path_style` wählt die Wegart. Breite, Grasstreifen und Spuren stecken in den Gelände-Punkten, und `shaders/terrain.gdshader` malt den Weg in vier Schichten: die Oberfläche aus `textures/path.png`, die Kutschenspuren und Hufabdrücke (`textures/hoof.png`), die feinen Unebenheiten und den Kies als Modelle (`shaders/pebble.gdshader`). Spuren und Unebenheiten entstehen nur im Licht; das Gelände bleibt flach.
 - **Gras:** Büschel aus sechs sich kreuzenden Flächen (12 Dreiecke) mit gemalten Halmen. Acht Sorten: üppig, mit Samen, kurz, mit Blüten, mit lila Rispen, Schilf, Heidekraut und Borstgras.
 - **Bäume und Büsche:** Blätterbüschel aus drei sich kreuzenden Flächen mit gemalten Blättern und deren Normalen. Arten: Buche, Birke, Eiche, Ahorn, Eberesche, Busch, Weide, Fichte, Tanne, Kiefer, Wacholder und Latsche; ein Teil der Laubbäume ist schon herbstlich. Stämme und Äste sind aus flachen Flächen geschnitzt. Wind bewegt Gras, Blätter und Zweige.
-- **Felsen und Stämme:** runde, bemooste Steine und kantige, graue Felsen aus flachen Flächen, liegende Stämme am Wegrand und kleine Kiesel auf dem Weg.
+- **Felsen und Stämme:** runde, bemooste Steine und kantige, graue Felsen aus flachen Flächen, liegende Stämme am Wegrand, Wurzeln über dem Weg und kleine Kiesel auf dem Weg.
 - **Texturen:** `tools/make_textures.py` malt Gras, Blätter, Nadeln und Zweige, die Oberfläche der Wege und die Hufabdrücke (Python mit Pillow). Danach einmal `godot --headless --path . --import` laufen lassen, sonst zeigt die Vorschau noch die alten Texturen.
 
 ## Bauen

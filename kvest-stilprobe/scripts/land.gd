@@ -10,7 +10,7 @@ extends RefCounted
 ## Land.mode can hold a single landscape instead (button "Landschaft", --land).
 ##
 ## The path itself changes every few hundred metres between a busy cart track, a quiet one with a strip of grass in the
-## middle and a narrow footpath (path_style).
+## middle and a narrow footpath (path_style). Now and then it runs through a wood for a few hundred metres (path_wood).
 ##
 ## Coordinates: u is the distance forward along the main direction, x is sideways (right = +x).
 ## In the scene, z = -(u - origin_u); the world shifts its origin now and then (see World).
@@ -32,6 +32,9 @@ const FOOT_HALF := 0.45
 ## quiet track with a grass strip (about 45 %), in between a busy cart track.
 const FOOT_BELOW := -0.39
 const QUIET_ABOVE := 0.03
+## The path runs through a wood where the noise groves lies above this value, per landscape: about a sixth of the way
+## in the Laubland, a tenth in the heath and in the river valley, never in the highland. Most woods last 100 to 500 m.
+const WOOD_ABOVE := [0.3, 0.4, 0.4, 9.0]
 ## The noise textures of the shaders repeat every NOISE_PERIOD metres.
 const NOISE_PERIOD := 256.0
 
@@ -48,13 +51,15 @@ const STREAM_WIDTH := [1.0, 0.0, 1.6, 0.6]
 
 ## Fields of row(u): path x, 1/length of the path tangent, path height, stream x, 1/length of the stream tangent,
 ## water level, then the share of each landscape in the look (W) and in the relief (RW), the stream width (SW), and the
-## kind of path: half its width (PH), the grass strip in the middle (QUIET) and the cart ruts (RUTS), see path_style.
+## kind of path: half its width (PH), the grass strip in the middle (QUIET) and the cart ruts (RUTS), see path_style,
+## and how much the path runs through a wood (WOOD), see path_wood.
 const W := 6
 const RW := 10
 const SW := 14
 const PH := 15
 const QUIET := 16
 const RUTS := 17
+const WOOD := 18
 
 ## -1: the landscapes take turns along the path; LAUB .. HOCH: only this landscape.
 static var mode := -1
@@ -69,6 +74,7 @@ static var huge: FastNoiseLite      # the long climbs of the highland
 static var humps: FastNoiseLite     # the short climbs in the river valley
 static var patches: FastNoiseLite   # sand in the heath, scree in the highland
 static var lanes: FastNoiseLite     # the kind of path along the way
+static var groves: FastNoiseLite    # where the path runs through a wood
 
 
 static func init() -> void:
@@ -82,6 +88,7 @@ static func init() -> void:
 	humps = _noise(113, 0.005, 1)
 	patches = _noise(127, 0.028, 2)
 	lanes = _noise(131, 0.002, 2)
+	groves = _noise(149, 0.0012, 2)
 
 
 static func _noise(seed_value: int, frequency: float, octaves: int) -> FastNoiseLite:
@@ -288,10 +295,21 @@ static func path_style(u: float) -> Vector3:
 	return Vector3(half, quiet, ruts)
 
 
-## Everything that only depends on u, shared by a whole row of points (see the fields W .. RUTS above).
+## How much the path runs through a wood at u, from 0 to 1. There the trees stand close on both sides (see wood).
+static func path_wood(u: float) -> float:
+	var n := groves.get_noise_1d(u)
+	var w := weights(u, BLEND)
+	var d := 0.0
+	for k in KINDS:
+		if w[k] > 0.0:
+			d += w[k] * smoothstep(WOOD_ABOVE[k] - 0.04, WOOD_ABOVE[k] + 0.04, n)
+	return d
+
+
+## Everything that only depends on u, shared by a whole row of points (see the fields W .. WOOD above).
 static func row(u: float) -> PackedFloat64Array:
 	var r := PackedFloat64Array()
-	r.resize(18)
+	r.resize(19)
 	var pdx := path_dx(u)
 	var sdx := stream_dx(u)
 	r[0] = path_x(u)
@@ -312,6 +330,7 @@ static func row(u: float) -> PackedFloat64Array:
 	r[PH] = style.x
 	r[QUIET] = style.y
 	r[RUTS] = style.z
+	r[WOOD] = path_wood(u)
 	return r
 
 
@@ -321,6 +340,41 @@ static func dist_path(x: float, r: PackedFloat64Array) -> float:
 
 static func dist_stream(x: float, r: PackedFloat64Array) -> float:
 	return absf(x - r[3]) * r[4]
+
+
+## How dense the wood of landscape k is, from 0 (open land) to 1, at a point with the value f of the noise forest and
+## the distance dp from the path: the broadleaf woods of the Laubland, the groves of pines and birches in the heath, the
+## groups of conifers on the floor of the river valley. Where the path runs through a wood (path_wood), a band of wood
+## follows it, about 20 m to either side. The highland has no wood.
+static func wood(k: int, f: float, dp: float, r: PackedFloat64Array) -> float:
+	var d := 0.0
+	match k:
+		LAUB:
+			d = smoothstep(0.06, 0.42, f)
+		HEIDE:
+			d = smoothstep(0.15, 0.55, f)
+		FLUSS:
+			d = smoothstep(0.2, 0.55, f)
+		_:
+			return 0.0
+	return maxf(d, r[WOOD] * (1.0 - smoothstep(18.0, 40.0, dp)))
+
+
+## How dense the wood is at x, u, from 0 to 1, in the shares of the landscapes (see wood); in the river valley also the
+## conifers on the slopes.
+static func woods(x: float, u: float, r: PackedFloat64Array) -> float:
+	var f := forest.get_noise_2d(x, u)
+	var dp := dist_path(x, r)
+	var d := 0.0
+	for k in KINDS:
+		var wk: float = r[W + k]
+		if wk <= 0.0 or k == HOCH:
+			continue
+		var dk := wood(k, f, dp, r)
+		if k == FLUSS:
+			dk = maxf(dk, smoothstep(0.0, 40.0, valley_side(x, r[0], r[3])))
+		d += wk * dk
+	return d
 
 
 ## Bare ground, from 0 (grown over) to 1 (bare): sand in the heath, scree in the highland.

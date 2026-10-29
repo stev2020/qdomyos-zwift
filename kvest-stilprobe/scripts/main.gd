@@ -28,6 +28,7 @@ const GROUND := {
 	"path_rim": [Color(0.31, 0.24, 0.16), Color(0.58, 0.50, 0.36), Color(0.42, 0.40, 0.35), Color(0.38, 0.34, 0.28)],
 	"bed_color": [Color(0.58, 0.55, 0.47), Color(0.72, 0.65, 0.50), Color(0.60, 0.58, 0.52), Color(0.52, 0.51, 0.47)],
 	"stone_color": [Color(0.56, 0.54, 0.50), Color(0.84, 0.80, 0.70), Color(0.66, 0.64, 0.60), Color(0.60, 0.58, 0.55)],
+	"wood_floor": [Color(0.27, 0.28, 0.12), Color(0.38, 0.34, 0.19), Color(0.25, 0.26, 0.13), Color(0.30, 0.31, 0.18)],
 }
 ## Height of the far hills and mountains per landscape: low over the heath, high around the valley and the highland.
 const BACKDROP_SCALE := [1.0, 0.6, 1.45, 1.8]
@@ -107,7 +108,8 @@ func _ready() -> void:
 
 
 ## All plants on a plain meadow (previews only): --gallery sommer|herbst
-## Back row: the trees. Front row: bush, juniper, mountain pine, two rocks, heather, tussocks and a fallen trunk.
+## Back row: the trees. Front row: bush, juniper, mountain pine, two rocks, heather, tussocks and a fallen trunk, in
+## front of them roots.
 func _make_gallery() -> void:
 	hud.visible = false
 	backdrop.visible = false
@@ -127,6 +129,7 @@ func _make_gallery() -> void:
 	for i in front.size():
 		_gallery_plant(front[i], Vector3((i - 3.5) * 6.0, 0.0, 16.0))
 	_gallery_plant(Kit.LOG, Vector3(21.0, 0.0, 16.0))
+	_gallery_plant(Kit.ROOT, Vector3(4.0, 0.0, 28.0))
 	# heather (6) and tussocks (7) as small patches of grass clumps
 	var mm := MultiMesh.new()
 	mm.transform_format = MultiMesh.TRANSFORM_3D

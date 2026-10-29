@@ -11,6 +11,7 @@ const LOD_CELLS := [32, 16, 8]   # terrain cells per tile side for the three lev
 const FLOATS := 16               # per instance: 12 for the transform, 4 custom
 const CHUNK := 24.0              # the pebbles are drawn in pieces of 24 m of path
 const PEBBLE_SHAPES := 3
+const ROOT_RANGE := 70.0         # roots across the path are drawn up to this distance
 
 var origin_u := 0.0
 var view_ahead := 528.0
@@ -75,6 +76,9 @@ func setup(materials: Dictionary) -> void:
 			Kit.LOG:
 				p["high"] = Kit.fallen_trunk(430, false, mat_nature)
 				p["low"] = Kit.fallen_trunk(430, true, mat_nature)
+			Kit.ROOT:
+				p["high"] = Kit.roots(440, mat_nature)
+				p["low"] = p["high"]
 			Kit.ROCK_C:
 				p["high"] = Kit.rock(330, mat_nature, true)
 				p["low"] = p["high"]
@@ -136,6 +140,9 @@ func _set_lod(mmi: GeometryInstance3D) -> void:
 	if mmi.has_meta("rock"):
 		mmi.visibility_range_end = tree_lod
 		mmi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	elif mmi.has_meta("root"):
+		mmi.visibility_range_end = minf(tree_lod, ROOT_RANGE)
+		mmi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_ON if shadows else GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 	elif mmi.has_meta("low"):
 		mmi.visibility_range_begin = tree_lod
 		mmi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
@@ -315,9 +322,10 @@ func _apply_terrain(res: Dictionary) -> void:
 	arr[Mesh.ARRAY_COLOR] = res["c"]
 	arr[Mesh.ARRAY_TEX_UV] = res["uv"]
 	arr[Mesh.ARRAY_TEX_UV2] = res["uv2"]
+	arr[Mesh.ARRAY_CUSTOM0] = res["wood"]
 	arr[Mesh.ARRAY_INDEX] = res["i"]
 	var mesh := ArrayMesh.new()
-	mesh.add_surface_from_arrays(Mesh.PRIMITIVE_TRIANGLES, arr)
+	mesh.add_surface_from_arrays(Mesh.PRIMITIVE_TRIANGLES, arr, [], {}, Mesh.ARRAY_CUSTOM_R_FLOAT << Mesh.ARRAY_FORMAT_CUSTOM0_SHIFT)
 	mesh.surface_set_material(0, mat_terrain)
 	var mi: MeshInstance3D = t.get("terrain")
 	if mi == null or not is_instance_valid(mi):
@@ -364,17 +372,19 @@ func _apply_trees(res: Dictionary) -> void:
 			_add_models(node, kind, buf, aabb)
 
 
-## Trees, rocks or trunks of one kind: the detailed models near the rider, the simple ones further away (rocks have
-## only one).
+## Trees, rocks, trunks or roots of one kind: the detailed models near the rider, the simple ones further away (rocks
+## and roots have only one).
 func _add_models(node: Node3D, kind: int, buf: PackedFloat32Array, aabb: AABB) -> void:
 	var high := MultiMeshInstance3D.new()
 	high.multimesh = _multimesh(protos[kind]["high"], buf, aabb)
 	high.visibility_range_end_margin = 8.0
 	if kind >= Kit.ROCK_A:
 		high.set_meta("rock", true)
+	elif kind == Kit.ROOT:
+		high.set_meta("root", true)
 	node.add_child(high)
 	_set_lod(high)
-	if kind >= Kit.ROCK_A:
+	if kind >= Kit.ROCK_A or kind == Kit.ROOT:
 		return
 	var low := MultiMeshInstance3D.new()
 	low.set_meta("low", true)
@@ -478,10 +488,12 @@ static func _job_terrain(key: Vector2i, lod: int) -> Dictionary:
 	var verts := PackedVector3Array()
 	var norms := PackedVector3Array()
 	# colour: the share of each landscape (r Laubland, g Heide, b Flusstal, a Hochland); uv.x: bare ground, uv.y: the
-	# grass strip in the middle of the path; uv2: half the width of the path and its cart ruts (see Land.path_style)
+	# grass strip in the middle of the path; uv2: half the width of the path and its cart ruts (see Land.path_style);
+	# custom0: how dense the wood is (Land.woods), the ground under it lies in the shade
 	var cols := PackedColorArray()
 	var uvs := PackedVector2Array()
 	var uv2s := PackedVector2Array()
+	var woods := PackedFloat32Array()
 	for j in n + 1:
 		var r: PackedFloat64Array = rws[j + 1]
 		var wc := Color(r[Land.W], r[Land.W + 1], r[Land.W + 2], r[Land.W + 3])
@@ -493,6 +505,7 @@ static func _job_terrain(key: Vector2i, lod: int) -> Dictionary:
 			cols.append(wc)
 			uvs.append(Vector2(Land.bare(x0 + i * step, u0 + j * step, r), r[Land.QUIET]))
 			uv2s.append(style)
+			woods.append(Land.woods(x0 + i * step, u0 + j * step, r))
 	var idx := PackedInt32Array()
 	for j in n:
 		for i in n:
@@ -518,9 +531,11 @@ static func _job_terrain(key: Vector2i, lod: int) -> Dictionary:
 			cols.append(cols[vi])
 			uvs.append(uvs[vi])
 			uv2s.append(uv2s[vi])
+			woods.append(woods[vi])
 		for k in edge.size() - 1:
 			idx.append_array([edge[k], first + k, edge[k + 1], edge[k + 1], first + k, first + k + 1])
-	return {"type": "terrain", "key": key, "lod": lod, "v": verts, "n": norms, "c": cols, "uv": uvs, "uv2": uv2s, "i": idx}
+	return {"type": "terrain", "key": key, "lod": lod, "v": verts, "n": norms, "c": cols, "uv": uvs, "uv2": uv2s, "wood": woods,
+		"i": idx}
 
 
 static func _grid_height(hs: PackedFloat32Array, w: int, fx: float, fu: float) -> float:
@@ -642,6 +657,11 @@ static func _job_grass(key: Vector2i) -> Dictionary:
 				if k == Land.FLUSS:
 					dry *= 0.6
 			hscale *= lerpf(0.5, 1.0, smoothstep(half - 0.2, half + 2.0, dp))
+			# in the wood the grass grows thinner and lies in the shade
+			var wd := Land.woods(x, uu, r)
+			if wd > 0.0 and rng.randf() < 0.55 * wd:
+				continue
+			bright *= lerpf(1.0, 0.7, wd)
 			var h := _grid_height(hs, w, (x - x0) / step, (uu - u0) / step)
 			hmin = minf(hmin, h)
 			hmax = maxf(hmax, h)
@@ -668,6 +688,7 @@ static func _job_grass(key: Vector2i) -> Dictionary:
 		if k == Land.HEIDE:
 			dry += 0.35
 			bright *= 0.85
+		bright *= lerpf(1.0, 0.7, Land.woods(x, u, r))
 		var h := _grid_height(hs, w, (x - x0) / step, (u - u0) / step)
 		hmin = minf(hmin, h)
 		hmax = maxf(hmax, h)
@@ -728,9 +749,10 @@ const GRAVEL_COLORS := [
 	[Color(0.28, 0.24, 0.19), Color(0.36, 0.32, 0.27), Color(0.2, 0.17, 0.14)],
 ]
 ## Beside the path, per landscape: the chance of a stone on either side every 4 m and of a fallen trunk every 8 m
-## (trunks only near woods).
+## (trunks only near woods), and in a wood the chance of roots across the path every 1.5 m.
 const EDGE_STONES := [0.07, 0.05, 0.1, 0.15]
 const EDGE_LOGS := [0.05, 0.03, 0.035, 0.0]
+const ROOTS := [0.3, 0.3, 0.35, 0.0]
 
 
 static func _pick_broadleaf(rng: RandomNumberGenerator) -> int:
@@ -807,8 +829,10 @@ static func _job_trees(key: Vector2i) -> Dictionary:
 			var scale := rng.randf_range(0.82, 1.18)
 			match _pick(r, Land.W, rng.randf()):
 				Land.HEIDE:
-					# open heath: groves of pines and birches, junipers standing alone
-					if dp > 5.5 and rng.randf() < smoothstep(0.15, 0.55, f) * 0.55 + 0.006:
+					# open heath: groves of pines and birches, junipers standing alone. In a wood the trees come closer to
+					# the path (see Land.wood).
+					var thick := Land.wood(Land.HEIDE, f, dp, r)
+					if dp > lerpf(5.5, 3.5, thick) and rng.randf() < thick * lerpf(0.55, 0.75, r[Land.WOOD]) + 0.006:
 						kind = Kit.PINE if rng.randf() < 0.6 else Kit.BIRCH
 					elif rng.randf() < 0.035 + 0.05 * smoothstep(-0.3, 0.3, f):
 						kind = Kit.JUNIPER
@@ -816,13 +840,15 @@ static func _job_trees(key: Vector2i) -> Dictionary:
 				Land.FLUSS:
 					# willows along the river, spruces and firs on the slopes, rowans and a few conifers on the floor
 					var side := Land.valley_side(x, r[0], r[3])
+					var thick := Land.wood(Land.FLUSS, f, dp, r)
 					if sw > 0.01 and ds < 14.0 and dp > 5.0 and rng.randf() < 0.3:
 						kind = Kit.WILLOW
 						scale = rng.randf_range(0.75, 1.15)
 					elif side > 0.0 and rng.randf() < smoothstep(0.0, 40.0, side) * 0.48 + 0.05:
 						kind = _valley_conifer(x, u, rng)
-					elif dp > 5.5 and rng.randf() < smoothstep(0.2, 0.55, f) * 0.45 + 0.012:
-						kind = Kit.ROWAN if rng.randf() < 0.35 else _valley_conifer(x, u, rng)
+					elif dp > lerpf(5.5, 4.5, thick) and rng.randf() < thick * lerpf(0.45, 0.8, r[Land.WOOD]) + 0.012:
+						# where the path runs through a wood, it is a wood of spruces and firs
+						kind = Kit.ROWAN if rng.randf() < lerpf(0.35, 0.1, r[Land.WOOD]) else _valley_conifer(x, u, rng)
 				Land.HOCH:
 					# mountain pines in wide patches and a few small rowans; nothing grows on the scree
 					if Land.bare(x, u, r) > 0.5:
@@ -834,8 +860,10 @@ static func _job_trees(key: Vector2i) -> Dictionary:
 						kind = Kit.ROWAN
 						scale = rng.randf_range(0.5, 0.75)
 				_:
-					# broadleaf woods and meadows: beech, oak and maple, big single trees by the path, bushes
-					if dp > 5.5 and rng.randf() < smoothstep(0.06, 0.42, f) * 0.85 + 0.02:
+					# broadleaf woods and meadows: beech, oak and maple, big single trees by the path, bushes. In a wood
+					# the trees come closer to the path.
+					var thick := Land.wood(Land.LAUB, f, dp, r)
+					if dp > lerpf(5.5, 4.0, thick) and rng.randf() < thick * 0.85 + 0.02:
 						kind = _pick_broadleaf(rng)
 					elif dp > 6.0 and dp < 11.0 and rng.randf() < 0.035:
 						kind = [Kit.BEECH, Kit.OAK, Kit.MAPLE][rng.randi() % 3]
@@ -982,9 +1010,9 @@ static func _job_path(iu: int) -> Dictionary:
 	return {"type": "path", "key": iu, "chunks": chunks}
 
 
-## Stones and fallen trunks beside the path in the row iu, as [kind, basis, Vector3(x, height, u)]. They go into the
-## blocks of trees and rocks (each block takes the ones on its ground), so they need no draw calls of their own.
-## Every block of the row computes the same list.
+## Stones and fallen trunks beside the path in the row iu and roots across it, as [kind, basis, Vector3(x, height, u)].
+## They go into the blocks of trees and rocks (each block takes the ones on its ground), so they need hardly any draw
+## calls of their own. Every block of the row computes the same list.
 static func _path_things(iu: int) -> Array:
 	var u0 := iu * T
 	var rng := RandomNumberGenerator.new()
@@ -1006,20 +1034,17 @@ static func _path_things(iu: int) -> Array:
 			var sw: float = r[Land.SW]
 			if sw > 0.01 and Land.dist_stream(x, r) < 3.0 * sw + 1.0:
 				continue
-			# grey stones, in the Laubland and the valley also mossy ones
-			var rock := Kit.ROCK_C
-			if (kind == Land.LAUB or kind == Land.FLUSS) and rng.randf() < 0.4:
-				rock = Kit.ROCK_A + rng.randi() % 2
+			# grey, angular stones: the round, mossy ones look white from the side
 			var h := _mesh_height(heights, row_cache, x, u)
 			var tilt := Vector3(rng.randf_range(-0.2, 0.2), 1.0, rng.randf_range(-0.2, 0.2)).normalized()
-			things.append([rock, Basis(tilt, rng.randf() * TAU).scaled(Vector3.ONE * size), Vector3(x, h - 0.25 * size, u)])
+			things.append([Kit.ROCK_C, Basis(tilt, rng.randf() * TAU).scaled(Vector3.ONE * size), Vector3(x, h - 0.25 * size, u)])
 	# fallen trunks near woods, lying at a slant to the path, so the rider sees them along their length
 	for k in int(T / 8.0):
 		var u := u0 + (k + rng.randf()) * 8.0
 		var r := Land.row(u)
 		var kind := _pick(r, Land.W, rng.randf())
 		var side := -1.0 if rng.randf() < 0.5 else 1.0
-		var woods := smoothstep(-0.15, 0.25, Land.forest.get_noise_2d(r[0] + side * 6.0, u))
+		var woods := maxf(smoothstep(-0.15, 0.25, Land.forest.get_noise_2d(r[0] + side * 6.0, u)), r[Land.WOOD])
 		if rng.randf() >= EDGE_LOGS[kind] * woods:
 			continue
 		var scale := rng.randf_range(0.8, 1.15)
@@ -1043,6 +1068,20 @@ static func _path_things(iu: int) -> Array:
 		var ya := Vector3.UP * cos(pitch) - dir * sin(pitch)
 		var h := (hf + ht) * 0.5 - 0.06 * scale
 		things.append([Kit.LOG, Basis(xa, ya, xa.cross(ya)).scaled(Vector3.ONE * scale), Vector3(x, h, u)])
+	# roots across the path where it runs through a wood, at a slant, the thick end on either side, some mirrored
+	for k in int(T / 1.5):
+		var u := u0 + (k + rng.randf()) * 1.5
+		var r := Land.row(u)
+		var kind := _pick(r, Land.W, rng.randf())
+		if rng.randf() >= ROOTS[kind] * Land.woods(r[0], u, r):
+			continue
+		var xa := Vector3(1.0, 0.0, Land.path_dx(u)).normalized().rotated(Vector3.UP, rng.randf_range(-0.6, 0.6))
+		if rng.randf() < 0.5:
+			xa = -xa
+		var za := xa.cross(Vector3.UP) * (1.0 if rng.randf() < 0.5 else -1.0)
+		var x: float = r[0] + rng.randf_range(-0.3, 0.3) / r[1]
+		var h := _mesh_height(heights, row_cache, x, u)
+		things.append([Kit.ROOT, Basis(xa, Vector3.UP, za).scaled(Vector3.ONE * rng.randf_range(0.8, 1.2)), Vector3(x, h, u)])
 	return things
 
 
