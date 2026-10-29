@@ -5,6 +5,10 @@
 // UV.x: bare ground (0 .. 1), UV.y: grass strip in the middle of the path (0 .. 1).
 // UV2.x: half the width of the path, UV2.y: cart ruts (0 .. 1), see Land.path_style.
 // CUSTOM0.x: how dense the wood is (0 .. 1, see Land.woods); the ground under the trees lies in their shade.
+// CUSTOM0.y: the noise meadow of Land, which also picks the flowers and the heather of the grass clumps (World).
+//
+// The grass colours are those of the grass clumps seen from afar, so the meadow goes on where the clumps thin out (see
+// grass.gdshader): near the rider the ground between the clumps is darker (under).
 //
 // The path has four layers: the painted surface (textures/path.png in two sizes), the cart ruts with hoof prints in the
 // middle (textures/hoof.png), the fine relief of grains, pebbles and cracks, and the pebbles as models (World). Ruts,
@@ -15,6 +19,8 @@ render_mode cull_disabled, diffuse_lambert_wrap;
 #include "res://shaders/land.gdshaderinc"
 
 uniform sampler2D patch_noise : filter_linear_mipmap, repeat_enable;
+// the same noise, filtered so that it stays sharp across the view also at a flat angle (the clumps seen from afar)
+uniform sampler2D patch_fine : filter_linear_mipmap_anisotropic, repeat_enable;
 uniform sampler2D path_tex : filter_linear_mipmap, repeat_enable;
 uniform sampler2D hoof_tex : filter_linear_mipmap, repeat_enable;
 // one colour per landscape: Laubland, Heide, Flusstal, Hochland
@@ -28,7 +34,9 @@ uniform vec3 path_rim[4] : source_color;
 uniform vec3 bed_color[4] : source_color;
 uniform vec3 stone_color[4] : source_color;
 uniform vec3 wood_floor[4] : source_color;
-uniform float grass_fade = 52.0;
+// the band in which the grass clumps thin out, as in grass.gdshader
+uniform float grass_fade_start = 36.0;
+uniform float grass_fade_end = 57.0;
 
 // width of the stream per landscape, as Land.STREAM_WIDTH
 const vec4 STREAM_WIDTH = vec4(1.0, 0.0, 1.6, 0.6);
@@ -44,6 +52,11 @@ const vec4 RELIEF = vec4(0.9, 0.55, 1.0, 1.2);
 const vec4 STRIP_SOIL = vec4(0.2, 0.45, 0.3, 0.3);
 // how dark the ground is in the wood: the beeches and oaks of the Laubland cast the deepest shade
 const vec4 WOOD_SHADE = vec4(0.62, 0.74, 0.68, 1.0);
+// what the flowers and the heather do to the colour of a meadow seen from afar, from the painted clumps
+// (tools/make_textures.py): white and yellow flowers, pink and violet ones, heather in bloom
+const vec3 FLOWERS_LIGHT = vec3(1.26, 1.15, 2.1);
+const vec3 FLOWERS_VIOLET = vec3(1.29, 0.76, 5.2);
+const vec3 HEATHER = vec3(0.68, 0.4, 2.55);
 // half the distance between the wheels of a cart (1.4 m)
 const float GAUGE = 0.7;
 // the painted surface repeats every 1.7 m; a second, larger and blurred copy every 4.3 m breaks up the repeat. The hoof
@@ -60,10 +73,12 @@ const float HOOF_SLOPE = 2.4;
 
 varying vec3 wpos;
 varying float v_wood;
+varying float v_meadow;
 
 void vertex() {
 	wpos = (MODEL_MATRIX * vec4(VERTEX, 1.0)).xyz;
 	v_wood = CUSTOM0.x;
+	v_meadow = CUSTOM0.y;
 }
 
 void fragment() {
@@ -78,10 +93,21 @@ void fragment() {
 	vec3 col = mix(LAND(grass_a), LAND(grass_b), smoothstep(0.35, 0.65, n1));
 	col = mix(col, LAND(grass_c), smoothstep(0.58, 0.82, n2) * 0.55);
 	col *= 0.86 + 0.22 * n3 + 0.1 * (n4 - 0.5);
-	// under the grass clumps the ground is in their shade
+	// the flowers and the heather, where the clumps have them: in the Laubland and the river valley white and yellow
+	// flowers on half the clumps, in the Laubland also pink and violet ones, in the heath heather on three in four
+	float m = v_meadow;
+	col *= mix(vec3(1.0), FLOWERS_LIGHT, smoothstep(0.25, 0.35, m) * (w.x + w.z) * 0.5);
+	col *= mix(vec3(1.0), FLOWERS_VIOLET, (1.0 - smoothstep(-0.4, -0.3, m)) * w.x * 0.55);
+	col *= mix(vec3(1.0), HEATHER, smoothstep(-0.35, -0.25, m) * w.y * 0.75);
+	// between the clumps near the rider the ground is in their shade; it gives way as the clumps thin out
 	float cam_d = distance(wpos, CAMERA_POSITION_WORLD);
-	float near = 1.0 - smoothstep(grass_fade - 18.0, grass_fade + 6.0, cam_d);
+	float near = 1.0 - clamp((cam_d - grass_fade_start) / (grass_fade_end - grass_fade_start), 0.0, 1.0);
 	col = mix(col, LAND(under) * (0.85 + 0.3 * n3), near * 0.6);
+	// where the clumps have sunk into the ground, a fine mottle of light tips and dark gaps stands in for them; far
+	// away it fades, as the clumps would
+	float clumps = texture(patch_fine, np / 4.0).r;
+	float mottle = (1.0 - near) * (1.0 - smoothstep(110.0, 220.0, cam_d));
+	col *= mix(1.0, 0.72 + 0.56 * clumps, mottle);
 
 	// the path: s across it (positive to the right), t along it. The texture coordinates and their derivatives are
 	// taken here, outside the branches below, so the mip levels stay defined everywhere.

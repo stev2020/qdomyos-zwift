@@ -17,11 +17,12 @@ const LEVELS := [
 ## Names for --land, in the order of Land.LAUB .. Land.HOCH
 const LAND_ARGS := ["laub", "heide", "fluss", "hoch"]
 ## Ground colours per landscape: Laubland (dark earth), Heide (light sand), Flusstal (gravel), Hochland (rock and scree).
-## See shaders/terrain.gdshader.
+## See shaders/terrain.gdshader. grass_a .. grass_c are the colours of the grass clumps seen from afar (without flowers
+## and heather), measured in renders of the clumps against the bare ground.
 const GROUND := {
-	"grass_a": [Color(0.30, 0.44, 0.10), Color(0.40, 0.42, 0.17), Color(0.26, 0.42, 0.13), Color(0.36, 0.41, 0.19)],
-	"grass_b": [Color(0.46, 0.56, 0.14), Color(0.52, 0.50, 0.22), Color(0.40, 0.54, 0.17), Color(0.47, 0.49, 0.26)],
-	"grass_c": [Color(0.60, 0.60, 0.22), Color(0.66, 0.60, 0.33), Color(0.52, 0.58, 0.25), Color(0.58, 0.55, 0.38)],
+	"grass_a": [Color(0.44, 0.56, 0.11), Color(0.38, 0.39, 0.14), Color(0.44, 0.55, 0.14), Color(0.38, 0.41, 0.12)],
+	"grass_b": [Color(0.67, 0.71, 0.16), Color(0.50, 0.47, 0.18), Color(0.66, 0.69, 0.18), Color(0.49, 0.49, 0.17)],
+	"grass_c": [Color(0.86, 0.76, 0.26), Color(0.63, 0.56, 0.27), Color(0.84, 0.74, 0.26), Color(0.61, 0.56, 0.25)],
 	"under": [Color(0.25, 0.37, 0.09), Color(0.33, 0.30, 0.16), Color(0.22, 0.35, 0.10), Color(0.30, 0.33, 0.17)],
 	"bare_color": [Color(0.36, 0.28, 0.19), Color(0.76, 0.67, 0.49), Color(0.55, 0.53, 0.48), Color(0.5, 0.48, 0.44)],
 	"path_color": [Color(0.46, 0.36, 0.25), Color(0.76, 0.67, 0.50), Color(0.58, 0.55, 0.49), Color(0.52, 0.47, 0.40)],
@@ -227,6 +228,7 @@ func _make_materials() -> void:
 	var patch := _noise_tex(5, 0.025, 256, 4)
 	mats["terrain"] = _shader_mat("res://shaders/terrain.gdshader")
 	mats["terrain"].set_shader_parameter("patch_noise", patch)
+	mats["terrain"].set_shader_parameter("patch_fine", patch)
 	mats["terrain"].set_shader_parameter("path_tex", load("res://textures/path.png"))
 	mats["terrain"].set_shader_parameter("hoof_tex", load("res://textures/hoof.png"))
 	for key in GROUND:
@@ -324,9 +326,11 @@ func _apply_level(l: int) -> void:
 	vp.msaa_3d = p["msaa"]
 	sun.shadow_enabled = p["shadows"]
 	env.fog_density = p["fog"]
-	mats["grass"].set_shader_parameter("fade_start", p["fade"] - 12.0)
-	mats["grass"].set_shader_parameter("fade_end", p["fade"])
-	mats["terrain"].set_shader_parameter("grass_fade", p["fade"])
+	# the grass thins out between 70 % and 110 % of fade (grass.gdshader)
+	mats["grass"].set_shader_parameter("fade_start", p["fade"] * 0.7)
+	mats["grass"].set_shader_parameter("fade_end", p["fade"] * 1.1)
+	mats["terrain"].set_shader_parameter("grass_fade_start", p["fade"] * 0.7)
+	mats["terrain"].set_shader_parameter("grass_fade_end", p["fade"] * 1.1)
 	mats["pebble"].set_shader_parameter("reach_scale", p["gravel_range"] / World.GRAVEL_FAR)
 	if pollen != null:
 		pollen.emitting = p["pollen"]

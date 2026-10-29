@@ -12,12 +12,14 @@ const FLOATS := 16               # per instance: 12 for the transform, 4 custom
 const CHUNK := 24.0              # the pebbles are drawn in pieces of 24 m of path
 const PEBBLE_SHAPES := 3
 const ROOT_RANGE := 70.0         # roots across the path are drawn up to this distance
+const GRASS_TILE_REACH := 35.0   # from the middle of a tile to its farthest corner (Godot measures to the middle)
 
 var origin_u := 0.0
 var view_ahead := 528.0
 var view_side := 264.0
 var grass_density := 1.0
-var grass_range := 120.0
+var grass_range := 120.0          # grass is built for tiles up to this distance
+var grass_end := 57.0             # the last clumps sink into the ground here (grass.gdshader)
 var tree_lod := 170.0
 var shadows := true
 var gravel_range := 46.0         # the biggest pebbles are drawn up to this distance, smaller ones less far; 0: none
@@ -117,6 +119,7 @@ func is_idle() -> bool:
 
 func set_quality(p: Dictionary) -> void:
 	grass_density = p["density"]
+	grass_end = p["fade"] * 1.1
 	view_ahead = p["ahead"]
 	view_side = p["side"]
 	tree_lod = p["tree_lod"]
@@ -127,6 +130,7 @@ func set_quality(p: Dictionary) -> void:
 		if t.has("mmi") and is_instance_valid(t["mmi"]):
 			var mm: MultiMesh = t["mmi"].multimesh
 			mm.visible_instance_count = int(mm.instance_count * grass_density)
+			t["mmi"].visibility_range_end = grass_end + GRASS_TILE_REACH
 	for key in blocks:
 		var node: Node3D = blocks[key]["node"]
 		if not is_instance_valid(node):
@@ -322,10 +326,10 @@ func _apply_terrain(res: Dictionary) -> void:
 	arr[Mesh.ARRAY_COLOR] = res["c"]
 	arr[Mesh.ARRAY_TEX_UV] = res["uv"]
 	arr[Mesh.ARRAY_TEX_UV2] = res["uv2"]
-	arr[Mesh.ARRAY_CUSTOM0] = res["wood"]
+	arr[Mesh.ARRAY_CUSTOM0] = res["custom"]
 	arr[Mesh.ARRAY_INDEX] = res["i"]
 	var mesh := ArrayMesh.new()
-	mesh.add_surface_from_arrays(Mesh.PRIMITIVE_TRIANGLES, arr, [], {}, Mesh.ARRAY_CUSTOM_R_FLOAT << Mesh.ARRAY_FORMAT_CUSTOM0_SHIFT)
+	mesh.add_surface_from_arrays(Mesh.PRIMITIVE_TRIANGLES, arr, [], {}, Mesh.ARRAY_CUSTOM_RG_FLOAT << Mesh.ARRAY_FORMAT_CUSTOM0_SHIFT)
 	mesh.surface_set_material(0, mat_terrain)
 	var mi: MeshInstance3D = t.get("terrain")
 	if mi == null or not is_instance_valid(mi):
@@ -355,6 +359,8 @@ func _apply_grass(res: Dictionary) -> void:
 	var mmi := MultiMeshInstance3D.new()
 	mmi.multimesh = _multimesh(grass_mesh, res["buf"], AABB(Vector3(-1, res["hmin"] - 1.0, -T - 1), Vector3(T + 2, res["hmax"] - res["hmin"] + 3.0, T + 2)))
 	mmi.multimesh.visible_instance_count = int(mmi.multimesh.instance_count * grass_density)
+	# tiles whose clumps have all sunk into the ground are not drawn at all
+	mmi.visibility_range_end = grass_end + GRASS_TILE_REACH
 	mmi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 	node.add_child(mmi)
 	tiles[key]["mmi"] = mmi
@@ -489,11 +495,11 @@ static func _job_terrain(key: Vector2i, lod: int) -> Dictionary:
 	var norms := PackedVector3Array()
 	# colour: the share of each landscape (r Laubland, g Heide, b Flusstal, a Hochland); uv.x: bare ground, uv.y: the
 	# grass strip in the middle of the path; uv2: half the width of the path and its cart ruts (see Land.path_style);
-	# custom0: how dense the wood is (Land.woods), the ground under it lies in the shade
+	# custom0: how dense the wood is (Land.woods) and the noise meadow, which picks flowers and heather
 	var cols := PackedColorArray()
 	var uvs := PackedVector2Array()
 	var uv2s := PackedVector2Array()
-	var woods := PackedFloat32Array()
+	var custom := PackedFloat32Array()
 	for j in n + 1:
 		var r: PackedFloat64Array = rws[j + 1]
 		var wc := Color(r[Land.W], r[Land.W + 1], r[Land.W + 2], r[Land.W + 3])
@@ -505,7 +511,8 @@ static func _job_terrain(key: Vector2i, lod: int) -> Dictionary:
 			cols.append(wc)
 			uvs.append(Vector2(Land.bare(x0 + i * step, u0 + j * step, r), r[Land.QUIET]))
 			uv2s.append(style)
-			woods.append(Land.woods(x0 + i * step, u0 + j * step, r))
+			custom.append(Land.woods(x0 + i * step, u0 + j * step, r))
+			custom.append(Land.meadow.get_noise_2d(x0 + i * step, u0 + j * step))
 	var idx := PackedInt32Array()
 	for j in n:
 		for i in n:
@@ -531,10 +538,11 @@ static func _job_terrain(key: Vector2i, lod: int) -> Dictionary:
 			cols.append(cols[vi])
 			uvs.append(uvs[vi])
 			uv2s.append(uv2s[vi])
-			woods.append(woods[vi])
+			custom.append(custom[vi * 2])
+			custom.append(custom[vi * 2 + 1])
 		for k in edge.size() - 1:
 			idx.append_array([edge[k], first + k, edge[k + 1], edge[k + 1], first + k, first + k + 1])
-	return {"type": "terrain", "key": key, "lod": lod, "v": verts, "n": norms, "c": cols, "uv": uvs, "uv2": uv2s, "wood": woods,
+	return {"type": "terrain", "key": key, "lod": lod, "v": verts, "n": norms, "c": cols, "uv": uvs, "uv2": uv2s, "custom": custom,
 		"i": idx}
 
 
@@ -1081,7 +1089,17 @@ static func _path_things(iu: int) -> Array:
 		var za := xa.cross(Vector3.UP) * (1.0 if rng.randf() < 0.5 else -1.0)
 		var x: float = r[0] + rng.randf_range(-0.3, 0.3) / r[1]
 		var h := _mesh_height(heights, row_cache, x, u)
-		things.append([Kit.ROOT, Basis(xa, Vector3.UP, za).scaled(Vector3.ONE * rng.randf_range(0.8, 1.2)), Vector3(x, h, u)])
+		var scale := rng.randf_range(0.8, 1.2)
+		# tilted with the ground, uphill and downhill and across, so no end sticks out where the ground falls away
+		var mid := Vector3(x, 0.0, -u)
+		var a := mid + xa * 2.0 * scale
+		var b := mid - xa * 2.0 * scale
+		var c := mid + za * 1.0 * scale
+		var d := mid - za * 1.0 * scale
+		var sx := (_mesh_height(heights, row_cache, a.x, -a.z) - _mesh_height(heights, row_cache, b.x, -b.z)) / (4.0 * scale)
+		var sz := (_mesh_height(heights, row_cache, c.x, -c.z) - _mesh_height(heights, row_cache, d.x, -d.z)) / (2.0 * scale)
+		var axes := Basis(xa + Vector3.UP * sx, Vector3.UP - xa * sx - za * sz, za + Vector3.UP * sz).orthonormalized()
+		things.append([Kit.ROOT, axes.scaled(Vector3.ONE * scale), Vector3(x, h, u)])
 	return things
 
 

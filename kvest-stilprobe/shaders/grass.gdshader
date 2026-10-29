@@ -1,5 +1,8 @@
 // Grass clumps: six crossing cards with a painted grass texture (12 triangles per clump).
 // INSTANCE_CUSTOM: x = atlas cell (0..7, see tools/make_textures.py), y = brightness, z = random phase, w = dryness.
+// In the distance each clump sinks into the ground at a distance of its own between fade_start and fade_end, so the
+// grass thins out over that band instead of ending at a line. Beyond it the ground is painted in the colours the
+// grass has from afar (terrain.gdshader).
 shader_type spatial;
 render_mode cull_disabled, world_vertex_coords, diffuse_lambert_wrap;
 
@@ -8,8 +11,8 @@ render_mode cull_disabled, world_vertex_coords, diffuse_lambert_wrap;
 uniform sampler2D grass_tex : source_color, filter_linear_mipmap, repeat_disable;
 uniform sampler2D patch_noise : filter_linear_mipmap, repeat_enable;
 uniform float alpha_cut = 0.42;
-uniform float fade_start = 40.0;
-uniform float fade_end = 52.0;
+uniform float fade_start = 36.0;
+uniform float fade_end = 57.0;
 uniform vec2 wind_dir = vec2(0.8, 0.6);
 uniform float wind_strength = 1.0;
 uniform vec3 dry_tint : source_color = vec3(1.0, 0.9, 0.62);
@@ -28,7 +31,8 @@ void vertex() {
 	UV = vec2(UV.x * 0.5 + col * 0.5, (UV.y * (240.0 / 256.0) + row) / 4.0);
 
 	float dist = distance(root, CAMERA_POSITION_WORLD);
-	float fade = 1.0 - smoothstep(fade_start, fade_end, dist);
+	float own_end = mix(fade_start + 3.0, fade_end, INSTANCE_CUSTOM.z);
+	float fade = 1.0 - smoothstep(own_end - 3.0, own_end, dist);
 
 	// gusts: patches of stronger wind that travel across the meadow
 	vec2 np = vec2(root.x, -root.z + noise_shift);

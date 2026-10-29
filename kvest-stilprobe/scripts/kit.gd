@@ -669,21 +669,24 @@ static func roots(seed_value: int, material: Material) -> ArrayMesh:
 	brng.seed = seed_value * 31 + 5
 	var b := Builder.new()
 	var main := _root_line(b, rng, brng, Vector3(-2.3, 0.0, rng.randf_range(-0.2, 0.2)),
-		Vector3(1.0, 0.0, rng.randf_range(-0.25, 0.25)).normalized(), 4.6, 0.12, 14, 8)
+		Vector3(1.0, 0.0, rng.randf_range(-0.25, 0.25)).normalized(), 4.6, 0.14, 16, 8, true)
 	# a long side root from the thick end and a short one near the thin end, to the other side
 	var sign := 1.0 if rng.randf() < 0.5 else -1.0
-	_root_line(b, rng, brng, main[3], Vector3(1.0, 0.0, rng.randf_range(0.5, 0.9) * sign).normalized(), 1.9, 0.06, 7, 5)
-	_root_line(b, rng, brng, main[10], Vector3(1.0, 0.0, -rng.randf_range(0.4, 0.8) * sign).normalized(), 1.1, 0.045, 4, 5)
+	var side_a: Vector3 = main[4]
+	var side_b: Vector3 = main[11]
+	_root_line(b, rng, brng, Vector3(side_a.x, 0.0, side_a.z), Vector3(1.0, 0.0, rng.randf_range(0.5, 0.9) * sign).normalized(), 1.9, 0.07, 8, 6, false)
+	_root_line(b, rng, brng, Vector3(side_b.x, 0.0, side_b.z), Vector3(1.0, 0.0, -rng.randf_range(0.4, 0.8) * sign).normalized(), 1.2, 0.05, 5, 5, false)
 	for i in b.v.size():
 		var c: Color = b.c[i]
-		b.c[i] = Color(c.r, c.g, c.b, 0.0).lerp(ROOT_WORN, smoothstep(0.6, 0.95, b.n[i].y) * 0.35)
+		b.c[i] = Color(c.r, c.g, c.b, 0.0).lerp(ROOT_WORN, smoothstep(0.55, 0.95, b.n[i].y) * 0.5)
 	return b.to_mesh(material)
 
 
 ## One root from start in the direction dir, winding a little, r0 thick at the start and thinner towards the end. It
-## shows above the ground in humps and dives in at its end. Returns its points.
+## shows above the ground in humps and dives in at its end, and with deep_start also at its start. It dives a good bit
+## deeper than needed there, so no cut end shows where the ground falls away a little. Returns its points.
 static func _root_line(b: Builder, rng: RandomNumberGenerator, brng: RandomNumberGenerator, start: Vector3, dir: Vector3,
-		length: float, r0: float, steps: int, sides: int) -> Array:
+		length: float, r0: float, steps: int, sides: int, deep_start: bool) -> Array:
 	var pts := []
 	var radii := []
 	var p := start
@@ -692,10 +695,14 @@ static func _root_line(b: Builder, rng: RandomNumberGenerator, brng: RandomNumbe
 	var waves := rng.randf_range(7.0, 11.0)
 	for i in steps + 1:
 		var t := float(i) / float(steps)
-		var r := lerpf(r0, r0 * 0.45, t) * (1.0 + 0.2 * sin(t * 13.0 + phase))
-		# how much of it comes out of the ground (0: under it, 1: two thirds above it)
-		var show := clampf(0.8 + 0.45 * sin(t * waves + phase), 0.0, 1.0) * smoothstep(0.0, 0.1, t) * (1.0 - smoothstep(0.82, 1.0, t))
-		pts.append(Vector3(p.x, -r * (1.3 - 1.65 * show), p.z))
+		var r := lerpf(r0, r0 * 0.45, t) * (1.0 + 0.22 * sin(t * 13.0 + phase))
+		# how much of it comes out of the ground (0: under it, 1: three quarters above it): humps, and between them it
+		# sinks into the ground
+		var show := clampf(0.7 + 0.55 * sin(t * waves + phase), 0.0, 1.0) * smoothstep(0.0, 0.1, t) * (1.0 - smoothstep(0.82, 1.0, t))
+		var dive := smoothstep(0.85, 1.0, t)
+		if deep_start:
+			dive = maxf(dive, 1.0 - smoothstep(0.0, 0.12, t))
+		pts.append(Vector3(p.x, -r * (1.2 - 1.7 * show) - 0.15 * dive, p.z))
 		radii.append(r)
 		# wind a little, but keep the way across
 		d = (d.rotated(Vector3.UP, rng.randf_range(-0.45, 0.45)) + dir * 0.6).normalized()
