@@ -9,7 +9,7 @@ const T := Land.TILE
 const BLOCK := 3                 # trees and rocks are grouped in blocks of 3 x 1 tiles
 const LOD_CELLS := [32, 16, 8]   # terrain cells per tile side for the three levels of detail
 const FLOATS := 16               # per instance: 12 for the transform, 4 custom
-const CHUNK := 12.0              # the pebbles are drawn in pieces of 12 m of path
+const CHUNK := 24.0              # the pebbles are drawn in pieces of 24 m of path
 const PEBBLE_SHAPES := 3
 
 var origin_u := 0.0
@@ -19,8 +19,7 @@ var grass_density := 1.0
 var grass_range := 120.0
 var tree_lod := 170.0
 var shadows := true
-var gravel := 1.0                # share of the pebbles that are drawn
-var gravel_range := 46.0         # the pebbles are drawn up to this distance; 0: none
+var gravel_range := 46.0         # the biggest pebbles are drawn up to this distance, smaller ones less far; 0: none
 
 var mat_terrain: ShaderMaterial
 var mat_grass: ShaderMaterial
@@ -33,7 +32,7 @@ var protos: Array = []           # per kind: {"high": ArrayMesh, "low": ArrayMes
 
 var tiles := {}                  # Vector2i(ix, iu) -> {"node", "lod", "want", "grass", "mmi"}
 var blocks := {}                 # Vector2i(bx, iu) -> {"node"}
-var rows := {}                   # iu -> {"node"}: the stream and the things on and beside the path
+var rows := {}                   # iu -> {"node", "pebbles"}: the stream and the pebbles on the path
 
 var _thread := Thread.new()
 var _mutex := Mutex.new()
@@ -43,6 +42,7 @@ var _results: Array = []
 var _quit := false
 var _busy := 0
 var _gen := 0                    # raised by reset(); results of older jobs are thrown away
+var _cam_u := 0.0                # where the rider was at the last update
 
 
 func setup(materials: Dictionary) -> void:
@@ -117,7 +117,6 @@ func set_quality(p: Dictionary) -> void:
 	view_side = p["side"]
 	tree_lod = p["tree_lod"]
 	shadows = p["shadows"]
-	gravel = p["gravel"]
 	gravel_range = p["gravel_range"]
 	for key in tiles:
 		var t: Dictionary = tiles[key]
@@ -130,23 +129,11 @@ func set_quality(p: Dictionary) -> void:
 			continue
 		for child in node.get_children():
 			_set_lod(child)
-	for iu in rows:
-		var node = rows[iu]["node"]
-		if node == null or not is_instance_valid(node):
-			continue
-		# the water lies in the same node and keeps its settings
-		for child in node.get_children():
-			if child is MultiMeshInstance3D:
-				_set_lod(child)
+	_show_pebbles()
 
 
 func _set_lod(mmi: GeometryInstance3D) -> void:
-	if mmi.has_meta("pebble"):
-		mmi.visible = gravel_range > 0.0
-		mmi.visibility_range_end = gravel_range + CHUNK * 0.5
-		var mm: MultiMesh = (mmi as MultiMeshInstance3D).multimesh
-		mm.visible_instance_count = int(mm.instance_count * gravel)
-	elif mmi.has_meta("rock"):
+	if mmi.has_meta("rock"):
 		mmi.visibility_range_end = tree_lod
 		mmi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 	elif mmi.has_meta("low"):
@@ -168,6 +155,7 @@ func shift_origin(d: float) -> void:
 
 ## Keeps the land around the rider complete. max_apply: how many finished jobs to build this frame.
 func update(cam_u: float, cam_x: float, max_apply: int) -> void:
+	_cam_u = cam_u
 	var ixc := floori(cam_x / T)
 	var side := ceili(view_side / T)
 	var iu_min := floori((cam_u - T) / T)
@@ -212,6 +200,30 @@ func update(cam_u: float, cam_x: float, max_apply: int) -> void:
 				var bdx := (bx + 0.5) * BLOCK * T - cam_x
 				_request({"type": "trees", "key": bkey, "prio": sqrt(bdx * bdx + du * du) + 10.0})
 	_apply(max_apply)
+	_show_pebbles()
+
+
+## Of each piece of pebbles, only those within their reach are drawn (see _job_path): the pieces are sorted so that
+## these are always the first part of the list.
+func _show_pebbles() -> void:
+	for iu in rows:
+		var pieces = rows[iu].get("pebbles")
+		if pieces != null:
+			for p in pieces:
+				_count_pebbles(p, iu)
+
+
+func _count_pebbles(p: Dictionary, iu: int) -> void:
+	var n := 0
+	if gravel_range > 0.0:
+		# on a lower quality the reach is shorter (the shader scales it); the list then ends a little later than
+		# needed, and the shader hides the rest
+		var factor := gravel_range / GRAVEL_FAR
+		n = p["keys"].bsearch(_cam_u - iu * T - (1.0 - factor) * GRAVEL_NEAR, false)
+	var mmi: MultiMeshInstance3D = p["mmi"]
+	if mmi.multimesh.visible_instance_count != n:
+		mmi.multimesh.visible_instance_count = n
+		mmi.visible = n > 0
 
 
 ## x range of the grass corridor along the path in this row of tiles.
@@ -399,18 +411,16 @@ func _apply_path(res: Dictionary) -> void:
 	if not rows.has(iu):
 		return
 	var node := _node_for(rows, iu, Vector3(0.0, 0.0, -(iu * T - origin_u)))
+	var pieces := []
 	for c in res["chunks"]:
 		var mmi := MultiMeshInstance3D.new()
 		mmi.multimesh = _multimesh(pebble_meshes[c["shape"]], c["buf"], c["aabb"])
 		mmi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
-		mmi.set_meta("pebble", true)
 		node.add_child(mmi)
-		_set_lod(mmi)
-	var props: Array = res["props"]
-	for kind in Kit.COUNT:
-		var buf: PackedFloat32Array = props[kind]
-		if not buf.is_empty():
-			_add_models(node, kind, buf, res["aabb"])
+		var p := {"mmi": mmi, "keys": c["keys"]}
+		_count_pebbles(p, iu)
+		pieces.append(p)
+	rows[iu]["pebbles"] = pieces
 
 
 # ------------------------------------------------------------------ worker thread
@@ -704,6 +714,11 @@ const GRAVEL_EVEN := [0.25, 0.3, 0.55, 0.8]
 const GRAVEL_SIZE := [Vector2(0.02, 0.045), Vector2(0.015, 0.035), Vector2(0.02, 0.05), Vector2(0.025, 0.06)]
 const GRAVEL_BIG := [0.12, 0.08, 0.15, 0.2]
 const GRAVEL_BIG_SIZE := [Vector2(0.05, 0.09), Vector2(0.04, 0.07), Vector2(0.05, 0.1), Vector2(0.06, 0.14)]
+## How far a pebble is seen: 900 m per metre of its size, at least 36 m, at most 46 m. Further away even the big ones
+## are hardly a dot; there the painted stones of the path take over.
+const GRAVEL_REACH := 900.0
+const GRAVEL_NEAR := 36.0
+const GRAVEL_FAR := 46.0
 ## Their colours (linear): brown and grey stones in the Laubland, sandstone and grey flint in the heath, grey river
 ## gravel in the valley, grey-brown rock in the highland. All a little warm: the blue light of the sky cools them down.
 const GRAVEL_COLORS := [
@@ -886,13 +901,31 @@ static func _job_trees(key: Vector2i) -> Dictionary:
 			if dp < maxf(2.2, r[Land.PH] + size * 1.2) or rng.randf() > p:
 				continue
 			var h := Land.height(x, u, r)
+			hmin = minf(hmin, h)
+			hmax = maxf(hmax, h)
 			var basis := Basis(Vector3(rng.randf_range(-0.2, 0.2), 1, rng.randf_range(-0.2, 0.2)).normalized(), rng.randf() * TAU).scaled(Vector3(size, size, size))
 			_put(bufs[kind], basis, Vector3(x - x0, h - 0.25 * size, -(u - u0)), Color(1, 1, 1, 0))
+	# stones and fallen trunks beside the path, if the path passes this block (they reach up to about 10 m from it)
+	var px_lo := INF
+	var px_hi := -INF
+	for k in 9:
+		var px := Land.path_x(u0 + k * T / 8.0)
+		px_lo = minf(px_lo, px)
+		px_hi = maxf(px_hi, px)
+	if px_hi + 12.0 >= x0 and px_lo - 12.0 < x0 + bw:
+		for t in _path_things(key.y):
+			var p: Vector3 = t[2]
+			if p.x < x0 or p.x >= x0 + bw:
+				continue
+			hmin = minf(hmin, p.y)
+			hmax = maxf(hmax, p.y)
+			_put(bufs[t[0]], t[1], Vector3(p.x - x0, p.y, -(p.z - u0)), Color(1, 1, 1, 0))
 	return {"type": "trees", "key": key, "bufs": bufs, "hmin": hmin if hmin < INF else 0.0, "hmax": hmax if hmax > -INF else 0.0}
 
 
-## Pebbles on the path, stones and fallen trunks beside it, for one row of tiles. The pebbles come in pieces of CHUNK
-## metres, so only the pieces near the rider are drawn.
+## The pebbles on the path for one row of tiles, in pieces of CHUNK metres. Each pebble is seen up to its reach (see
+## GRAVEL_REACH): the big ones far, the small ones only near the rider. The pebbles of a piece are sorted by the place
+## where the rider brings them into reach (the keys), so World draws only the first part of the list.
 static func _job_path(iu: int) -> Dictionary:
 	var u0 := iu * T
 	var rng := RandomNumberGenerator.new()
@@ -904,6 +937,7 @@ static func _job_path(iu: int) -> Dictionary:
 	var along := 0.5
 	for c in pieces:
 		var buf := PackedFloat32Array()
+		var keys := PackedFloat32Array()
 		var lo := Vector3(INF, INF, INF)
 		var hi := -lo
 		for k in int(CHUNK / along):
@@ -928,27 +962,36 @@ static func _job_path(iu: int) -> Dictionary:
 				var x: float = Land.path_x(uu) + s / r[1]
 				var sz: Vector2 = GRAVEL_BIG_SIZE[kind] if rng.randf() < GRAVEL_BIG[kind] else GRAVEL_SIZE[kind]
 				var size := rng.randf_range(sz.x, sz.y)
+				var reach := clampf(size * GRAVEL_REACH, GRAVEL_NEAR, GRAVEL_FAR)
 				var h := _mesh_height(heights, row_cache, x, uu)
-				var tilt := Vector3(rng.randf_range(-0.3, 0.3), 1.0, rng.randf_range(-0.3, 0.3)).normalized()
+				# tilted only a little, so the open underside of the dome stays in the ground
+				var tilt := Vector3(rng.randf_range(-0.06, 0.06), 1.0, rng.randf_range(-0.06, 0.06)).normalized()
 				var stretch := Vector3(rng.randf_range(0.8, 1.25), rng.randf_range(0.7, 1.1), rng.randf_range(0.8, 1.25))
 				var palette: Array = GRAVEL_COLORS[kind]
 				var col: Color = palette[rng.randi() % palette.size()] * rng.randf_range(0.82, 1.15)
-				col.a = 1.0
-				var p := Vector3(x, h - 0.05 * size, -(uu - u0))
+				col.a = reach
+				var p := Vector3(x, h, -(uu - u0))
 				_put(buf, Basis(tilt, rng.randf() * TAU).scaled(stretch * size), p, col)
+				keys.append(uu - u0 - reach)
 				lo = lo.min(p)
 				hi = hi.max(p)
 		if not buf.is_empty():
 			var aabb := AABB(lo - Vector3(0.2, 0.2, 0.2), hi - lo + Vector3(0.4, 0.4, 0.4))
-			chunks.append({"buf": _shuffled(buf), "aabb": aabb, "shape": posmod(iu * pieces + c, PEBBLE_SHAPES)})
+			var sorted := _sorted(buf, keys)
+			chunks.append({"buf": sorted[0], "keys": sorted[1], "aabb": aabb, "shape": posmod(iu * pieces + c, PEBBLE_SHAPES)})
+	return {"type": "path", "key": iu, "chunks": chunks}
 
-	var bufs := []
-	for k in Kit.COUNT:
-		bufs.append(PackedFloat32Array())
-	var xmin := INF
-	var xmax := -INF
-	var hmin := INF
-	var hmax := -INF
+
+## Stones and fallen trunks beside the path in the row iu, as [kind, basis, Vector3(x, height, u)]. They go into the
+## blocks of trees and rocks (each block takes the ones on its ground), so they need no draw calls of their own.
+## Every block of the row computes the same list.
+static func _path_things(iu: int) -> Array:
+	var u0 := iu * T
+	var rng := RandomNumberGenerator.new()
+	rng.seed = hash(Vector3i(iu, 0, 9))
+	var heights := {}
+	var row_cache := {}
+	var things := []
 	# stones beside the path, now and then on either side
 	for k in int(T / 4.0):
 		var u := u0 + (k + rng.randf()) * 4.0
@@ -969,11 +1012,7 @@ static func _job_path(iu: int) -> Dictionary:
 				rock = Kit.ROCK_A + rng.randi() % 2
 			var h := _mesh_height(heights, row_cache, x, u)
 			var tilt := Vector3(rng.randf_range(-0.2, 0.2), 1.0, rng.randf_range(-0.2, 0.2)).normalized()
-			_put(bufs[rock], Basis(tilt, rng.randf() * TAU).scaled(Vector3.ONE * size), Vector3(x, h - 0.25 * size, -(u - u0)), Color(1, 1, 1, 0))
-			xmin = minf(xmin, x)
-			xmax = maxf(xmax, x)
-			hmin = minf(hmin, h)
-			hmax = maxf(hmax, h)
+			things.append([rock, Basis(tilt, rng.randf() * TAU).scaled(Vector3.ONE * size), Vector3(x, h - 0.25 * size, u)])
 	# fallen trunks near woods, lying at a slant to the path, so the rider sees them along their length
 	for k in int(T / 8.0):
 		var u := u0 + (k + rng.randf()) * 8.0
@@ -1003,15 +1042,8 @@ static func _job_path(iu: int) -> Dictionary:
 		var xa := dir * cos(pitch) + Vector3.UP * sin(pitch)
 		var ya := Vector3.UP * cos(pitch) - dir * sin(pitch)
 		var h := (hf + ht) * 0.5 - 0.06 * scale
-		_put(bufs[Kit.LOG], Basis(xa, ya, xa.cross(ya)).scaled(Vector3.ONE * scale), Vector3(x, h, -(u - u0)), Color(1, 1, 1, 0))
-		xmin = minf(xmin, x)
-		xmax = maxf(xmax, x)
-		hmin = minf(hmin, h)
-		hmax = maxf(hmax, h)
-	var aabb := AABB()
-	if xmin < INF:
-		aabb = AABB(Vector3(xmin - 4.0, hmin - 2.0, -T - 4.0), Vector3(xmax - xmin + 8.0, hmax - hmin + 4.0, T + 8.0))
-	return {"type": "path", "key": iu, "chunks": chunks, "props": bufs, "aabb": aabb}
+		things.append([Kit.LOG, Basis(xa, ya, xa.cross(ya)).scaled(Vector3.ONE * scale), Vector3(x, h, u)])
+	return things
 
 
 ## How many of the pebbles stay at s (across the path, 0 = middle), from 0 to 1: wheels and hooves push them to the
@@ -1057,19 +1089,21 @@ static func _grid_point(heights: Dictionary, row_cache: Dictionary, i: int, j: i
 	return heights[key]
 
 
-## The instances of buf in random order, so that drawing only the first part of the list thins them out evenly.
-static func _shuffled(buf: PackedFloat32Array) -> PackedFloat32Array:
-	var count := buf.size() / FLOATS
+## The instances of buf and their keys, sorted by the keys from small to large: [buf, keys].
+static func _sorted(buf: PackedFloat32Array, keys: PackedFloat32Array) -> Array:
+	var order := range(keys.size())
+	order.sort_custom(func(a: int, b: int) -> bool: return keys[a] < keys[b])
 	var out := PackedFloat32Array()
 	out.resize(buf.size())
-	var order := range(count)
-	order.shuffle()
-	for k in count:
+	var out_keys := PackedFloat32Array()
+	out_keys.resize(keys.size())
+	for k in order.size():
 		var src: int = order[k] * FLOATS
 		var dst := k * FLOATS
 		for f in FLOATS:
 			out[dst + f] = buf[src + f]
-	return out
+		out_keys[k] = keys[order[k]]
+	return [out, out_keys]
 
 
 static func _job_water(iu: int) -> Dictionary:

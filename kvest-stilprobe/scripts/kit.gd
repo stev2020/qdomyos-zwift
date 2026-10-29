@@ -36,7 +36,7 @@ const MUGO_BARK := Color(0.09, 0.065, 0.045, 0.0)
 const LOG_BARK := Color(0.12, 0.1, 0.075, 0.0)
 const LOG_MOSS := Color(0.06, 0.1, 0.025, 0.0)
 const LOG_WOOD := Color(0.3, 0.2, 0.11, 0.0)
-## An icosahedron, the start of rocks and pebbles: its corners (not yet of length 1) and faces.
+## An icosahedron, the start of the rocks: its corners (not yet of length 1) and faces.
 const ICO_VERTS := [Vector3(-1, 1.618, 0), Vector3(1, 1.618, 0), Vector3(-1, -1.618, 0), Vector3(1, -1.618, 0),
 	Vector3(0, -1, 1.618), Vector3(0, 1, 1.618), Vector3(0, -1, -1.618), Vector3(0, 1, -1.618),
 	Vector3(1.618, 0, -1), Vector3(1.618, 0, 1), Vector3(-1.618, 0, -1), Vector3(-1.618, 0, 1)]
@@ -654,33 +654,25 @@ static func fallen_trunk(seed_value: int, low: bool, material: Material) -> Arra
 	return b.to_mesh(material)
 
 
-## A pebble for the paths: a small, flattish stone of 12 corners and 20 faces, 1 m across here and scaled down when it
-## is placed. COLOR holds only its shade; World gives each pebble its colour (see shaders/pebble.gdshader). Each shape
-## number gives a stone of its own.
+## A pebble for the paths, 1 m across here and scaled down when it is placed. Only its top shows above the ground, so
+## it is just a low dome: a ring of 7 uneven corners just below the ground and a top (7 faces). The normals lean
+## outwards, so it is lit like a rounded stone. COLOR holds only its shade; World gives each pebble its colour (see
+## shaders/pebble.gdshader). Each shape number gives a stone of its own.
 static func pebble(shape: int, material: Material) -> ArrayMesh:
-	var noise := FastNoiseLite.new()
-	noise.seed = 500 + shape
-	noise.frequency = 1.3
-	var pos := []
-	for p in ICO_VERTS:
-		var q: Vector3 = p.normalized()
-		var r := 1.0 + noise.get_noise_3dv(q) * 0.35
-		pos.append(Vector3(q.x * r, q.y * r * 0.6, q.z * r * 0.85) * 0.5)
-	var normals := []
-	normals.resize(pos.size())
-	normals.fill(Vector3.ZERO)
-	for f in ICO_FACES:
-		var fn: Vector3 = (pos[f[1]] - pos[f[0]]).cross(pos[f[2]] - pos[f[0]])
-		for k in 3:
-			normals[f[k]] += fn
+	var rng := RandomNumberGenerator.new()
+	rng.seed = 500 + shape
 	var b := Builder.new()
-	for i in pos.size():
-		var nn: Vector3 = normals[i].normalized()
-		if nn.dot(pos[i]) < 0.0:
-			nn = -nn
-		var shade := 0.9 + noise.get_noise_3dv(pos[i] * 4.0) * 0.2
-		b.vert(pos[i], nn, Vector3.RIGHT, Color(shade, shade, shade, 0.0), Vector2.ZERO, 0.0)
-	# clockwise seen from outside: the front faces for Godot, so the shader can skip the back faces
-	for f in ICO_FACES:
-		b.tri(f[0], f[2], f[1])
+	var sides := 7
+	var top := b.vert(Vector3(rng.randf_range(-0.08, 0.08), 0.3, rng.randf_range(-0.08, 0.08)), Vector3.UP, Vector3.RIGHT,
+		Color(1.0, 1.0, 1.0, 0.0), Vector2.ZERO, 0.0)
+	var ring := []
+	for k in sides:
+		var a := TAU * (k + rng.randf_range(-0.25, 0.25)) / sides
+		var r := 0.5 * rng.randf_range(0.95, 1.25)
+		var shade := rng.randf_range(0.8, 1.0)
+		ring.append(b.vert(Vector3(cos(a) * r, -0.05, sin(a) * r * 0.85), Vector3(cos(a), 0.5, sin(a)).normalized(),
+			Vector3.RIGHT, Color(shade, shade, shade, 0.0), Vector2.ZERO, 0.0))
+	# clockwise seen from above: the front faces for Godot, so the shader can skip the back faces
+	for k in sides:
+		b.tri(top, ring[k], ring[(k + 1) % sides])
 	return b.to_mesh(material)

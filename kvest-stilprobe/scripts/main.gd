@@ -8,11 +8,11 @@ extends Node3D
 ##   --demo <km/h> --start <metres>                                        for recordings with --write-movie
 
 const SHIFT := 1024.0
-## gravel: share of the pebbles on the path that are drawn, gravel_range: up to which distance (0: none).
+## gravel_range: up to which distance the biggest pebbles on the path are drawn; smaller ones less far (0: none).
 const LEVELS := [
-	{"name": "Hoch", "density": 1.0, "fade": 52.0, "ahead": 528.0, "side": 264.0, "tree_lod": 170.0, "shadows": true, "scale": 0.85, "msaa": Viewport.MSAA_2X, "pollen": true, "fog": 0.0019, "gravel": 1.0, "gravel_range": 46.0},
-	{"name": "Mittel", "density": 0.6, "fade": 44.0, "ahead": 432.0, "side": 216.0, "tree_lod": 130.0, "shadows": true, "scale": 0.75, "msaa": Viewport.MSAA_2X, "pollen": true, "fog": 0.0024, "gravel": 0.6, "gravel_range": 32.0},
-	{"name": "Niedrig", "density": 0.35, "fade": 34.0, "ahead": 336.0, "side": 168.0, "tree_lod": 95.0, "shadows": false, "scale": 0.65, "msaa": Viewport.MSAA_DISABLED, "pollen": false, "fog": 0.0034, "gravel": 0.0, "gravel_range": 0.0},
+	{"name": "Hoch", "density": 1.0, "fade": 52.0, "ahead": 528.0, "side": 264.0, "tree_lod": 170.0, "shadows": true, "scale": 0.85, "msaa": Viewport.MSAA_2X, "pollen": true, "fog": 0.0019, "gravel_range": 46.0},
+	{"name": "Mittel", "density": 0.6, "fade": 44.0, "ahead": 432.0, "side": 216.0, "tree_lod": 130.0, "shadows": true, "scale": 0.75, "msaa": Viewport.MSAA_2X, "pollen": true, "fog": 0.0024, "gravel_range": 34.0},
+	{"name": "Niedrig", "density": 0.35, "fade": 34.0, "ahead": 336.0, "side": 168.0, "tree_lod": 95.0, "shadows": false, "scale": 0.65, "msaa": Viewport.MSAA_DISABLED, "pollen": false, "fog": 0.0034, "gravel_range": 0.0},
 ]
 ## Names for --land, in the order of Land.LAUB .. Land.HOCH
 const LAND_ARGS := ["laub", "heide", "fluss", "hoch"]
@@ -324,8 +324,7 @@ func _apply_level(l: int) -> void:
 	mats["grass"].set_shader_parameter("fade_start", p["fade"] - 12.0)
 	mats["grass"].set_shader_parameter("fade_end", p["fade"])
 	mats["terrain"].set_shader_parameter("grass_fade", p["fade"])
-	mats["pebble"].set_shader_parameter("fade_start", p["gravel_range"] - 12.0)
-	mats["pebble"].set_shader_parameter("fade_end", p["gravel_range"])
+	mats["pebble"].set_shader_parameter("reach_scale", p["gravel_range"] / World.GRAVEL_FAR)
 	if pollen != null:
 		pollen.emitting = p["pollen"]
 		pollen.visible = p["pollen"]
