@@ -12,9 +12,10 @@ const LEVELS := [
 	{"name": "Mittel", "density": 0.6, "fade": 44.0, "ahead": 432.0, "side": 216.0, "tree_lod": 130.0, "shadows": true, "scale": 0.75, "msaa": Viewport.MSAA_2X, "pollen": true, "fog": 0.0024},
 	{"name": "Niedrig", "density": 0.35, "fade": 34.0, "ahead": 336.0, "side": 168.0, "tree_lod": 95.0, "shadows": false, "scale": 0.65, "msaa": Viewport.MSAA_DISABLED, "pollen": false, "fog": 0.0034},
 ]
-## The test button: each step changes one setting on top of the quality level, to find out what a device
-## draws wrong (black patches on the Galaxy Tab S9)
-const TESTS := ["normal", "ohne Schatten", "ohne Kantenglättung", "harte Schatten", "32-Bit-Schatten"]
+## The test button: each step switches one part of the shaders off, to find out what a device draws wrong
+## (black grass blades and leaves on the Galaxy Tab S9, Adreno 740). The index goes to the shaders as kvest_test.
+const TESTS := ["normal", "ohne Glanz", "ohne Durchscheinen", "ohne Einfärbung", "ohne Wind", "ohne Mip-Trick",
+	"ohne Rückseiten", "ohne Leuchten"]
 
 var world: World
 var rider := Rider.new()
@@ -286,16 +287,12 @@ func _on_test() -> void:
 	_apply_level(level)
 
 
-## The setting of the current test, on top of what the quality level set
+## The current test: the shaders read it as kvest_test; sheen and glow also need the environment
 func _apply_test() -> void:
 	var t: String = TESTS[test]
-	RenderingServer.directional_soft_shadow_filter_set_quality(
-		RenderingServer.SHADOW_QUALITY_HARD if t == "harte Schatten" else RenderingServer.SHADOW_QUALITY_SOFT_LOW)
-	RenderingServer.directional_shadow_atlas_set_size(2048, t != "32-Bit-Schatten")
-	if t == "ohne Schatten":
-		sun.shadow_enabled = false
-	elif t == "ohne Kantenglättung":
-		get_viewport().msaa_3d = Viewport.MSAA_DISABLED
+	RenderingServer.global_shader_parameter_set("kvest_test", test)
+	env.reflected_light_source = Environment.REFLECTION_SOURCE_DISABLED if t == "ohne Glanz" else Environment.REFLECTION_SOURCE_SKY
+	env.glow_enabled = t != "ohne Leuchten"
 
 
 func _on_quality() -> void:

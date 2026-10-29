@@ -15,6 +15,9 @@ uniform vec3 path_color : source_color = vec3(0.72, 0.60, 0.40);
 uniform vec3 path_rim : source_color = vec3(0.42, 0.36, 0.24);
 uniform float grass_fade = 52.0;
 uniform vec3 bed_color : source_color = vec3(0.58, 0.55, 0.47);
+// kvest_test (test button of the style test, finding graphics problems of a device): 1 no sheen, 2 no light
+// shining through, 3 no tint per plant, 4 no wind, 5 no mip trick for the cut-out, 6 back sides lit like the front
+global uniform int kvest_test;
 
 varying vec3 wpos;
 
@@ -62,5 +65,5 @@ void fragment() {
 
 	ALBEDO = col;
 	ROUGHNESS = 0.96;
-	SPECULAR = 0.2;
+	SPECULAR = kvest_test == 1 ? 0.0 : 0.2;
 }
