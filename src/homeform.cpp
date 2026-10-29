@@ -540,7 +540,8 @@ homeform::homeform(QQmlApplicationEngine *engine, bluetooth *bl) {
 
     settings.setValue(sKey + QStringLiteral("enabled"), true);
     settings.setValue(sKey + QStringLiteral("type"), TEMPLATE_TYPE_WEBSERVER);
-    settings.setValue(sKey + QStringLiteral("port"), 0);
+    // QZ: a free port picked at every start; FunRun: its own fixed port, for the Kvest world (FunRunMove)
+    settings.setValue(sKey + QStringLiteral("port"), FunRunMove::webServerPort());
     this->innerTemplateManager =
         TemplateInfoSenderBuilder::getInstance(innerId, QStringList({QStringLiteral(":/inner_templates/")}), this);
 

@@ -12,6 +12,7 @@
 #include <QMutexLocker>
 #include <QSettings>
 #include <QStandardPaths>
+#include <QTcpServer>
 #include <private/qzipreader_p.h>
 #include <private/qzipwriter_p.h>
 
@@ -35,7 +36,8 @@ const QString filesPrefix = QStringLiteral("dateien/");
 const QString pendingName = QStringLiteral("pending.zip");
 const QString pagesName = QStringLiteral("seiten.json");
 const QString resultName = QStringLiteral("ergebnis.json");
-// the web server of the FunRun app (QZ: 6666), so both apps can run at the same time
+// the port of the FunRun app's web server (QZ: a free one, picked at every start); the old app's port setting does not
+// move along
 const QString portKey = QStringLiteral("template_inner_QZWS_port");
 const int funrunPort = 6680;
 
@@ -169,12 +171,17 @@ QString FunRunMove::incomingFolder() {
     return dir;
 }
 
+int FunRunMove::webServerPort() {
+    if (isQzApp())
+        return 0;
+    QTcpServer probe;
+    if (!probe.listen(QHostAddress::Any, funrunPort))
+        return 0;
+    probe.close();
+    return funrunPort;
+}
+
 void FunRunMove::prepare() {
-    if (!isQzApp()) {
-        QSettings settings;
-        if (!settings.contains(portKey))
-            settings.setValue(portKey, funrunPort);
-    }
     const QString pending = incomingFolder() + pendingName;
     if (!QFile::exists(pending))
         return;

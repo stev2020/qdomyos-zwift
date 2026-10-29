@@ -25,9 +25,12 @@ QString documentsFolder();
 // folder, private to the app, where the file picker puts a moving file and where the move keeps its notes
 QString incomingFolder();
 
-// At start, right after the application's name is set: the FunRun app gets its own web server port, and a moving
-// file kept at the last start is unpacked now
+// At start, right after the application's name is set: a moving file kept at the last start is unpacked now
 void prepare();
+
+// Port for the app's own web server, set at every start. QZ lets the system pick a free one (0). The FunRun app keeps
+// 6680, so the Kvest world, an app of its own, finds it; only if another app holds 6680, it takes a free one too.
+int webServerPort();
 
 // Packs the moving file. pages: the storage of the FunRun pages (JSON text of their localStorage).
 // Returns { ok, file, size, rides, routes, workouts, settings, error }

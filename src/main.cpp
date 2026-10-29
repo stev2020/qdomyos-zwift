@@ -631,8 +631,8 @@ int main(int argc, char *argv[]) {
     app->setOrganizationDomain(QStringLiteral("robertoviola.cloud"));
     app->setApplicationName(QStringLiteral("qDomyos-Zwift"));
 
-    // FunRun: the app with its own id gets its own web server port; a moving file from the QZ app, taken at the
-    // last start, is unpacked now, before anything reads the settings
+    // FunRun: a moving file from the QZ app, taken at the last start, is unpacked now, before anything reads the
+    // settings
     FunRunMove::prepare();
 
     QSettings settings;
