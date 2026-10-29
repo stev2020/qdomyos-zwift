@@ -88,5 +88,5 @@ func diagnosis() -> String:
 	if k == "still":
 		return "Kvestrun antwortet nicht. Läuft das Rad dort, oder hat Android die App pausiert?"
 	if k == "zu":
-		return "Kvestrun ist nicht geöffnet (Port 6680 zu)"
+		return "Kvestrun nicht erreichbar (Port 6680 zu)"
 	return "Suche Kvestrun …"

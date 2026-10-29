@@ -12,6 +12,9 @@ const LEVELS := [
 	{"name": "Mittel", "density": 0.6, "fade": 44.0, "ahead": 432.0, "side": 216.0, "tree_lod": 130.0, "shadows": true, "scale": 0.75, "msaa": Viewport.MSAA_2X, "pollen": true, "fog": 0.0024},
 	{"name": "Niedrig", "density": 0.35, "fade": 34.0, "ahead": 336.0, "side": 168.0, "tree_lod": 95.0, "shadows": false, "scale": 0.65, "msaa": Viewport.MSAA_DISABLED, "pollen": false, "fog": 0.0034},
 ]
+## The test button: each step changes one setting on top of the quality level, to find out what a device
+## draws wrong (black patches on the Galaxy Tab S9)
+const TESTS := ["normal", "ohne Schatten", "ohne Kantenglättung", "harte Schatten", "32-Bit-Schatten"]
 
 var world: World
 var rider := Rider.new()
@@ -28,7 +31,9 @@ var mats := {}
 var quality := "auto"
 var level := 0
 var light := "tag"
+var test := 0
 var demo_kmh := 20.0
+var _gfx := ""
 
 var _loading := true
 var _since_ready := 0.0
@@ -67,7 +72,11 @@ func _ready() -> void:
 	add_child(hud)
 	hud.quality_pressed.connect(_on_quality)
 	hud.light_pressed.connect(_on_light)
+	hud.test_pressed.connect(_on_test)
 	hud.demo_step.connect(func(d): demo_kmh = clampf(demo_kmh + d, 4.0, 60.0))
+	var drivers := {"vulkan": "Vulkan", "opengl3": "OpenGL", "opengl3_es": "OpenGL ES"}
+	var driver := RenderingServer.get_current_rendering_driver_name()
+	_gfx = "%s · %s" % [drivers.get(driver, driver), RenderingServer.get_video_adapter_name()]
 	hud.visible = not _no_hud
 	_apply_level(0 if quality == "auto" else ["hoch", "mittel", "niedrig"].find(quality))
 	_apply_light()
@@ -269,6 +278,24 @@ func _apply_level(l: int) -> void:
 		pollen.emitting = p["pollen"]
 		pollen.visible = p["pollen"]
 	_slow_windows = 0
+	_apply_test()
+
+
+func _on_test() -> void:
+	test = (test + 1) % TESTS.size()
+	_apply_level(level)
+
+
+## The setting of the current test, on top of what the quality level set
+func _apply_test() -> void:
+	var t: String = TESTS[test]
+	RenderingServer.directional_soft_shadow_filter_set_quality(
+		RenderingServer.SHADOW_QUALITY_HARD if t == "harte Schatten" else RenderingServer.SHADOW_QUALITY_SOFT_LOW)
+	RenderingServer.directional_shadow_atlas_set_size(2048, t != "32-Bit-Schatten")
+	if t == "ohne Schatten":
+		sun.shadow_enabled = false
+	elif t == "ohne Kantenglättung":
+		get_viewport().msaa_3d = Viewport.MSAA_DISABLED
 
 
 func _on_quality() -> void:
@@ -467,7 +494,7 @@ func _update_hud() -> void:
 		sub = km
 	elif link.connected():
 		status = "Verbunden mit %s" % link.app
-		sub = "Warte auf Werte: Fahrt in %s starten" % link.app
+		sub = "Warte auf Werte: Rad in %s verbinden" % link.app
 	else:
 		status = "Demo-Fahrt · %s km/h" % _num(rider.speed * 3.6)
 		sub = link.diagnosis() + " · " + km
@@ -475,7 +502,8 @@ func _update_hud() -> void:
 	var lname: String = LEVELS[level]["name"]
 	var q: String = "Qualität: " + ("Auto (%s)" % lname if quality == "auto" else lname)
 	var l: String = "Licht: " + ("Abendsonne" if light == "abend" else "Sommertag")
-	hud.set_texts(status, sub, q, l, "%d Bilder/s" % int(round(_fps)) if _fps > 0.0 else "", demo)
+	var fps := ("%d Bilder/s\n" % int(round(_fps)) if _fps > 0.0 else "") + _gfx
+	hud.set_texts(status, sub, q, l, "Test: " + TESTS[test], fps, demo)
 
 
 func _capture_tick() -> void:

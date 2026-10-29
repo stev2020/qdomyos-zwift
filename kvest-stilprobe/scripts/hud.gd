@@ -5,6 +5,7 @@ extends CanvasLayer
 
 signal quality_pressed
 signal light_pressed
+signal test_pressed
 signal demo_step(delta: float)
 
 var _root: Control
@@ -12,6 +13,7 @@ var _status: Label
 var _sub: Label
 var _quality: Button
 var _light: Button
+var _test: Button
 var _fps: Label
 var _controls: Control
 var _demo: Control
@@ -44,6 +46,7 @@ func _ready() -> void:
 	right.offset_left = -260
 	right.offset_right = -20
 	right.offset_top = 20
+	right.grow_horizontal = Control.GROW_DIRECTION_BEGIN
 	right.add_theme_constant_override("separation", 8)
 	_root.add_child(right)
 	_controls = right
@@ -53,6 +56,10 @@ func _ready() -> void:
 	_light = _button("Licht")
 	_light.pressed.connect(func(): light_pressed.emit())
 	right.add_child(_light)
+	# for finding graphics problems of a device: switches one setting at a time
+	_test = _button("Test")
+	_test.pressed.connect(func(): test_pressed.emit())
+	right.add_child(_test)
 	_fps = _label("", 14, Color(0.9, 0.92, 0.94))
 	_fps.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
 	right.add_child(_fps)
@@ -138,11 +145,12 @@ func show_loading(on: bool) -> void:
 	_loading.visible = on
 
 
-func set_texts(status: String, sub: String, quality: String, light: String, fps: String, demo: String) -> void:
+func set_texts(status: String, sub: String, quality: String, light: String, test: String, fps: String, demo: String) -> void:
 	_status.text = status
 	_sub.text = sub
 	_quality.text = quality
 	_light.text = light
+	_test.text = test
 	_fps.text = fps
 	_demo_label.text = demo
 	if demo == "":
