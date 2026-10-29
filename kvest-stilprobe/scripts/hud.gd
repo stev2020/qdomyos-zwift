@@ -1,11 +1,11 @@
 class_name Hud
 extends CanvasLayer
-## The small overlay: status, quality, light and the demo speed. Buttons fade out after a while,
+## The small overlay: status, quality, light, landscape and the demo speed. Buttons fade out after a while,
 ## a tap brings them back.
 
 signal quality_pressed
 signal light_pressed
-signal test_pressed
+signal land_pressed
 signal demo_step(delta: float)
 
 var _root: Control
@@ -13,7 +13,7 @@ var _status: Label
 var _sub: Label
 var _quality: Button
 var _light: Button
-var _test: Button
+var _land: Button
 var _fps: Label
 var _controls: Control
 var _demo: Control
@@ -56,10 +56,10 @@ func _ready() -> void:
 	_light = _button("Licht")
 	_light.pressed.connect(func(): light_pressed.emit())
 	right.add_child(_light)
-	# for finding graphics problems of a device: switches one setting at a time
-	_test = _button("Test")
-	_test.pressed.connect(func(): test_pressed.emit())
-	right.add_child(_test)
+	# the landscape: they take turns along the ride, or one of them on its own
+	_land = _button("Landschaft")
+	_land.pressed.connect(func(): land_pressed.emit())
+	right.add_child(_land)
 	_fps = _label("", 14, Color(0.9, 0.92, 0.94))
 	_fps.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
 	right.add_child(_fps)
@@ -145,12 +145,12 @@ func show_loading(on: bool) -> void:
 	_loading.visible = on
 
 
-func set_texts(status: String, sub: String, quality: String, light: String, test: String, fps: String, demo: String) -> void:
+func set_texts(status: String, sub: String, quality: String, light: String, land: String, fps: String, demo: String) -> void:
 	_status.text = status
 	_sub.text = sub
 	_quality.text = quality
 	_light.text = light
-	_test.text = test
+	_land.text = land
 	_fps.text = fps
 	_demo_label.text = demo
 	if demo == "":

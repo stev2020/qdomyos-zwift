@@ -1,8 +1,8 @@
 class_name World
 extends Node3D
-## Streams the land around the rider: terrain tiles, grass, trees and the stream.
-## The number crunching runs in a worker thread; the main thread only turns the finished arrays
-## into meshes, a few per frame, so the ride stays smooth.
+## Streams the land around the rider: terrain tiles, grass, trees and the stream, each in the plants and colours of
+## its landscape (see Land). The number crunching runs in a worker thread; the main thread only turns the finished
+## arrays into meshes, a few per frame, so the ride stays smooth.
 
 const T := Land.TILE
 const BLOCK := 3                 # trees and rocks are grouped in blocks of 3 x 1 tiles
@@ -35,6 +35,7 @@ var _jobs: Array = []
 var _results: Array = []
 var _quit := false
 var _busy := 0
+var _gen := 0                    # raised by reset(); results of older jobs are thrown away
 
 
 func setup(materials: Dictionary) -> void:
@@ -46,17 +47,43 @@ func setup(materials: Dictionary) -> void:
 	for kind in Kit.COUNT:
 		var p := {}
 		match kind:
-			Kit.BEECH, Kit.BIRCH, Kit.OAK, Kit.MAPLE, Kit.ROWAN, Kit.BUSH:
+			Kit.BEECH, Kit.BIRCH, Kit.OAK, Kit.MAPLE, Kit.ROWAN, Kit.BUSH, Kit.WILLOW:
 				p["high"] = Kit.broadleaf(kind, 100 + kind, false, mat_nature)
 				p["low"] = Kit.broadleaf(kind, 100 + kind, true, mat_nature)
 			Kit.SPRUCE, Kit.FIR:
 				p["high"] = Kit.conifer(kind, 200 + kind, false, mat_nature)
 				p["low"] = Kit.conifer(kind, 200 + kind, true, mat_nature)
+			Kit.PINE:
+				p["high"] = Kit.pine(400, false, mat_nature)
+				p["low"] = Kit.pine(400, true, mat_nature)
+			Kit.JUNIPER:
+				p["high"] = Kit.juniper(410, false, mat_nature)
+				p["low"] = Kit.juniper(410, true, mat_nature)
+			Kit.MUGO:
+				p["high"] = Kit.mugo(420, false, mat_nature)
+				p["low"] = Kit.mugo(420, true, mat_nature)
+			Kit.ROCK_C:
+				p["high"] = Kit.rock(330, mat_nature, true)
+				p["low"] = p["high"]
 			_:
-				p["high"] = Kit.rock(300 + kind, mat_nature)
+				# the first two rocks keep their old seeds (308, 309), so they look as before
+				p["high"] = Kit.rock(308 + kind - Kit.ROCK_A, mat_nature)
 				p["low"] = p["high"]
 		protos.append(p)
 	_thread.start(_worker)
+
+
+## Throws all built land away, e.g. after another landscape was chosen. Jobs that are already running are ignored
+## when they come back.
+func reset() -> void:
+	_mutex.lock()
+	_busy -= _jobs.size()
+	_jobs.clear()
+	_mutex.unlock()
+	_gen += 1
+	for dict in [tiles, blocks, rows]:
+		for key in dict.keys():
+			_drop(dict, key)
 
 
 func _exit_tree() -> void:
@@ -185,6 +212,7 @@ func _drop(dict: Dictionary, key) -> void:
 
 
 func _request(job: Dictionary) -> void:
+	job["gen"] = _gen
 	_mutex.lock()
 	_jobs.append(job)
 	_mutex.unlock()
@@ -200,6 +228,8 @@ func _apply(max_apply: int) -> void:
 		if res == null:
 			return
 		_busy -= 1
+		if res["gen"] != _gen:
+			continue
 		match res["type"]:
 			"terrain":
 				_apply_terrain(res)
@@ -239,6 +269,8 @@ func _apply_terrain(res: Dictionary) -> void:
 	arr.resize(Mesh.ARRAY_MAX)
 	arr[Mesh.ARRAY_VERTEX] = res["v"]
 	arr[Mesh.ARRAY_NORMAL] = res["n"]
+	arr[Mesh.ARRAY_COLOR] = res["c"]
+	arr[Mesh.ARRAY_TEX_UV] = res["uv"]
 	arr[Mesh.ARRAY_INDEX] = res["i"]
 	var mesh := ArrayMesh.new()
 	mesh.add_surface_from_arrays(Mesh.PRIMITIVE_TRIANGLES, arr)
@@ -354,6 +386,7 @@ func _worker() -> void:
 				res = _job_trees(job["key"])
 			_:
 				res = _job_water(job["key"])
+		res["gen"] = job["gen"]
 		_mutex.lock()
 		_results.append(res)
 		_mutex.unlock()
@@ -367,18 +400,27 @@ static func _job_terrain(key: Vector2i, lod: int) -> Dictionary:
 	var w := n + 3
 	var hs := PackedFloat32Array()
 	hs.resize(w * w)
+	var rws := []
 	for j in w:
 		var u := u0 + (j - 1) * step
 		var r := Land.row(u)
+		rws.append(r)
 		for i in w:
 			hs[j * w + i] = Land.height(x0 + (i - 1) * step, u, r)
 	var verts := PackedVector3Array()
 	var norms := PackedVector3Array()
+	# colour: the share of each landscape (r Laubland, g Heide, b Flusstal, a Hochland); uv.x: bare ground
+	var cols := PackedColorArray()
+	var uvs := PackedVector2Array()
 	for j in n + 1:
+		var r: PackedFloat64Array = rws[j + 1]
+		var wc := Color(r[Land.W], r[Land.W + 1], r[Land.W + 2], r[Land.W + 3])
 		for i in n + 1:
 			var c := (j + 1) * w + (i + 1)
 			verts.append(Vector3(i * step, hs[c], -j * step))
 			norms.append(Vector3(hs[c - 1] - hs[c + 1], 2.0 * step, hs[c + w] - hs[c - w]).normalized())
+			cols.append(wc)
+			uvs.append(Vector2(Land.bare(x0 + i * step, u0 + j * step, r), 0.0))
 	var idx := PackedInt32Array()
 	for j in n:
 		for i in n:
@@ -401,9 +443,11 @@ static func _job_terrain(key: Vector2i, lod: int) -> Dictionary:
 		for vi in edge:
 			verts.append(verts[vi] - Vector3(0, 3.0, 0))
 			norms.append(norms[vi])
+			cols.append(cols[vi])
+			uvs.append(uvs[vi])
 		for k in edge.size() - 1:
 			idx.append_array([edge[k], first + k, edge[k + 1], edge[k + 1], first + k, first + k + 1])
-	return {"type": "terrain", "key": key, "lod": lod, "v": verts, "n": norms, "i": idx}
+	return {"type": "terrain", "key": key, "lod": lod, "v": verts, "n": norms, "c": cols, "uv": uvs, "i": idx}
 
 
 static func _grid_height(hs: PackedFloat32Array, w: int, fx: float, fu: float) -> float:
@@ -454,38 +498,82 @@ static func _job_grass(key: Vector2i) -> Dictionary:
 			var dp := Land.dist_path(x, r)
 			if dp < Land.PATH_HALF - 0.2 or dp > 46.0:
 				continue
+			var sw: float = r[Land.SW]
 			var ds := Land.dist_stream(x, r)
-			if ds < 2.45:
+			if sw > 0.01 and ds < 2.45 * sw:
 				continue
+			# sand and scree stay bare
+			if Land.bare(x, uu, r) > 0.42 + 0.16 * rng.randf():
+				continue
+			var k := _pick(r, Land.W, rng.randf())
 			var mval := Land.meadow.get_noise_2d(x, uu)
-			# a few thinner patches, so the meadow is not a carpet
-			if rng.randf() > 0.62 + 0.38 * smoothstep(-0.6, -0.1, mval):
-				continue
 			var variant := 0
 			var hscale := rng.randf_range(0.8, 1.3)
 			var dry := rng.randf() * 0.35
-			if ds < 4.3:
+			var bright := rng.randf_range(0.88, 1.12)
+			if sw > 0.01 and ds < 4.3 * sw:
+				# reeds along the water
 				variant = 5
 				hscale *= 1.3
 				dry = 0.0
-			elif dp < Land.PATH_HALF + 0.5:
-				variant = 2
-			elif mval > 0.3 and rng.randf() < 0.5:
-				variant = 3
-			elif mval < -0.35 and rng.randf() < 0.55:
-				variant = 4
-			elif rng.randf() < 0.28:
-				variant = 1
-				dry += 0.25
-			elif rng.randf() < 0.3:
-				variant = 2
+			elif k == Land.HEIDE:
+				# heather in wide carpets, between them short, dry grass and tussocks
+				if mval > -0.3 and rng.randf() < 0.75:
+					variant = 6
+					hscale = rng.randf_range(0.8, 1.15)
+					dry = 0.0
+				elif rng.randf() < 0.45:
+					variant = 7
+					hscale = rng.randf_range(0.6, 0.95)
+					dry = 0.45 + rng.randf() * 0.35
+					bright *= 0.82
+				else:
+					variant = 2 if rng.randf() < 0.6 else 1
+					hscale *= 0.75
+					dry = 0.55 + rng.randf() * 0.35
+					bright *= 0.8
+			elif k == Land.HOCH:
+				# thin, short and tough: tussocks, short grass, a few flowers
+				if rng.randf() < 0.3:
+					continue
+				var pick := rng.randf()
+				hscale = rng.randf_range(0.6, 0.95)
+				if pick < 0.42:
+					variant = 7
+					dry = 0.4 + rng.randf() * 0.3
+				elif pick < 0.82:
+					variant = 2
+					dry = 0.4 + rng.randf() * 0.3
+				elif pick < 0.9:
+					variant = 3
+				else:
+					variant = 1
+					dry = 0.5
+				bright *= 0.76
+			else:
+				# Laubland and Flusstal: the meadows; a few thinner patches, so the meadow is not a carpet
+				if rng.randf() > 0.62 + 0.38 * smoothstep(-0.6, -0.1, mval):
+					continue
+				if dp < Land.PATH_HALF + 0.5:
+					variant = 2
+				elif mval > 0.3 and rng.randf() < 0.5:
+					variant = 3
+				elif k == Land.LAUB and mval < -0.35 and rng.randf() < 0.55:
+					variant = 4
+				elif rng.randf() < 0.28:
+					variant = 1
+					dry += 0.25
+				elif rng.randf() < 0.3:
+					variant = 2
+				if k == Land.FLUSS:
+					dry *= 0.6
 			hscale *= lerpf(0.5, 1.0, smoothstep(Land.PATH_HALF - 0.2, Land.PATH_HALF + 2.0, dp))
 			var h := _grid_height(hs, w, (x - x0) / step, (uu - u0) / step)
 			hmin = minf(hmin, h)
 			hmax = maxf(hmax, h)
 			var ws := rng.randf_range(0.85, 1.25)
 			var basis := Basis(Vector3.UP, rng.randf() * TAU).scaled(Vector3(ws, hscale, ws))
-			_put(buf, basis, Vector3(x - x0, h - 0.02, -(uu - u0)), Color(variant, rng.randf_range(0.88, 1.12), rng.randf(), dry))
+			_put(buf, basis, Vector3(x - x0, h - 0.02, -(uu - u0)), Color(variant, bright, rng.randf(), dry))
 	# shuffle, so that drawing only the first part of the list thins the meadow out evenly
 	var count := buf.size() / FLOATS
 	var out := PackedFloat32Array()
@@ -508,8 +596,16 @@ const LEAF_TINTS := {
 	Kit.MAPLE: [[Color(0.40, 0.62, 0.15), Color(0.34, 0.55, 0.13)], [Color(1.0, 0.52, 0.12), Color(0.95, 0.40, 0.10)], 0.15],
 	Kit.ROWAN: [[Color(0.48, 0.64, 0.18)], [Color(0.95, 0.32, 0.10), Color(1.0, 0.55, 0.15)], 0.35],
 	Kit.BUSH: [[Color(0.46, 0.64, 0.16), Color(0.38, 0.56, 0.14), Color(0.55, 0.70, 0.18)], [Color(0.9, 0.55, 0.18)], 0.05],
+	Kit.WILLOW: [[Color(0.44, 0.56, 0.30), Color(0.40, 0.52, 0.28)], [Color(0.92, 0.82, 0.32)], 0.08],
 }
-const BROADLEAF_WEIGHTS := [[Kit.BEECH, 0.32], [Kit.MAPLE, 0.22], [Kit.BIRCH, 0.2], [Kit.OAK, 0.14], [Kit.ROWAN, 0.12]]
+## Needles: Scots pine blue-green, juniper bluish and dark, mountain pine dark green.
+const NEEDLE_TINTS := {
+	Kit.PINE: Color(0.2, 0.34, 0.17),
+	Kit.JUNIPER: Color(0.15, 0.27, 0.19),
+	Kit.MUGO: Color(0.15, 0.29, 0.12),
+}
+## The trees of the broadleaf woods.
+const BROADLEAF_WEIGHTS := [[Kit.BEECH, 0.45], [Kit.OAK, 0.3], [Kit.MAPLE, 0.25]]
 
 
 static func _pick_broadleaf(rng: RandomNumberGenerator) -> int:
@@ -521,12 +617,36 @@ static func _pick_broadleaf(rng: RandomNumberGenerator) -> int:
 	return Kit.BEECH
 
 
+## Picks a landscape by its share in r (the shares start at the field first): where two landscapes meet, their plants
+## mingle.
+static func _pick(r: PackedFloat64Array, first: int, x: float) -> int:
+	var last := 0
+	for k in Land.KINDS:
+		var w: float = r[first + k]
+		if w <= 0.0:
+			continue
+		last = k
+		x -= w
+		if x <= 0.0:
+			return k
+	return last
+
+
+## Spruces and firs of the river valley, each in patches of their own, and a few rowans among them.
+static func _valley_conifer(x: float, u: float, rng: RandomNumberGenerator) -> int:
+	if rng.randf() < 0.08:
+		return Kit.ROWAN
+	return Kit.FIR if Land.firs.get_noise_2d(x, u) > 0.1 and rng.randf() < 0.8 else Kit.SPRUCE
+
+
 static func _tint(kind: int, rng: RandomNumberGenerator) -> Color:
 	var c := Color(1, 1, 1)
 	if LEAF_TINTS.has(kind):
 		var t: Array = LEAF_TINTS[kind]
 		var pool: Array = t[1] if rng.randf() < t[2] else t[0]
 		c = pool[rng.randi() % pool.size()] * rng.randf_range(0.92, 1.08)
+	elif NEEDLE_TINTS.has(kind):
+		c = NEEDLE_TINTS[kind] * rng.randf_range(0.9, 1.08)
 	elif kind == Kit.SPRUCE:
 		c = Color(0.86, 0.9, 0.84) * rng.randf_range(0.9, 1.08)
 	elif kind == Kit.FIR:
@@ -554,21 +674,49 @@ static func _job_trees(key: Vector2i) -> Dictionary:
 			var r := Land.row(u)
 			var dp := Land.dist_path(x, r)
 			var ds := Land.dist_stream(x, r)
-			if dp < 3.2 or ds < 4.6:
+			var sw: float = r[Land.SW]
+			if dp < 3.2 or (sw > 0.01 and ds < 4.6 * sw):
 				continue
 			var f := Land.forest.get_noise_2d(x, u)
 			var kind := -1
 			var scale := rng.randf_range(0.82, 1.18)
-			if dp > 5.5 and rng.randf() < smoothstep(0.06, 0.42, f) * 0.85 + 0.02:
-				if Land.firs.get_noise_2d(x, u) > 0.38 and rng.randf() < 0.8:
-					kind = Kit.SPRUCE if rng.randf() < 0.55 else Kit.FIR
-				else:
-					kind = _pick_broadleaf(rng)
-			elif dp > 6.0 and dp < 11.0 and rng.randf() < 0.035:
-				kind = [Kit.BEECH, Kit.OAK, Kit.MAPLE][rng.randi() % 3]
-				scale *= 1.4
-			elif (dp < 12.0 or f > -0.08) and rng.randf() < 0.16:
-				kind = Kit.BUSH
+			match _pick(r, Land.W, rng.randf()):
+				Land.HEIDE:
+					# open heath: groves of pines and birches, junipers standing alone
+					if dp > 5.5 and rng.randf() < smoothstep(0.15, 0.55, f) * 0.55 + 0.006:
+						kind = Kit.PINE if rng.randf() < 0.6 else Kit.BIRCH
+					elif rng.randf() < 0.035 + 0.05 * smoothstep(-0.3, 0.3, f):
+						kind = Kit.JUNIPER
+						scale = rng.randf_range(0.6, 1.25)
+				Land.FLUSS:
+					# willows along the river, spruces and firs on the slopes, rowans and a few conifers on the floor
+					var side := Land.valley_side(x, r[0], r[3])
+					if sw > 0.01 and ds < 14.0 and dp > 5.0 and rng.randf() < 0.3:
+						kind = Kit.WILLOW
+						scale = rng.randf_range(0.75, 1.15)
+					elif side > 0.0 and rng.randf() < smoothstep(0.0, 40.0, side) * 0.48 + 0.05:
+						kind = _valley_conifer(x, u, rng)
+					elif dp > 5.5 and rng.randf() < smoothstep(0.2, 0.55, f) * 0.45 + 0.012:
+						kind = Kit.ROWAN if rng.randf() < 0.35 else _valley_conifer(x, u, rng)
+				Land.HOCH:
+					# mountain pines in wide patches and a few small rowans; nothing grows on the scree
+					if Land.bare(x, u, r) > 0.5:
+						continue
+					if dp > 4.5 and rng.randf() < smoothstep(-0.2, 0.3, f) * 0.5:
+						kind = Kit.MUGO
+						scale = rng.randf_range(0.75, 1.3)
+					elif dp > 4.0 and rng.randf() < 0.03:
+						kind = Kit.ROWAN
+						scale = rng.randf_range(0.5, 0.75)
+				_:
+					# broadleaf woods and meadows: beech, oak and maple, big single trees by the path, bushes
+					if dp > 5.5 and rng.randf() < smoothstep(0.06, 0.42, f) * 0.85 + 0.02:
+						kind = _pick_broadleaf(rng)
+					elif dp > 6.0 and dp < 11.0 and rng.randf() < 0.035:
+						kind = [Kit.BEECH, Kit.OAK, Kit.MAPLE][rng.randi() % 3]
+						scale *= 1.4
+					elif (dp < 12.0 or f > -0.08) and rng.randf() < 0.16:
+						kind = Kit.BUSH
 			if kind < 0:
 				continue
 			var h := Land.height(x, u, r)
@@ -578,7 +726,7 @@ static func _job_trees(key: Vector2i) -> Dictionary:
 			var sx := scale * rng.randf_range(0.9, 1.1)
 			var basis := Basis(Vector3.UP, rng.randf() * TAU).scaled(Vector3(sx, scale, sx))
 			_put(bufs[kind], basis, Vector3(x - x0, h - 0.1, -(u - u0)), tint)
-	# rocks: a few in the meadows, more along the stream
+	# rocks: a few in the meadows, more along the water, boulders in the heath, scree and crags in the highland
 	var rs := 5.0
 	for gj in int(T / rs):
 		for gi in int(bw / rs):
@@ -587,16 +735,49 @@ static func _job_trees(key: Vector2i) -> Dictionary:
 			var r := Land.row(u)
 			var dp := Land.dist_path(x, r)
 			var ds := Land.dist_stream(x, r)
+			var sw: float = r[Land.SW]
 			var p := 0.012
 			var size := rng.randf_range(0.5, 1.5)
-			if ds < 6.0:
-				p = 0.35
-				size = rng.randf_range(0.35, 1.0)
-			if dp < 2.2 or rng.randf() > p:
+			var kind := Kit.ROCK_A + rng.randi() % 2
+			match _pick(r, Land.W, rng.randf()):
+				Land.HEIDE:
+					p = 0.004
+					size = rng.randf_range(1.0, 2.4)
+					kind = Kit.ROCK_C
+				Land.FLUSS:
+					if sw > 0.01 and ds < 6.5 * sw:
+						p = 0.42
+						size = rng.randf_range(0.3, 1.1)
+						kind = Kit.ROCK_A + rng.randi() % 3
+					elif Land.valley_side(x, r[0], r[3]) > 0.0:
+						p = 0.03
+						size = rng.randf_range(0.8, 2.2)
+						kind = Kit.ROCK_C
+					else:
+						p = 0.01
+				Land.HOCH:
+					kind = Kit.ROCK_C
+					var b := Land.bare(x, u, r)
+					if b > 0.5:
+						p = 0.45
+						size = rng.randf_range(0.3, 1.0)
+					elif b > 0.05:
+						# a rim of bigger rocks around the scree
+						p = 0.3
+						size = rng.randf_range(0.6, 1.8)
+					else:
+						p = 0.06
+						size = rng.randf_range(0.6, 2.0) * (2.2 if rng.randf() < 0.1 else 1.0)
+				_:
+					if sw > 0.01 and ds < 6.0 * sw:
+						p = 0.35
+						size = rng.randf_range(0.35, 1.0)
+			# big rocks keep off the path
+			if dp < maxf(2.2, Land.PATH_HALF + size * 1.2) or rng.randf() > p:
 				continue
 			var h := Land.height(x, u, r)
 			var basis := Basis(Vector3(rng.randf_range(-0.2, 0.2), 1, rng.randf_range(-0.2, 0.2)).normalized(), rng.randf() * TAU).scaled(Vector3(size, size, size))
-			_put(bufs[Kit.ROCK_A + rng.randi() % 2], basis, Vector3(x - x0, h - 0.25 * size, -(u - u0)), Color(1, 1, 1, 0))
+			_put(bufs[kind], basis, Vector3(x - x0, h - 0.25 * size, -(u - u0)), Color(1, 1, 1, 0))
 	return {"type": "trees", "key": key, "bufs": bufs, "hmin": hmin if hmin < INF else 0.0, "hmax": hmax if hmax > -INF else 0.0}
 
 
@@ -609,9 +790,12 @@ static func _job_water(iu: int) -> Dictionary:
 	var uv := PackedVector2Array()
 	var idx := PackedInt32Array()
 	var steps := 24
-	var hw := 2.7
+	var water := false
 	for k in steps + 1:
 		var u := u0 + k * T / steps
+		# the stream is wider in the river valley, narrower in the highland and dries up in the heath
+		var hw := 2.7 * Land.stream_width(u)
+		water = water or hw > 0.03
 		var sx := Land.stream_x(u)
 		var sdx := Land.stream_dx(u)
 		var inv := 1.0 / sqrt(1.0 + sdx * sdx)
@@ -629,4 +813,6 @@ static func _job_water(iu: int) -> Dictionary:
 		if k > 0:
 			var a := (k - 1) * 2
 			idx.append_array([a, a + 2, a + 1, a + 1, a + 2, a + 3])
+	if not water:
+		v.clear()
 	return {"type": "water", "key": iu, "v": v, "n": n, "tg": tg, "c": c, "uv": uv, "i": idx}

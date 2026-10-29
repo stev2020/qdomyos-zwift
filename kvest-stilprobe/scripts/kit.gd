@@ -1,16 +1,19 @@
 class_name Kit
 extends RefCounted
 ## Builds the meshes of the style test in code: the grass clump, broadleaf trees and bushes made of
-## leaf-cluster cards, spruces and firs of branch cards, and rocks. Every tree is one surface
-## (see shaders/nature.gdshader).
+## leaf-cluster cards, spruces and firs of branch cards, pines, junipers and mountain pines of needle tufts,
+## and rocks. Every tree is one surface (see shaders/nature.gdshader).
 
-enum { BEECH, BIRCH, OAK, MAPLE, ROWAN, BUSH, SPRUCE, FIR, ROCK_A, ROCK_B, COUNT }
+## The rocks stay at the end: World treats every kind from ROCK_A on as a rock.
+enum { BEECH, BIRCH, OAK, MAPLE, ROWAN, BUSH, SPRUCE, FIR, PINE, JUNIPER, WILLOW, MUGO, ROCK_A, ROCK_B, ROCK_C, COUNT }
 
-## Cells of textures/leaves.png (2 x 4): 0-1 oval leaves, 2-3 small leaves, 4-5 fir branches, 6-7 maple leaves.
-const ATLAS_ROWS := 4.0
+## Cells of textures/leaves.png (2 x 6): 0-1 oval leaves, 2-3 small leaves, 4-5 fir branches, 6-7 maple leaves,
+## 8 long pine needles, 9 short dense needles, 10-11 willow leaves.
+const ATLAS_ROWS := 6.0
 
 ## Crown centre height, radii, sub-crowns, clusters per sub-crown, card size, leaf cells, bark, trunk radius, stems,
-## ridges (depth of the furrows in the bark) and roots (size of the root buttresses at the foot).
+## ridges (depth of the furrows in the bark), roots (size of the root buttresses at the foot) and hang (willows:
+## cards that hang below each sub-crown).
 const SPECIES := {
 	BEECH: {"cy": 5.6, "rx": 4.0, "ry": 3.5, "lobes": 8, "per": 5, "size": 1.75, "cells": [0, 1], "bark": Color(0.25, 0.245, 0.215, 0.0), "trunk": 0.34, "stems": 1, "ridges": 0.0, "roots": 0.45},
 	BIRCH: {"cy": 6.6, "rx": 2.3, "ry": 3.8, "lobes": 7, "per": 4, "size": 1.45, "cells": [2, 3], "bark": Color(0.8, 0.78, 0.71, 0.0), "trunk": 0.2, "stems": 1, "ridges": 0.0, "roots": 0.2},
@@ -18,12 +21,17 @@ const SPECIES := {
 	MAPLE: {"cy": 5.2, "rx": 3.8, "ry": 3.6, "lobes": 9, "per": 6, "size": 1.75, "cells": [6, 7], "bark": Color(0.15, 0.1, 0.05, 0.0), "trunk": 0.3, "stems": 1, "ridges": 0.14, "roots": 0.4},
 	ROWAN: {"cy": 3.9, "rx": 2.4, "ry": 2.2, "lobes": 6, "per": 4, "size": 1.3, "cells": [2, 3], "bark": Color(0.19, 0.175, 0.14, 0.0), "trunk": 0.15, "stems": 3, "ridges": 0.0, "roots": 0.15},
 	BUSH: {"cy": 0.85, "rx": 1.55, "ry": 1.0, "lobes": 3, "per": 5, "size": 1.15, "cells": [0, 1, 2, 3], "bark": Color(0.3, 0.25, 0.2, 0.0), "trunk": 0.0, "stems": 0, "ridges": 0.0, "roots": 0.0},
+	WILLOW: {"cy": 6.0, "rx": 4.4, "ry": 3.2, "lobes": 9, "per": 5, "size": 1.6, "cells": [10, 11], "bark": Color(0.15, 0.13, 0.1, 0.0), "trunk": 0.36, "stems": 2, "ridges": 0.22, "roots": 0.35, "hang": 2},
 }
 
 ## Birch branches, the dark dashes in birch bark, and the moss at the foot of the trunks.
 const BIRCH_BRANCH := Color(0.55, 0.52, 0.47, 0.0)
 const BIRCH_MARK := Color(0.035, 0.032, 0.03, 0.0)
 const MOSS := Color(0.075, 0.11, 0.03, 0.0)
+## Pine bark: grey and furrowed at the foot, thin and orange-red higher up; the bark of the mountain pine.
+const PINE_BARK := Color(0.12, 0.085, 0.06, 0.0)
+const PINE_BARK_TOP := Color(0.42, 0.13, 0.04, 0.0)
+const MUGO_BARK := Color(0.09, 0.065, 0.045, 0.0)
 
 
 class Builder:
@@ -71,9 +79,10 @@ class Builder:
 	## its own normal and its own shade, so the bark catches the light face by face. The faces wind slowly
 	## around the tube and its corners lie unevenly. ridges sets every other corner deeper (furrowed bark),
 	## roots adds three root buttresses at the foot. marks: for each segment, the chance of a dark dash
-	## (birch bark).
+	## (birch bark). top: a second bark colour that takes over between the heights top_from and top_to (pines).
 	func bark(points: Array, radii: Array, sides: int, col: Color, sway_from: float, sway_to: float,
-			rng: RandomNumberGenerator, ridges := 0.0, roots := 0.0, marks: Array = []) -> void:
+			rng: RandomNumberGenerator, ridges := 0.0, roots := 0.0, marks: Array = [],
+			top := Color(-1.0, 0.0, 0.0, 0.0), top_from := 0.0, top_to := 0.0) -> void:
 		var count := points.size()
 		# how far the faces wind around the tube per metre
 		var twist := rng.randf_range(0.06, 0.14) * (1.0 if rng.randf() < 0.5 else -1.0)
@@ -133,7 +142,10 @@ class Builder:
 				nn = nn.normalized()
 				var y := (a.y + b.y + d.y + e.y) * 0.25
 				var f: float = streaks[s] * rng.randf_range(0.9, 1.1) * lerpf(0.7, 1.0, smoothstep(-0.2, 0.9, y))
-				var c := Color(col.r * f, col.g * f, col.b * f, 0.0)
+				var base := col
+				if top.r >= 0.0:
+					base = col.lerp(top, smoothstep(top_from, top_to, y))
+				var c := Color(base.r * f, base.g * f, base.b * f, 0.0)
 				if roots > 0.0:
 					# moss on the shady side of the foot
 					c = c.lerp(MOSS, clampf(nn.z * 1.4, 0.0, 1.0) * (1.0 - smoothstep(0.1, 1.3, y)) * 0.6)
@@ -251,7 +263,7 @@ static func broadleaf(kind: int, seed_value: int, low: bool, material: Material)
 	var cells: Array = sp["cells"]
 	var scale := rx / 4.0 if kind == BUSH else 1.0
 	var lean := Vector3(rng.randf_range(-0.5, 0.5), 0.0, rng.randf_range(-0.5, 0.5)) * (0.0 if kind == BUSH else 1.0)
-	if kind == BIRCH:
+	if kind == BIRCH or kind == WILLOW:
 		lean *= 1.6
 	var crown_c := Vector3(lean.x, cy, lean.z)
 	var crown_r := Vector3(rx, ry, rx)
@@ -285,6 +297,15 @@ static func broadleaf(kind: int, seed_value: int, low: bool, material: Material)
 			var off := Vector3(rng.randf_range(-1, 1), rng.randf_range(-0.8, 1), rng.randf_range(-1, 1)).limit_length(1.0)
 			var size: float = float(sp["size"]) * (1.55 if low else 1.0) * rng.randf_range(0.85, 1.15) * scale
 			b.cluster(lc + off * lr * 0.7, size, rng, crown_c, crown_r, 2 if low else 3, cells)
+		# willows: upright cards that hang below the outer sub-crowns, like curtains of twigs
+		for hk in (0 if low else int(sp.get("hang", 0))):
+			var out := Vector3(lc.x - crown_c.x, 0.0, lc.z - crown_c.z)
+			if out.length() < 0.3:
+				break
+			out = out.normalized().rotated(Vector3.UP, rng.randf_range(-0.5, 0.5))
+			var p: Vector3 = lc + out * lr * 0.6 + Vector3(0.0, -lr * rng.randf_range(0.6, 1.0), 0.0)
+			b.leaf_card(p, out.cross(Vector3.UP).normalized(), Vector3.UP, float(sp["size"]) * rng.randf_range(1.0, 1.3),
+				cells[rng.randi() % cells.size()], rng.randf() < 0.5, crown_c, crown_r, crown_r.x)
 	return b.to_mesh(material)
 
 
@@ -373,8 +394,141 @@ static func conifer(kind: int, seed_value: int, low: bool, material: Material) -
 	return b.to_mesh(material)
 
 
-## Rounded rocks with moss on top.
-static func rock(seed_value: int, material: Material) -> ArrayMesh:
+## The point of a trunk (a line through the points, from the foot upwards) at the height y.
+static func _on_trunk(pts: Array, y: float) -> Vector3:
+	for i in range(1, pts.size()):
+		var a: Vector3 = pts[i - 1]
+		var c: Vector3 = pts[i]
+		if c.y >= y:
+			return a.lerp(c, clampf((y - a.y) / maxf(c.y - a.y, 0.001), 0.0, 1.0))
+	return pts[pts.size() - 1]
+
+
+## Scots pines (heath): a tall, slightly crooked trunk, bare for most of its height, grey below and orange-red above,
+## and a high, loose crown of needle pads at the ends of a few branches. Dead branch stubs on the lower trunk.
+## The shape is drawn first, so the version for the distance has the same pads.
+static func pine(seed_value: int, low: bool, material: Material) -> ArrayMesh:
+	var rng := RandomNumberGenerator.new()
+	rng.seed = seed_value
+	var b := Builder.new()
+	var brng := RandomNumberGenerator.new()
+	brng.seed = seed_value * 31 + 7
+	var h := rng.randf_range(14.0, 16.0)
+	var lean := Vector3(rng.randf_range(-0.7, 0.7), 0.0, rng.randf_range(-0.7, 0.7))
+	var wave := Vector3(rng.randf() * TAU, rng.randf_range(0.25, 0.4), rng.randf() * TAU)
+	var pads := []
+	var a0 := rng.randf() * TAU
+	for i in 8:
+		var t := float(i) / 7.0
+		var a := a0 + i * 2.4 + rng.randf_range(-0.3, 0.3)
+		pads.append([lerpf(h * 0.55, h * 0.9, t) + rng.randf_range(-0.3, 0.3), Vector3(cos(a), 0.0, sin(a)),
+			rng.randf_range(2.2, 3.6) * lerpf(1.0, 0.45, t), rng.randf_range(0.4, 1.1), rng.randf_range(1.3, 1.9) * lerpf(1.0, 0.7, t)])
+	var ys := [-0.5, 0.0, 0.3, 0.8]
+	var rings := 3 if low else 7
+	for k in rings:
+		ys.append(lerpf(1.6, h * 0.94, float(k) / float(rings - 1)))
+	var pts := []
+	var radii := []
+	for y in ys:
+		var t := clampf((y + 0.5) / (h + 0.5), 0.0, 1.0)
+		var p := Vector3(lean.x * t * t, y, lean.z * t * t)
+		p += Vector3(sin(y * wave.y + wave.x), 0.0, sin(y * wave.y * 0.8 + wave.z)) * 0.22 * t
+		pts.append(p)
+		var flare := 1.0 + 0.45 * pow(1.0 - clampf(y, 0.0, 1.0), 3.0)
+		radii.append(lerpf(0.36, 0.07, pow(t, 0.9)) * flare)
+	b.bark(pts, radii, 5 if low else 7, PINE_BARK, 0.0, 0.3, brng, 0.2, 0.3, [], PINE_BARK_TOP, h * 0.3, h * 0.55)
+	var crown_c := Vector3(lean.x, h * 0.78, lean.z)
+	var crown_r := Vector3(4.2, 3.0, 4.2)
+	for i in pads.size():
+		if low and i % 2 == 1:
+			continue
+		var pd: Array = pads[i]
+		var start := _on_trunk(pts, pd[0])
+		var end: Vector3 = start + (pd[1] as Vector3) * float(pd[2]) + Vector3(0.0, pd[3], 0.0)
+		if not low:
+			var mid_p: Vector3 = start.lerp(end, 0.5) + Vector3(0.0, rng.randf_range(-0.2, 0.25), 0.0)
+			b.bark([start, mid_p, end], [0.1, 0.07, 0.035], 5, PINE_BARK_TOP, 0.3, 0.8, brng)
+		var pad: float = pd[4]
+		for k in (2 if low else 5):
+			var off := Vector3(rng.randf_range(-1, 1), rng.randf_range(-0.3, 0.4), rng.randf_range(-1, 1)).limit_length(1.0)
+			b.cluster(end + off * pad * 0.6, rng.randf_range(1.8, 2.3) * (1.5 if low else 1.0), rng, crown_c, crown_r, 2 if low else 3, [8])
+	var top: Vector3 = pts[pts.size() - 1]
+	for k in (1 if low else 3):
+		var off := Vector3(rng.randf_range(-0.5, 0.5), rng.randf_range(-0.2, 0.4), rng.randf_range(-0.5, 0.5))
+		b.cluster(top + off, 1.6 * (1.5 if low else 1.0), rng, crown_c, crown_r, 2 if low else 3, [8])
+	if not low:
+		for k in 5:
+			var s := _on_trunk(pts, rng.randf_range(2.0, h * 0.5))
+			var a := rng.randf() * TAU
+			var dir := Vector3(cos(a), -rng.randf_range(0.05, 0.3), sin(a)).normalized()
+			b.bark([s, s + dir * rng.randf_range(0.35, 0.8)], [0.04, 0.015], 4, PINE_BARK, 0.1, 0.15, brng)
+	return b.to_mesh(material)
+
+
+## Junipers (heath): dense, dark columns of short needles, narrower at the foot and at the top; a second, shorter
+## column stands close to the first.
+static func juniper(seed_value: int, low: bool, material: Material) -> ArrayMesh:
+	var rng := RandomNumberGenerator.new()
+	rng.seed = seed_value
+	var b := Builder.new()
+	var columns := [[Vector3.ZERO, 3.4, 0.62], [Vector3(rng.randf_range(0.35, 0.5), 0.0, rng.randf_range(-0.2, 0.2)), 2.1, 0.5]]
+	for col in columns:
+		var base: Vector3 = col[0]
+		var hh: float = col[1]
+		var rad: float = col[2]
+		var crown_c := base + Vector3(0.0, hh * 0.5, 0.0)
+		var crown_r := Vector3(rad * 1.3, hh * 0.55, rad * 1.3)
+		var levels := 2 if low else int(hh / 0.55)
+		for i in levels:
+			var t := (float(i) + 0.5) / float(levels)
+			var y := hh * lerpf(0.12, 0.92, t)
+			var r := rad * (0.55 + 0.45 * sin(PI * clampf(t * 1.1, 0.0, 1.0)))
+			for k in (1 if low else 2):
+				var a := rng.randf() * TAU
+				var p := base + Vector3(cos(a) * r * 0.35, y, sin(a) * r * 0.35)
+				b.cluster(p, r * (2.6 if low else 1.8), rng, crown_c, crown_r, 2 if low else 3, [9])
+	return b.to_mesh(material)
+
+
+## Mountain pines (Latschen, highland): crooked stems that creep along the ground and then bend upwards, with dense
+## tufts of needles at their ends. Together they form a wide, low cushion.
+static func mugo(seed_value: int, low: bool, material: Material) -> ArrayMesh:
+	var rng := RandomNumberGenerator.new()
+	rng.seed = seed_value
+	var b := Builder.new()
+	var brng := RandomNumberGenerator.new()
+	brng.seed = seed_value * 31 + 7
+	var crown_c := Vector3(0.0, 0.7, 0.0)
+	var crown_r := Vector3(2.6, 1.3, 2.6)
+	var stems := []
+	var a0 := rng.randf() * TAU
+	for i in 6:
+		var a := a0 + TAU * i / 6.0 + rng.randf_range(-0.35, 0.35)
+		stems.append([Vector3(cos(a), 0.0, sin(a)), rng.randf_range(0.7, 1.5), rng.randf_range(0.8, 1.7)])
+	for st in stems:
+		var dir: Vector3 = st[0]
+		var creep: float = st[1]
+		var rise: float = st[2]
+		var p0 := Vector3(0.0, -0.15, 0.0)
+		var p1 := dir * creep * 0.6 + Vector3(0.0, 0.12, 0.0)
+		var p2 := dir * (creep + 0.25) + Vector3(0.0, rise * 0.45, 0.0)
+		var p3 := dir * (creep + 0.45) + Vector3(0.0, rise, 0.0)
+		if not low:
+			b.bark([p0, p1, p2, p3], [0.1, 0.075, 0.05, 0.025], 5, MUGO_BARK, 0.0, 0.6, brng)
+		for k in (1 if low else 2):
+			var off := Vector3(rng.randf_range(-0.2, 0.2), rng.randf_range(-0.1, 0.15), rng.randf_range(-0.2, 0.2))
+			b.cluster(p2.lerp(p3, 0.55 + 0.45 * k) + off, rng.randf_range(1.15, 1.45) * (1.4 if low else 1.0), rng, crown_c, crown_r,
+				2 if low else 3, [9, 8])
+	# tufts in the middle close the cushion
+	for k in (1 if low else 2):
+		var off := Vector3(rng.randf_range(-0.3, 0.3), rng.randf_range(0.6, 0.9), rng.randf_range(-0.3, 0.3))
+		b.cluster(off, 1.4, rng, crown_c, crown_r, 2 if low else 3, [9])
+	return b.to_mesh(material)
+
+
+## Rounded rocks with moss on top. faceted: bare, angular rocks of fewer, flat faces like the carved trunks, grey
+## with a little lichen on top (highland, river valley, the boulders of the heath).
+static func rock(seed_value: int, material: Material, faceted := false) -> ArrayMesh:
 	var noise := FastNoiseLite.new()
 	noise.seed = seed_value
 	noise.frequency = 0.9
@@ -385,7 +539,7 @@ static func rock(seed_value: int, material: Material) -> ArrayMesh:
 		verts[i] = verts[i].normalized()
 	var faces := [[0, 11, 5], [0, 5, 1], [0, 1, 7], [0, 7, 10], [0, 10, 11], [1, 5, 9], [5, 11, 4], [11, 10, 2], [10, 7, 6], [7, 1, 8],
 		[3, 9, 4], [3, 4, 2], [3, 2, 6], [3, 6, 8], [3, 8, 9], [4, 9, 5], [2, 4, 11], [6, 2, 10], [8, 6, 7], [9, 8, 1]]
-	for level in 2:
+	for level in (1 if faceted else 2):
 		var cache := {}
 		var next := []
 		for f in faces:
@@ -405,8 +559,30 @@ static func rock(seed_value: int, material: Material) -> ArrayMesh:
 		faces = next
 	var pos := []
 	for p in verts:
+		if faceted:
+			var rf := 1.0 + noise.get_noise_3dv(p) * 0.4 + noise.get_noise_3dv(p * 2.3) * 0.12
+			pos.append(Vector3(p.x * rf, p.y * rf * 0.7, p.z * rf * 0.8))
+			continue
 		var r := 1.0 + noise.get_noise_3dv(p) * 0.28 + noise.get_noise_3dv(p * 3.1) * 0.08
 		pos.append(Vector3(p.x * r, p.y * r * 0.62, p.z * r * 0.85))
+	if faceted:
+		var fb := Builder.new()
+		for f in faces:
+			var pa: Vector3 = pos[f[0]]
+			var pb: Vector3 = pos[f[1]]
+			var pc: Vector3 = pos[f[2]]
+			var fn := (pc - pa).cross(pb - pa).normalized()
+			var centre := (pa + pb + pc) / 3.0
+			if fn.dot(centre) < 0.0:
+				fn = -fn
+			var g := 0.27 + noise.get_noise_3dv(centre * 2.0) * 0.07
+			var col := Color(g, g * 0.97, g * 0.92, 0.0).lerp(Color(0.24, 0.26, 0.15, 0.0), smoothstep(0.6, 0.95, fn.y) * 0.45)
+			col.a = 0.0
+			var ia := fb.vert(pa, fn, Vector3.RIGHT, col, Vector2.ZERO, 0.0)
+			var ib := fb.vert(pb, fn, Vector3.RIGHT, col, Vector2.ZERO, 0.0)
+			var ic := fb.vert(pc, fn, Vector3.RIGHT, col, Vector2.ZERO, 0.0)
+			fb.tri(ia, ib, ic)
+		return fb.to_mesh(material)
 	var normals := []
 	normals.resize(pos.size())
 	normals.fill(Vector3.ZERO)

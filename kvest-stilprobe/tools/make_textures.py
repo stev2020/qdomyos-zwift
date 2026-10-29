@@ -1,10 +1,12 @@
 """Paints the textures of the Kvest style test.
 
-textures/grass.png    grass clumps for the crossing cards, 2 x 3 cells of 512 x 256:
+textures/grass.png    grass clumps for the crossing cards, 2 x 4 cells of 512 x 256:
                       0 lush meadow, 1 seed heads, 2 short and dense,
-                      3 with small white and yellow flowers, 4 pink and violet flowers, 5 reeds
-textures/leaves.png   leaf clusters and fir branches, 2 x 4 cells of 512 x 512: oval leaves, small leaves,
-                      fir branches, maple leaves (leaves light grey, the shader tints them per tree)
+                      3 with small white and yellow flowers, 4 pink and violet flowers, 5 reeds,
+                      6 heather in bloom, 7 tussock of tough, straw-coloured grass (heath and highland)
+textures/leaves.png   leaf clusters and branches, 2 x 6 cells of 512 x 512: oval leaves, small leaves,
+                      fir branches, maple leaves, pine needles (long tufts, short dense tufts), willow leaves
+                      (leaves and needles light grey, the shader tints them per tree)
 textures/leaves_n.png the matching normals (every leaf is tilted a bit and bent along its midrib)
 
 Run: python3 tools/make_textures.py
@@ -43,6 +45,12 @@ GRASS_DARK = (0.13, 0.24, 0.06)
 GRASS_MID = (0.36, 0.55, 0.13)
 GRASS_TIP = (0.70, 0.80, 0.30)
 DRY_TIP = (0.86, 0.78, 0.42)
+TUSSOCK_TIP = (0.90, 0.82, 0.55)
+HEATHER_STEM = (0.24, 0.17, 0.11)
+HEATHER_LEAF = (0.18, 0.28, 0.11)
+HEATHER_LEAF_LIGHT = (0.36, 0.46, 0.19)
+HEATHER_BLOOM = (0.64, 0.38, 0.60)
+HEATHER_BLOOM_LIGHT = (0.86, 0.64, 0.82)
 
 
 def blade(d, rng, x0, y0, height, lean, width, col_base, col_tip, steps=14):
@@ -73,8 +81,8 @@ def grass_cell(rng, w, h, kind):
     img = Image.new("RGBA", (w, h), (0, 0, 0, 0))
     d = ImageDraw.Draw(img)
     base_y = h - 2 * SS
-    n = {0: 120, 1: 95, 2: 150, 3: 105, 4: 70, 5: 60}[kind]
-    hmin, hmax = {0: 0.55, 1: 0.5, 2: 0.3, 3: 0.4, 4: 0.4, 5: 0.7}[kind], {0: 0.97, 1: 0.9, 2: 0.62, 3: 0.75, 4: 0.75, 5: 0.99}[kind]
+    n = {0: 120, 1: 95, 2: 150, 3: 105, 4: 70, 5: 60, 7: 170}[kind]
+    hmin, hmax = {0: 0.55, 1: 0.5, 2: 0.3, 3: 0.4, 4: 0.4, 5: 0.7, 7: 0.35}[kind], {0: 0.97, 1: 0.9, 2: 0.62, 3: 0.75, 4: 0.75, 5: 0.99, 7: 0.85}[kind]
     blades = []
     for _ in range(n):
         x0 = w * 0.5 + rng.gauss(0, w * 0.17)
@@ -87,14 +95,17 @@ def grass_cell(rng, w, h, kind):
     tips = []
     for depth, x0, height, lean in blades:
         shade = 0.72 + 0.28 * depth
-        dry = rng.random() < (0.22 if kind in (0, 1) else 0.1)
+        dry = rng.random() < (0.22 if kind in (0, 1) else 0.55 if kind == 7 else 0.1)
         tip = DRY_TIP if dry else mix(GRASS_TIP, GRASS_MID, rng.uniform(0, 0.35))
         if kind == 5:  # reeds: darker, bluer, straighter
             tip = (0.42, 0.56, 0.30)
             lean *= 0.35
+        if kind == 7:  # tussock: thin, stiff blades that fan out like a fountain, many of them straw-coloured
+            tip = TUSSOCK_TIP if dry else mix(tip, (0.55, 0.60, 0.34), 0.5)
+            lean *= 1.5
         base = tuple(c * shade for c in GRASS_DARK)
         tip = tuple(c * (0.85 + 0.15 * depth) for c in tip)
-        width = SS * rng.uniform(2.6, 4.6) * (1.4 if kind == 5 else 1.0)
+        width = SS * rng.uniform(2.6, 4.6) * (1.4 if kind == 5 else 0.6 if kind == 7 else 1.0)
         tips.append((blade(d, rng, x0, base_y, height, lean, width, base, tip), depth))
     # seed heads, flowers and spikes on top of some blades
     if kind == 1:
@@ -120,18 +131,63 @@ def grass_cell(rng, w, h, kind):
     return img
 
 
+def heather_cell(rng, w, h):
+    """A low, wide cushion of heather: many short woody sprigs that branch and rise in a dome, densely covered with
+    small dark leaves, and a haze of tiny mauve bells on the upper part."""
+    img = Image.new("RGBA", (w, h), (0, 0, 0, 0))
+    d = ImageDraw.Draw(img)
+    base_y = h - 2 * SS
+    sprigs = []
+    for _ in range(95):
+        x0 = max(w * 0.08, min(w * 0.92, w * 0.5 + rng.gauss(0, w * 0.18)))
+        height = h * rng.uniform(0.36, 0.7) * (1 - abs(x0 / w - 0.5) * 0.9)
+        lean = rng.gauss(0, 0.16) + (x0 / w - 0.5) * 0.8
+        sprigs.append((rng.random(), x0, height, lean))
+    sprigs.sort()
+    for depth, x0, height, lean in sprigs:
+        shade = 0.62 + 0.38 * depth
+        tipx = x0 + lean * height
+        ctrlx = x0 + lean * height * rng.uniform(0.2, 0.5)
+        ctrly = base_y - height * rng.uniform(0.4, 0.65)
+        tipy = base_y - height
+        pts = []
+        for i in range(13):
+            t = i / 12
+            pts.append(((1 - t) ** 2 * x0 + 2 * (1 - t) * t * ctrlx + t * t * tipx,
+                        (1 - t) ** 2 * base_y + 2 * (1 - t) * t * ctrly + t * t * tipy))
+        d.line(pts, fill=rgb255(tuple(c * shade for c in HEATHER_STEM)), width=max(2, int(SS * 1.6)))
+        for i, (x, y) in enumerate(pts):
+            t = i / 12
+            if t < 0.12:
+                continue
+            for _ in range(4):
+                ox, oy = rng.gauss(0, SS * 3.6), rng.gauss(0, SS * 2.4)
+                if t > 0.6 and rng.random() < 0.68:
+                    col = mix(HEATHER_BLOOM, HEATHER_BLOOM_LIGHT, rng.random() * 0.55)
+                    r = SS * rng.uniform(1.3, 2.1)
+                else:
+                    col = mix(HEATHER_LEAF, HEATHER_LEAF_LIGHT, rng.random() * (0.4 + 0.6 * t))
+                    r = SS * rng.uniform(1.3, 2.2)
+                col = tuple(c * shade for c in col)
+                d.ellipse([x + ox - r, y + oy - r * 0.8, x + ox + r, y + oy + r * 0.8], fill=rgb255(col))
+    return img
+
+
 GRASS_ROWS = 240
 
 
 def make_grass():
     cw, ch = 512, 256
-    big = Image.new("RGBA", (2 * cw * SS, 3 * ch * SS), (0, 0, 0, 0))
+    big = Image.new("RGBA", (2 * cw * SS, 4 * ch * SS), (0, 0, 0, 0))
     rng = random.Random(11)
-    for k in range(6):
+    for k in range(8):
         # 240 of the 256 rows are painted; the empty rows below keep the mipmaps of the cells apart
-        cell = grass_cell(rng, cw * SS, GRASS_ROWS * SS, k)
+        if k == 6:
+            cell = heather_cell(rng, cw * SS, GRASS_ROWS * SS)
+        else:
+            cell = grass_cell(rng, cw * SS, GRASS_ROWS * SS, k)
         big.paste(cell, ((k % 2) * cw * SS, (k // 2) * ch * SS), cell)
-    img = bleed(big.resize((2 * cw, 3 * ch), Image.LANCZOS), 7)
+    img = bleed(big.resize((2 * cw, 4 * ch), Image.LANCZOS), 7)
     img.save(os.path.join(TEX, "grass.png"))
 
 
@@ -297,18 +353,109 @@ def fir_branch(rng, size):
     return col, nrm
 
 
-LEAF_CELLS = ["oval", "oval", "small", "small", "fir", "fir", "maple", "maple"]
+def pine_tufts(rng, size, short):
+    """Pine needles in tufts at the ends of twigs, light grey like the leaves (the shader tints them per tree).
+    short: the dense, short needles of junipers and mountain pines; otherwise the long tufts of the Scots pine."""
+    col = Image.new("RGBA", (size, size), (0, 0, 0, 0))
+    nrm = Image.new("RGBA", (size, size), (128, 128, 255, 0))
+    dc, dn = ImageDraw.Draw(col), ImageDraw.Draw(nrm)
+    c = size / 2
+    radius = size * 0.42
+    tufts = []
+    for _ in range(rng.randint(17, 21) if short else rng.randint(12, 15)):
+        a = rng.uniform(0, 2 * math.pi)
+        r = radius * math.sqrt(rng.uniform(0.05, 1.0)) * (0.8 if short else 0.68)
+        tx, ty = c + math.cos(a) * r, c + math.sin(a) * r
+        dc.line([(c + math.cos(a) * r * 0.2, c + math.sin(a) * r * 0.2 + size * 0.05), (tx, ty)],
+                fill=(70, 58, 46, 255), width=max(2, size // 160))
+        tufts.append((rng.random(), tx, ty, a))
+    tufts.sort()
+    strokes = []
+    for depth, tx, ty, a in tufts:
+        length = size * (0.085 if short else 0.13)
+        for _ in range(110 if short else 120):
+            # needles fan out from the tuft, mostly away from the centre and a little upwards
+            dx = math.cos(a) * 0.75 + rng.gauss(0, 0.7)
+            dy = math.sin(a) * 0.75 - 0.3 + rng.gauss(0, 0.7)
+            ln = math.hypot(dx, dy) or 1
+            ll = length * rng.uniform(0.55, 1.1)
+            x0, y0 = tx + rng.gauss(0, size * 0.01), ty + rng.gauss(0, size * 0.01)
+            strokes.append((depth + rng.uniform(-0.15, 0.15), x0, y0, x0 + dx / ln * ll, y0 + dy / ln * ll))
+    strokes.sort()
+    w = max(2, size // (230 if short else 210))
+    for depth, x0, y0, x1, y1 in strokes:
+        shade = max(0.42, min(1.0, 0.55 + 0.45 * depth))
+        mx, my = (x0 + x1) / 2, (y0 + y1) / 2
+        dc.line([(x0, y0), (mx, my)], fill=rgb255((shade * 0.78, shade * 0.8, shade * 0.76)), width=w)
+        dc.line([(mx, my), (x1, y1)], fill=rgb255((shade, shade, shade * 0.97)), width=w)
+        n = normal_rgb(((x1 - x0) / size * 5, -(y1 - y0) / size * 5, 1.0))
+        dn.line([(x0, y0), (x1, y1)], fill=n, width=w + 1)
+    return col, nrm
+
+
+def willow_cluster(rng, size):
+    """Willow twigs: long, narrow leaves that hang down a little; about a third of them show their silvery
+    underside."""
+    col = Image.new("RGBA", (size, size), (0, 0, 0, 0))
+    nrm = Image.new("RGBA", (size, size), (128, 128, 255, 0))
+    dc, dn = ImageDraw.Draw(col), ImageDraw.Draw(nrm)
+    c = size / 2
+    radius = size * 0.42
+    for _ in range(rng.randint(4, 6)):  # twigs
+        a = rng.uniform(0, 2 * math.pi)
+        r = radius * rng.uniform(0.5, 0.85)
+        dc.line([(c, c - size * 0.1), (c + math.cos(a) * r, c + math.sin(a) * r)], fill=(80, 70, 52, 255), width=max(2, size // 200))
+    leaves = []
+    for _ in range(240):
+        a = rng.uniform(0, 2 * math.pi)
+        rr = radius * math.sqrt(rng.uniform(0, 1))
+        leaves.append((rr / radius, c + math.cos(a) * rr, c + math.sin(a) * rr, a))
+    leaves.sort()
+    for depth, x, y, a in leaves:
+        length = size * rng.uniform(0.1, 0.14)
+        width = length * rng.uniform(0.17, 0.23)
+        # pointing outwards and down
+        dx = math.cos(a) * 0.6 + rng.gauss(0, 0.35)
+        dy = math.sin(a) * 0.6 + 0.65 + rng.gauss(0, 0.35)
+        ang = math.atan2(dy, dx)
+        shade = max(0.45, min(1.0, 0.58 + 0.4 * depth + rng.uniform(-0.08, 0.08)))
+        if rng.random() < 0.34:
+            colour = (min(1, shade * 0.9 + 0.16), min(1, shade * 0.95 + 0.16), min(1, shade + 0.15))
+        else:
+            colour = (shade, shade, shade * 0.95)
+        tx = math.cos(a) * depth * 0.5 + rng.uniform(-0.3, 0.3)
+        ty = -math.sin(a) * depth * 0.5 + rng.uniform(-0.3, 0.3)
+        ca, sa = math.cos(ang), math.sin(ang)
+        ax, ay = -sa, -ca
+        for k, half in enumerate(leaf_halves(x, y, length, width, ang)):
+            s = 1 if k == 0 else -1
+            dc.polygon(half, fill=rgb255(colour))
+            dn.polygon(half, fill=normal_rgb((tx + ax * 0.3 * s, ty + ay * 0.3 * s, 1.0)))
+        dc.line([(x - ca * length * 0.42, y - sa * length * 0.42), (x + ca * length * 0.42, y + sa * length * 0.42)],
+                fill=rgb255(tuple(v * 0.8 for v in colour)), width=max(1, size // 520))
+    return col, nrm
+
+
+LEAF_CELLS = ["oval", "oval", "small", "small", "fir", "fir", "maple", "maple", "pine", "pine_short", "willow", "willow"]
 
 
 def make_leaves():
-    """2 x 4 cells: oval leaves, small leaves, fir branches, maple leaves (two of each)."""
+    """2 x 6 cells: oval leaves, small leaves, fir branches, maple leaves (two of each), long and short pine needles,
+    willow leaves (two)."""
     cell = 512
     rows = len(LEAF_CELLS) // 2
     bigc = Image.new("RGBA", (2 * cell * SS, rows * cell * SS), (0, 0, 0, 0))
     bign = Image.new("RGBA", (2 * cell * SS, rows * cell * SS), (128, 128, 255, 0))
     rng = random.Random(7)
     for k, kind in enumerate(LEAF_CELLS):
-        c, n = fir_branch(rng, cell * SS) if kind == "fir" else leaf_cluster(rng, cell * SS, kind)
+        if kind == "fir":
+            c, n = fir_branch(rng, cell * SS)
+        elif kind in ("pine", "pine_short"):
+            c, n = pine_tufts(rng, cell * SS, kind == "pine_short")
+        elif kind == "willow":
+            c, n = willow_cluster(rng, cell * SS)
+        else:
+            c, n = leaf_cluster(rng, cell * SS, kind)
         pos = ((k % 2) * cell * SS, (k // 2) * cell * SS)
         bigc.paste(c, pos, c)
         bign.paste(n, pos, n)

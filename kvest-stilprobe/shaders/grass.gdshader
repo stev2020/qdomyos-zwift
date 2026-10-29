@@ -1,5 +1,5 @@
 // Grass clumps: six crossing cards with a painted grass texture (12 triangles per clump).
-// INSTANCE_CUSTOM: x = atlas cell (0..5), y = brightness, z = random phase, w = dryness.
+// INSTANCE_CUSTOM: x = atlas cell (0..7, see tools/make_textures.py), y = brightness, z = random phase, w = dryness.
 shader_type spatial;
 render_mode cull_disabled, world_vertex_coords, diffuse_lambert_wrap;
 
@@ -25,7 +25,7 @@ void vertex() {
 	float col = mod(cell, 2.0);
 	float row = floor(cell / 2.0 + 0.01);
 	// each cell is 256 rows high, the grass is painted in the upper 240
-	UV = vec2(UV.x * 0.5 + col * 0.5, (UV.y * (240.0 / 256.0) + row) / 3.0);
+	UV = vec2(UV.x * 0.5 + col * 0.5, (UV.y * (240.0 / 256.0) + row) / 4.0);
 
 	float dist = distance(root, CAMERA_POSITION_WORLD);
 	float fade = 1.0 - smoothstep(fade_start, fade_end, dist);
