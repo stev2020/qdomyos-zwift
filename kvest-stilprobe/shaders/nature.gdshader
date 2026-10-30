@@ -25,6 +25,14 @@ uniform float view_side = 264.0;
 uniform vec3 haze : source_color = vec3(0.74, 0.82, 0.88);
 // how far the leaves move away from the sun in its shadow pass (metres)
 uniform float leaf_push = 0.35;
+// how much darker a crown gets towards its inside: exponent on the shade the leaf cards carry in COLOR.r (kit.gd).
+// 1 keeps the shade as built; the light mood sets it (LOOKS in main.gd).
+uniform float crown_depth = 1.0;
+// how much sun shines through the leaves from behind (the light mood)
+uniform float leaf_glow = 0.32;
+// how far the light wraps around a crown (ROUGHNESS with diffuse_lambert_wrap): high is soft and flat, low gives a
+// crown a sunlit side and a shaded side (the light mood)
+uniform float leaf_wrap = 0.85;
 // the mip level of the leaves in the sun's shadow pass, about that of the coarse shadow map
 const float SHADOW_LOD = 5.0;
 // +1: these models come in, -1: they go, 0: they stay; lod_mix: how far the change has come (0 .. 1)
@@ -58,7 +66,7 @@ void vertex() {
 	v_haze = max(smoothstep(view_ahead - 70.0, view_ahead - 5.0, eye.z - root.z),
 			smoothstep(view_side - 45.0, view_side - 5.0, abs(root.x - eye.x)));
 	v_leaf = COLOR.a;
-	v_col = COLOR.a > 0.5 ? INSTANCE_CUSTOM.rgb * COLOR.r : COLOR.rgb;
+	v_col = COLOR.a > 0.5 ? INSTANCE_CUSTOM.rgb * pow(max(COLOR.r, 0.0), crown_depth) : COLOR.rgb;
 	v_n = NORMAL;
 }
 
@@ -93,9 +101,9 @@ void fragment() {
 		float side_len = length(side);
 		side = side_len > 0.0001 ? side / side_len : vec3(1.0, 0.0, 0.0);
 		n = normalize(n + (side * relief.x + cross(n, side) * relief.y) * normal_strength);
-		BACKLIGHT = v_col * 0.32;
+		BACKLIGHT = v_col * leaf_glow;
 		SPECULAR = 0.12;
-		ROUGHNESS = 0.85;
+		ROUGHNESS = leaf_wrap;
 	} else {
 		// bark and rock: a smaller light wrap than the leaves, so the carved faces stand apart
 		SPECULAR = 0.15;

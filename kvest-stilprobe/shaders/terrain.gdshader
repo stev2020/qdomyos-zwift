@@ -37,6 +37,9 @@ uniform vec3 wood_floor[4] : source_color;
 // the band in which the grass clumps thin out, as in grass.gdshader
 uniform float grass_fade_start = 36.0;
 uniform float grass_fade_end = 57.0;
+// how dark the ground between the clumps is close to the rider (the light mood, LOOKS in main.gd); from 10 to 30 m it
+// goes back to the colour under, so it is gone long before the clumps thin out
+uniform float under_shade = 1.0;
 
 // width of the stream per landscape, as Land.STREAM_WIDTH
 const vec4 STREAM_WIDTH = vec4(1.0, 0.0, 1.6, 0.6);
@@ -102,7 +105,8 @@ void fragment() {
 	// between the clumps near the rider the ground is in their shade; it gives way as the clumps thin out
 	float cam_d = distance(wpos, CAMERA_POSITION_WORLD);
 	float near = 1.0 - clamp((cam_d - grass_fade_start) / (grass_fade_end - grass_fade_start), 0.0, 1.0);
-	col = mix(col, LAND(under) * (0.85 + 0.3 * n3), near * 0.6);
+	float deep = 1.0 - smoothstep(10.0, 30.0, cam_d);
+	col = mix(col, LAND(under) * (0.85 + 0.3 * n3) * mix(1.0, under_shade, deep), near * 0.6);
 	// where the clumps have sunk into the ground, a fine mottle of light tips and dark gaps stands in for them; far
 	// away it fades, as the clumps would
 	float clumps = texture(patch_fine, np / 4.0).r;

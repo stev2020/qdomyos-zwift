@@ -10,6 +10,8 @@ uniform vec3 cloud_shade : source_color = vec3(0.64, 0.70, 0.80);
 uniform sampler2D cloud_noise : filter_linear_mipmap, repeat_enable;
 uniform float cloud_cover = 0.52;
 uniform float sun_glow = 0.25;
+// brightness of the whole sky (the light mood): the sky stays bright when the exposure of the picture goes down
+uniform float sky_energy = 1.0;
 
 void sky() {
 	vec3 d = EYEDIR;
@@ -31,5 +33,5 @@ void sky() {
 	if (!AT_CUBEMAP_PASS) {
 		col += LIGHT0_COLOR * smoothstep(0.99935, 0.9996, sd) * 6.0;
 	}
-	COLOR = col;
+	COLOR = col * sky_energy;
 }

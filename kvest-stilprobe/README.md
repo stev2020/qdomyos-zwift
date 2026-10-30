@@ -11,6 +11,11 @@ APK: https://github.com/stev2020/qdomyos-zwift/releases/download/kvest-stilprobe
 - **Qualität:** Auto, Hoch, Mittel, Niedrig. Sie ändern die Dichte des Grases, die Sichtweite, die Schatten, den Kies auf dem Weg und die Auflösung. „Auto“ schaltet herunter, wenn weniger als 27 Bilder pro Sekunde gelingen.
 - **Licht:** Sommertag oder Abendsonne.
 - **Landschaft:** „Wechsel“ fährt durch alle Landschaften, jede 4 km lang: Laubland, Heide, Laubland, Flusstal, Hochland, Flusstal. Oder eine Landschaft bleibt fest. Nach dem Umschalten wird die Welt neu aufgebaut.
+- **Licht-Regler:** öffnet links eine Leiste mit Reglern für die Lichtstimmung: Sonne und ihre Wärme, Licht im Schatten, Schattendichte, Belichtung, Himmel, Sättigung, Kontrast, Dunst, Leuchten, Gras unten, Boden zwischen dem Gras und die Kronen. Die Werte gelten sofort und nur bis zum nächsten Start.
+  - „Vorher zeigen“ schaltet auf die Stimmung vor der Runde zu Licht und Farbe (30. Oktober) und zurück.
+  - „Zurück“ setzt die Regler auf die gespeicherte Stimmung.
+  - „Tonemapper“ wechselt zwischen Filmic und AgX.
+  - „Werte kopieren“ legt alle Werte als Text in die Zwischenablage, zum Zurückschicken.
 
 ## Die Landschaften
 

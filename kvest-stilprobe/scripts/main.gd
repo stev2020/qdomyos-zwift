@@ -33,6 +33,52 @@ const GROUND := {
 }
 ## Height of the far hills and mountains per landscape: low over the heath, high around the valley and the highland.
 const BACKDROP_SCALE := [1.0, 0.6, 1.45, 1.8]
+## The light moods. "tag" and "abend" are the moods of the ride; "tag_vorher" and "abend_vorher" are the moods before the
+## round on light and colour of 30 October (compare with the button in the light panel, see Hud).
+## sun_rot, sun_color, sun: direction, colour and energy of the sun; zenith .. sun_glow: the sky (sky.gdshader);
+## fog_color and scatter: colour of the haze and how much it glows towards the sun; haze: factor on the fog density of
+## the quality level; ambient: light from the sky in the shade (it grows with sky_energy, the sky lights the shade);
+## shadow: how dark the shadows are (1: the sun is fully gone); exposure, saturation, contrast and tonemap ("filmic" or
+## "agx"): the picture as a whole; sky_energy: brightness of the sky, so it stays bright when the exposure goes down;
+## glow: the glow around bright light; foot: how dark the grass is at its foot near the rider; ground: how dark the
+## ground between the clumps is near the rider; crown: how much darker a crown gets towards its inside (exponent on the
+## shade of the leaf cards, 1: as built in kit.gd); leaf_glow: how much sun shines through the leaves from behind;
+## leaf_wrap: how far the light wraps around a crown (low: a sunlit and a shaded side).
+## The values of tag and abend were set against stills of the Meadowfell trailer (vidboard), see docs/landschaften.md.
+const LOOKS := {
+	"tag": {
+		"sun_rot": Vector3(-38.0, 158.0, 0.0), "sun_color": Color(1.0, 0.88, 0.68), "sun": 3.2,
+		"zenith": Color(0.36, 0.55, 0.86), "horizon": Color(0.90, 0.89, 0.86), "cloud_lit": Color(1.0, 0.98, 0.95),
+		"cloud_shade": Color(0.64, 0.70, 0.80), "sun_glow": 0.35, "fog_color": Color(0.80, 0.84, 0.90), "scatter": 0.35,
+		"ambient": 0.15, "glow": 0.6, "shadow": 1.0, "saturation": 1.12, "contrast": 1.2, "tonemap": "filmic",
+		"exposure": 0.6, "sky_energy": 1.6, "haze": 1.1,
+		"foot": 0.25, "ground": 0.5, "crown": 2.5, "leaf_glow": 0.25, "leaf_wrap": 0.45,
+	},
+	"abend": {
+		"sun_rot": Vector3(-11.0, 163.0, 0.0), "sun_color": Color(1.0, 0.70, 0.42), "sun": 3.6,
+		"zenith": Color(0.40, 0.53, 0.76), "horizon": Color(1.0, 0.85, 0.64), "cloud_lit": Color(1.0, 0.88, 0.70),
+		"cloud_shade": Color(0.70, 0.64, 0.68), "sun_glow": 0.75, "fog_color": Color(0.98, 0.80, 0.60), "scatter": 0.6,
+		"ambient": 0.22, "glow": 1.1, "shadow": 1.0, "saturation": 1.0, "contrast": 1.15, "tonemap": "filmic",
+		"exposure": 0.65, "sky_energy": 1.5, "haze": 1.1,
+		"foot": 0.25, "ground": 0.5, "crown": 2.5, "leaf_glow": 0.25, "leaf_wrap": 0.45,
+	},
+	"tag_vorher": {
+		"sun_rot": Vector3(-38.0, 158.0, 0.0), "sun_color": Color(1.0, 0.95, 0.86), "sun": 1.7,
+		"zenith": Color(0.30, 0.52, 0.88), "horizon": Color(0.80, 0.87, 0.93), "cloud_lit": Color(1.0, 0.98, 0.95),
+		"cloud_shade": Color(0.64, 0.70, 0.80), "sun_glow": 0.25, "fog_color": Color(0.74, 0.82, 0.88), "scatter": 0.15,
+		"ambient": 0.82, "glow": 0.6, "shadow": 0.78, "saturation": 1.15, "contrast": 1.08, "tonemap": "filmic",
+		"exposure": 1.0, "sky_energy": 1.0, "haze": 1.0,
+		"foot": 0.8, "ground": 1.0, "crown": 1.0, "leaf_glow": 0.32, "leaf_wrap": 0.85,
+	},
+	"abend_vorher": {
+		"sun_rot": Vector3(-11.0, 163.0, 0.0), "sun_color": Color(1.0, 0.72, 0.45), "sun": 1.75,
+		"zenith": Color(0.40, 0.53, 0.76), "horizon": Color(1.0, 0.85, 0.64), "cloud_lit": Color(1.0, 0.88, 0.70),
+		"cloud_shade": Color(0.70, 0.64, 0.68), "sun_glow": 0.55, "fog_color": Color(0.96, 0.80, 0.62), "scatter": 0.45,
+		"ambient": 0.7, "glow": 0.95, "shadow": 0.78, "saturation": 1.15, "contrast": 1.08, "tonemap": "filmic",
+		"exposure": 1.0, "sky_energy": 1.0, "haze": 1.0,
+		"foot": 0.8, "ground": 1.0, "crown": 1.0, "leaf_glow": 0.32, "leaf_wrap": 0.85,
+	},
+}
 
 var world: World
 var rider := Rider.new()
@@ -49,6 +95,10 @@ var mats := {}
 var quality := "auto"
 var level := 0
 var light := "tag"
+## the current light mood (a copy from LOOKS, changed by the light panel) and whether the mood before the round on
+## light and colour is shown
+var look := {}
+var look_vorher := false
 var land := -1
 var demo_kmh := 20.0
 var _gfx := ""
@@ -93,6 +143,11 @@ func _ready() -> void:
 	hud.light_pressed.connect(_on_light)
 	hud.land_pressed.connect(_on_land)
 	hud.demo_step.connect(func(d): demo_kmh = clampf(demo_kmh + d, 4.0, 60.0))
+	hud.look_changed.connect(_on_look_changed)
+	hud.look_compare.connect(_on_look_compare)
+	hud.look_reset.connect(_apply_light)
+	hud.look_tonemap.connect(_on_look_tonemap)
+	hud.look_copy.connect(_copy_look)
 	var drivers := {"vulkan": "Vulkan", "opengl3": "OpenGL", "opengl3_es": "OpenGL ES"}
 	var driver := RenderingServer.get_current_rendering_driver_name()
 	_gfx = "%s · %s" % [drivers.get(driver, driver), RenderingServer.get_video_adapter_name()]
@@ -256,7 +311,7 @@ func _make_environment() -> void:
 	env.ambient_light_source = Environment.AMBIENT_SOURCE_SKY
 	env.ambient_light_sky_contribution = 1.0
 	env.reflected_light_source = Environment.REFLECTION_SOURCE_SKY
-	env.tonemap_mode = Environment.TONE_MAPPER_FILMIC
+	# tone mapper, exposure, ambient light and the colour adjustment come with the light mood (LOOKS)
 	env.tonemap_white = 6.0
 	env.glow_enabled = true
 	env.glow_normalized = false
@@ -268,8 +323,6 @@ func _make_environment() -> void:
 	env.fog_aerial_perspective = 0.35
 	env.fog_sky_affect = 0.0
 	env.adjustment_enabled = true
-	env.adjustment_saturation = 1.15
-	env.adjustment_contrast = 1.08
 	var we := WorldEnvironment.new()
 	we.environment = env
 	add_child(we)
@@ -286,45 +339,76 @@ func _make_environment() -> void:
 	# a small blur: the soft filter takes only four samples, turned from pixel to pixel, and over a wide edge in the
 	# fine map they showed as a fine grid on the ground. Godot scales the bias with the blur, so it is higher.
 	sun.shadow_blur = 0.75
-	# summer shade is full of light from the sky: shadows are never black
-	sun.shadow_opacity = 0.78
+	# how dark the shadows get comes with the light mood (LOOKS)
 	sun.shadow_bias = 0.18
 	sun.shadow_normal_bias = 0.5
 	add_child(sun)
 
 
+## Takes the mood of the light (or the mood before the round on light and colour) as the current look.
 func _apply_light() -> void:
-	if light == "abend":
-		sun.rotation_degrees = Vector3(-11.0, 163.0, 0.0)
-		sun.light_color = Color(1.0, 0.72, 0.45)
-		sun.light_energy = 1.75
-		sky_mat.set_shader_parameter("zenith", Color(0.40, 0.53, 0.76))
-		sky_mat.set_shader_parameter("horizon", Color(1.0, 0.85, 0.64))
-		sky_mat.set_shader_parameter("cloud_lit", Color(1.0, 0.88, 0.70))
-		sky_mat.set_shader_parameter("cloud_shade", Color(0.70, 0.64, 0.68))
-		sky_mat.set_shader_parameter("sun_glow", 0.55)
-		env.fog_light_color = Color(0.96, 0.80, 0.62)
-		env.fog_sun_scatter = 0.45
-		env.ambient_light_energy = 0.7
-		env.glow_intensity = 0.95
-	else:
-		sun.rotation_degrees = Vector3(-38.0, 158.0, 0.0)
-		sun.light_color = Color(1.0, 0.95, 0.86)
-		sun.light_energy = 1.7
-		sky_mat.set_shader_parameter("zenith", Color(0.30, 0.52, 0.88))
-		sky_mat.set_shader_parameter("horizon", Color(0.80, 0.87, 0.93))
-		sky_mat.set_shader_parameter("cloud_lit", Color(1.0, 0.98, 0.95))
-		sky_mat.set_shader_parameter("cloud_shade", Color(0.64, 0.70, 0.80))
-		sky_mat.set_shader_parameter("sun_glow", 0.25)
-		env.fog_light_color = Color(0.74, 0.82, 0.88)
-		env.fog_sun_scatter = 0.15
-		env.ambient_light_energy = 0.82
-		env.glow_intensity = 0.6
+	look = LOOKS[light + ("_vorher" if look_vorher else "")].duplicate()
+	look["warmth"] = 1.0
+	_apply_look()
+
+
+func _on_look_compare() -> void:
+	look_vorher = not look_vorher
+	_apply_light()
+
+
+func _on_look_tonemap() -> void:
+	look["tonemap"] = "filmic" if look["tonemap"] == "agx" else "agx"
+	_apply_look()
+
+
+func _on_look_changed(key: String, value: float) -> void:
+	look[key] = value
+	_apply_look()
+
+
+## Copies the current light mood as text, to send it back: "Licht Sommertag: sun 2,80 · ambient 0,25 · ...".
+func _copy_look() -> void:
+	var parts: Array[String] = []
+	for entry in Hud.LOOK_SLIDERS:
+		parts.append("%s %s" % [entry[0], ("%.2f" % look[entry[0]]).replace(".", ",")])
+	parts.append("tonemap " + look["tonemap"])
+	var title := "Licht %s%s: " % ["Abendsonne" if light == "abend" else "Sommertag", " (vorher)" if look_vorher else ""]
+	DisplayServer.clipboard_set(title + " · ".join(parts))
+
+
+## Sets sun, sky, haze and colour from the current look. The light panel changes single values and calls this again.
+func _apply_look() -> void:
+	sun.rotation_degrees = look["sun_rot"]
+	# warmth 1 is the colour of the mood; 0 is white light, 2 twice as far from white
+	var warm: Color = Color.WHITE.lerp(look["sun_color"], look["warmth"])
+	sun.light_color = Color(maxf(warm.r, 0.0), maxf(warm.g, 0.0), maxf(warm.b, 0.0))
+	sun.light_energy = look["sun"]
+	sun.shadow_opacity = look["shadow"]
+	for key in ["zenith", "horizon", "cloud_lit", "cloud_shade", "sun_glow", "sky_energy"]:
+		sky_mat.set_shader_parameter(key, look[key])
+	env.fog_light_color = look["fog_color"]
+	env.fog_sun_scatter = look["scatter"]
+	env.fog_density = LEVELS[level]["fog"] * look["haze"]
+	env.ambient_light_energy = look["ambient"]
+	env.glow_intensity = look["glow"]
+	env.adjustment_saturation = look["saturation"]
+	env.adjustment_contrast = look["contrast"]
+	env.tonemap_exposure = look["exposure"]
+	env.tonemap_mode = Environment.TONE_MAPPER_AGX if look["tonemap"] == "agx" else Environment.TONE_MAPPER_FILMIC
+	mats["grass"].set_shader_parameter("foot_shade", look["foot"])
+	mats["nature"].set_shader_parameter("crown_depth", look["crown"])
+	mats["nature"].set_shader_parameter("leaf_glow", look["leaf_glow"])
+	mats["nature"].set_shader_parameter("leaf_wrap", look["leaf_wrap"])
+	mats["terrain"].set_shader_parameter("under_shade", look["ground"])
 	if backdrop != null:
 		for child in backdrop.get_children():
 			child.material_override.set_shader_parameter("haze", env.fog_light_color)
 	# at the end of the land the trees fade into the same haze
 	mats["nature"].set_shader_parameter("haze", env.fog_light_color)
+	if hud != null:
+		var title := "Licht: %s%s" % ["Abendsonne" if light == "abend" else "Sommertag", " (vorher)" if look_vorher else ""]
+		hud.show_look(look, title, look_vorher)
 
 
 func _apply_level(l: int) -> void:
@@ -335,7 +419,7 @@ func _apply_level(l: int) -> void:
 	vp.scaling_3d_scale = p["scale"]
 	vp.msaa_3d = p["msaa"]
 	sun.shadow_enabled = p["shadows"]
-	env.fog_density = p["fog"]
+	env.fog_density = p["fog"] * (look["haze"] if look.has("haze") else 1.0)
 	mats["nature"].set_shader_parameter("view_ahead", p["ahead"])
 	mats["nature"].set_shader_parameter("view_side", p["side"])
 	# the grass thins out between 70 % and 110 % of fade, the far clumps between 170 % and 220 % (grass.gdshader)

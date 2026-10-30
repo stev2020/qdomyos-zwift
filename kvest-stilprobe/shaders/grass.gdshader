@@ -23,6 +23,9 @@ uniform float far_grow = 1.5;
 uniform vec2 wind_dir = vec2(0.8, 0.6);
 uniform float wind_strength = 1.0;
 uniform vec3 dry_tint : source_color = vec3(1.0, 0.9, 0.62);
+// how dark a clump is at its foot near the rider (the light mood, LOOKS in main.gd). From 15 to 40 m it goes back to 0.8,
+// the value the colours of the ground beyond the grass were measured with (terrain.gdshader), so no edge shows there.
+uniform float foot_shade = 0.8;
 
 // the mean colour of the lower and the upper half of each picture in the atlas, linear (from textures/grass.png)
 const vec3 FAR_LOW[8] = { vec3(0.116, 0.175, 0.023), vec3(0.134, 0.185, 0.027), vec3(0.151, 0.228, 0.028), vec3(0.160, 0.225, 0.047), vec3(0.183, 0.163, 0.138), vec3(0.046, 0.100, 0.020), vec3(0.092, 0.068, 0.065), vec3(0.181, 0.206, 0.056) };
@@ -101,7 +104,9 @@ void fragment() {
 	// flowers would only flicker there, while the colours of the clumps next to each other still make the meadow
 	vec3 even = mix(v_far_low, v_far_top, smoothstep(0.2, 0.8, v_h));
 	vec3 c = mix(t.rgb, even, smoothstep(15.0, 40.0, v_dist));
-	c *= v_tint * (1.0 + v_gust * v_h * 0.18) * mix(0.8, 1.0, smoothstep(0.0, 0.5, v_h));
+	float near = 1.0 - smoothstep(15.0, 40.0, v_dist);
+	float foot = mix(0.8, foot_shade, near);
+	c *= v_tint * (1.0 + v_gust * v_h * 0.18) * mix(foot, 1.0, smoothstep(0.0, 0.5, v_h));
 	ALBEDO = c;
 	// every card is lit like the meadow under it, also from behind: there the normal would point down, and the
 	// Adreno 740 (Galaxy Tab S9) draws such blades black
@@ -109,6 +114,6 @@ void fragment() {
 	BACKLIGHT = c * 0.35 * v_h;
 	ROUGHNESS = 0.9;
 	SPECULAR = 0.15;
-	AO = mix(0.78, 1.0, v_h);
+	AO = mix(mix(0.78, foot_shade, near), 1.0, v_h);
 	AO_LIGHT_AFFECT = 0.35;
 }
