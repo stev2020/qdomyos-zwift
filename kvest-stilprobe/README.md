@@ -55,4 +55,6 @@ Am Rechner reicht der Godot-Editor 4.7: Ordner öffnen und starten. Vorschaubild
 godot --path . -- --capture <Ordner> --at 0,400,900 [--light abend] [--quality mittel] [--land laub|heide|fluss|hoch]
 godot --path . -- --capture <Ordner> --gallery sommer      (alle Pflanzen nebeneinander, auch: herbst)
 godot --headless --path . -s res://tools/steigungen.gd     (Steigungen je Landschaft)
+godot --headless --path . -s res://tools/pruefen.gd        (prüft Land über 50 km: Anteile, Höhen, Wasser unter dem Weg)
+godot --path . -s res://tools/umschalten.gd                (fährt, schaltet Landschaft und Qualität durch, prüft die Bäume)
 ```
