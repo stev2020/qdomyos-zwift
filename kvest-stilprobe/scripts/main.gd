@@ -283,10 +283,12 @@ func _make_environment() -> void:
 	sun.directional_shadow_mode = DirectionalLight3D.SHADOW_PARALLEL_2_SPLITS
 	sun.directional_shadow_split_1 = 0.3
 	sun.directional_shadow_max_distance = 70.0
-	sun.shadow_blur = 2.2
+	# a small blur: the soft filter takes only four samples, turned from pixel to pixel, and over a wide edge in the
+	# fine map they showed as a fine grid on the ground. Godot scales the bias with the blur, so it is higher.
+	sun.shadow_blur = 0.75
 	# summer shade is full of light from the sky: shadows are never black
 	sun.shadow_opacity = 0.78
-	sun.shadow_bias = 0.06
+	sun.shadow_bias = 0.18
 	sun.shadow_normal_bias = 0.5
 	add_child(sun)
 
