@@ -10,7 +10,7 @@ extends Node3D
 const SHIFT := 1024.0
 ## gravel_range: up to which distance the biggest pebbles on the path are drawn; smaller ones less far (0: none).
 const LEVELS := [
-	{"name": "Hoch", "density": 1.0, "fade": 52.0, "ahead": 528.0, "side": 264.0, "tree_lod": 170.0, "shadows": true, "scale": 0.85, "msaa": Viewport.MSAA_2X, "pollen": true, "fog": 0.0019, "gravel_range": 46.0},
+	{"name": "Hoch", "density": 1.0, "fade": 52.0, "ahead": 528.0, "side": 264.0, "tree_lod": 150.0, "shadows": true, "scale": 0.85, "msaa": Viewport.MSAA_2X, "pollen": true, "fog": 0.0019, "gravel_range": 46.0},
 	{"name": "Mittel", "density": 0.6, "fade": 44.0, "ahead": 432.0, "side": 216.0, "tree_lod": 130.0, "shadows": true, "scale": 0.75, "msaa": Viewport.MSAA_2X, "pollen": true, "fog": 0.0024, "gravel_range": 34.0},
 	{"name": "Niedrig", "density": 0.35, "fade": 34.0, "ahead": 336.0, "side": 168.0, "tree_lod": 95.0, "shadows": false, "scale": 0.65, "msaa": Viewport.MSAA_DISABLED, "pollen": false, "fog": 0.0034, "gravel_range": 0.0},
 ]
@@ -315,6 +315,8 @@ func _apply_light() -> void:
 	if backdrop != null:
 		for child in backdrop.get_children():
 			child.material_override.set_shader_parameter("haze", env.fog_light_color)
+	# at the end of the land the trees fade into the same haze
+	mats["nature"].set_shader_parameter("haze", env.fog_light_color)
 
 
 func _apply_level(l: int) -> void:
@@ -326,6 +328,8 @@ func _apply_level(l: int) -> void:
 	vp.msaa_3d = p["msaa"]
 	sun.shadow_enabled = p["shadows"]
 	env.fog_density = p["fog"]
+	mats["nature"].set_shader_parameter("view_ahead", p["ahead"])
+	mats["nature"].set_shader_parameter("view_side", p["side"])
 	# the grass thins out between 70 % and 110 % of fade, the far clumps between 170 % and 220 % (grass.gdshader)
 	mats["grass"].set_shader_parameter("fade_start", p["fade"] * 0.7)
 	mats["grass"].set_shader_parameter("fade_end", p["fade"] * 1.1)
@@ -490,6 +494,8 @@ func _place_extras() -> void:
 		s += w[k] * BACKDROP_SCALE[k]
 	backdrop.scale = Vector3(1.0, s, 1.0)
 	pollen.global_position = p + cam.global_transform.basis.z * -6.0
+	# trees, rocks and roots measure their distance to the rider's eye, also in the shadow pass (nature.gdshader)
+	mats["nature"].set_shader_parameter("eye", p)
 
 
 func _process(dt: float) -> void:
@@ -580,6 +586,7 @@ func _capture_tick() -> void:
 		_place_extras()
 		world.update(rider.u, Land.path_x(rider.u), 0)
 		world.wait_idle()
+		world.settle_lods()
 		_capture_wait = 8
 		return
 	_capture_wait -= 1

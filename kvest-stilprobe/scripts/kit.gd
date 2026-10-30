@@ -309,7 +309,7 @@ static func broadleaf(kind: int, seed_value: int, low: bool, material: Material)
 		var count := 2 if low else int(sp["per"])
 		for k in count:
 			var off := Vector3(rng.randf_range(-1, 1), rng.randf_range(-0.8, 1), rng.randf_range(-1, 1)).limit_length(1.0)
-			var size: float = float(sp["size"]) * (1.55 if low else 1.0) * rng.randf_range(0.85, 1.15) * scale
+			var size: float = float(sp["size"]) * (1.7 if low else 1.0) * rng.randf_range(0.85, 1.15) * scale
 			b.cluster(lc + off * lr * 0.7, size, rng, crown_c, crown_r, 2 if low else 3, cells)
 		# willows: upright cards that hang below the outer sub-crowns, like curtains of twigs
 		for hk in (0 if low else int(sp.get("hang", 0))):
@@ -378,12 +378,14 @@ static func conifer(kind: int, seed_value: int, low: bool, material: Material) -
 	var bark := Color(0.17, 0.078, 0.04, 0.0) if spruce else Color(0.16, 0.135, 0.1, 0.0)
 	b.bark([Vector3(0, -0.5, 0), Vector3(0, 0.0, 0), Vector3(0, 0.45, 0), Vector3(0, h * 0.5, 0), Vector3(0, h * 0.97, 0)],
 		[0.4, 0.38, 0.29, 0.17, 0.05], 5 if low else 7, bark, 0.0, 0.3, brng, 0.12, 0.3)
-	var layers := (7 if low else 13) if spruce else (6 if low else 11)
+	# the version for the distance has fewer, longer branches, but enough of them for a closed cone like up close:
+	# a sparse one looked like a skeleton and popped up when the detailed model took over
+	var layers := (9 if low else 13) if spruce else (8 if low else 11)
 	for l in layers:
 		var t := float(l) / float(layers - 1)
 		var y := 1.3 + t * (h - 1.9)
 		var r := pow(1.0 - t, 0.9) * r0 + 0.5
-		var count := 4 if low else (7 if t < 0.5 else (6 if t < 0.8 else 5))
+		var count := 5 if low else (7 if t < 0.5 else (6 if t < 0.8 else 5))
 		var a0 := rng.randf() * TAU
 		for k in count:
 			var a := a0 + TAU * k / count + rng.randf_range(-0.25, 0.25)
@@ -397,8 +399,9 @@ static func conifer(kind: int, seed_value: int, low: bool, material: Material) -
 			var width := length * (0.58 if spruce else 0.66)
 			var shade := lerpf(0.72, 1.0, t)
 			var cell := 4 + rng.randi() % 2
-			# two cards along the branch, tilted against each other like a shallow V
-			for tilt in ([0.0] if low else [-0.55, 0.55]):
+			# two cards along the branch, tilted against each other like a shallow V; for the distance one card, turned
+			# up steeply, every other branch to the other side, so the cone looks closed from every side
+			for tilt in ([0.8 if k % 2 == 0 else -0.8] if low else [-0.55, 0.55]):
 				b.branch_card(p0, dir, side.rotated(dir, tilt), length, width, cell, r, shade, 0.3 + 0.7 * t)
 	var tip := Vector3(0, h * 0.97, 0)
 	for k in (2 if low else 3):
@@ -453,9 +456,9 @@ static func pine(seed_value: int, low: bool, material: Material) -> ArrayMesh:
 	b.bark(pts, radii, 5 if low else 7, PINE_BARK, 0.0, 0.3, brng, 0.2, 0.3, [], PINE_BARK_TOP, h * 0.3, h * 0.55)
 	var crown_c := Vector3(lean.x, h * 0.78, lean.z)
 	var crown_r := Vector3(4.2, 3.0, 4.2)
+	# the version for the distance keeps all pads (with only every second one it looked thin and popped up when the
+	# detailed model took over), each of two big clusters
 	for i in pads.size():
-		if low and i % 2 == 1:
-			continue
 		var pd: Array = pads[i]
 		var start := _on_trunk(pts, pd[0])
 		var end: Vector3 = start + (pd[1] as Vector3) * float(pd[2]) + Vector3(0.0, pd[3], 0.0)
@@ -465,7 +468,7 @@ static func pine(seed_value: int, low: bool, material: Material) -> ArrayMesh:
 		var pad: float = pd[4]
 		for k in (2 if low else 5):
 			var off := Vector3(rng.randf_range(-1, 1), rng.randf_range(-0.3, 0.4), rng.randf_range(-1, 1)).limit_length(1.0)
-			b.cluster(end + off * pad * 0.6, rng.randf_range(1.8, 2.3) * (1.5 if low else 1.0), rng, crown_c, crown_r, 2 if low else 3, [8])
+			b.cluster(end + off * pad * 0.6, rng.randf_range(1.8, 2.3) * (1.75 if low else 1.0), rng, crown_c, crown_r, 2 if low else 3, [8])
 	var top: Vector3 = pts[pts.size() - 1]
 	for k in (1 if low else 3):
 		var off := Vector3(rng.randf_range(-0.5, 0.5), rng.randf_range(-0.2, 0.4), rng.randf_range(-0.5, 0.5))

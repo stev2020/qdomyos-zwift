@@ -14,6 +14,8 @@ const PEBBLE_SHAPES := 3
 const ROOT_RANGE := 70.0         # roots across the path are drawn up to this distance
 const GRASS_TILE_REACH := 35.0   # from the middle of a tile to its farthest corner (Godot measures to the middle)
 const FAR_SHARE := 0.25          # the share of the clumps that goes on as far clumps (grass.gdshader)
+const LOD_FADE_TIME := 0.7       # seconds for the change between the detailed and the simple models of a block
+const LOD_MARGIN := 8.0          # metres beyond tree_lod before a block changes back, so it does not flip to and fro
 
 var origin_u := 0.0
 var view_ahead := 528.0
@@ -145,18 +147,62 @@ func set_quality(p: Dictionary) -> void:
 
 
 func _set_lod(mmi: GeometryInstance3D) -> void:
-	if mmi.has_meta("rock"):
-		mmi.visibility_range_end = tree_lod
+	if mmi.has_meta("rock") or mmi.has_meta("low"):
 		mmi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 	elif mmi.has_meta("root"):
-		mmi.visibility_range_end = minf(tree_lod, ROOT_RANGE)
+		# up to the farthest root in the box; each root sinks into the ground before ROOT_RANGE (nature.gdshader)
+		mmi.visibility_range_end = minf(tree_lod, ROOT_RANGE) + float(mmi.get_meta("reach"))
 		mmi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_ON if shadows else GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
-	elif mmi.has_meta("low"):
-		mmi.visibility_range_begin = tree_lod
-		mmi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 	else:
-		mmi.visibility_range_end = tree_lod
 		mmi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_ON if shadows else GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+
+
+## Each block shows its detailed models (and rocks) near the rider and its simple ones further away; the change takes
+## LOD_FADE_TIME in a fine dissolve (nature.gdshader), so no group of trees pops up. Godot's visibility ranges would
+## switch at once, and measured to the middle of the block.
+func _fade_lods() -> void:
+	var dt := clampf(get_process_delta_time(), 0.0, 0.2)
+	for key in blocks:
+		var b: Dictionary = blocks[key]
+		if not b.has("near"):
+			continue
+		var dx: float = (key.x + 0.5) * BLOCK * T - _cam_x
+		var du: float = (key.y + 0.5) * T - _cam_u
+		var d := sqrt(dx * dx + du * du)
+		var lod: int = b["lod"]
+		if (lod == 0 and d > tree_lod + LOD_MARGIN) or (lod == 1 and d < tree_lod - LOD_MARGIN):
+			b["lod"] = 1 - lod
+			# a change that turns back in the middle goes on from where it was
+			b["mix"] = 1.0 - b["mix"]
+		elif b["mix"] >= 1.0:
+			continue
+		else:
+			b["mix"] = minf(1.0, b["mix"] + dt / LOD_FADE_TIME)
+		_show_lods(b)
+
+
+## Ends all changes at once (previews: they jump from place to place).
+func settle_lods() -> void:
+	_fade_lods()
+	for key in blocks:
+		var b: Dictionary = blocks[key]
+		if b.has("near") and b["mix"] < 1.0:
+			b["mix"] = 1.0
+			_show_lods(b)
+
+
+## Shows the models of a block for its lod and how far its change has come.
+func _show_lods(b: Dictionary) -> void:
+	var mix: float = b["mix"]
+	var lists := [b["near"], b["far"]] if b["lod"] == 0 else [b["far"], b["near"]]
+	for k in 2:
+		for mmi in lists[k]:
+			if not is_instance_valid(mmi):
+				continue
+			# k = 0: the models of the lod come in, k = 1: the others go
+			mmi.visible = k == 0 or mix < 1.0
+			mmi.set_instance_shader_parameter("lod_role", 0.0 if mix >= 1.0 else (1.0 if k == 0 else -1.0))
+			mmi.set_instance_shader_parameter("lod_mix", mix)
 
 
 func shift_origin(d: float) -> void:
@@ -218,6 +264,7 @@ func update(cam_u: float, cam_x: float, max_apply: int) -> void:
 	_apply(max_apply)
 	_show_pebbles()
 	_thin_grass()
+	_fade_lods()
 
 
 ## In tiles that lie wholly beyond the end of the near grass only the far clumps are drawn: they come first in the list
@@ -401,32 +448,54 @@ func _apply_trees(res: Dictionary) -> void:
 		return
 	var node := _node_for(blocks, key, Vector3(key.x * BLOCK * T, 0.0, -(key.y * T - origin_u)))
 	var aabb := AABB(Vector3(-8, res["hmin"] - 2.0, -T - 8), Vector3(BLOCK * T + 16, res["hmax"] - res["hmin"] + 22.0, T + 16))
+	var b: Dictionary = blocks[key]
+	b["near"] = []
+	b["far"] = []
 	for kind in Kit.COUNT:
 		var buf: PackedFloat32Array = res["bufs"][kind]
 		if not buf.is_empty():
-			_add_models(node, kind, buf, aabb)
+			_add_models(node, kind, buf, aabb, b)
+	var dx := (key.x + 0.5) * BLOCK * T - _cam_x
+	var du := (key.y + 0.5) * T - _cam_u
+	b["lod"] = 0 if sqrt(dx * dx + du * du) < tree_lod else 1
+	b["mix"] = 1.0
+	_show_lods(b)
 
 
 ## Trees, rocks, trunks or roots of one kind: the detailed models near the rider, the simple ones further away (rocks
 ## and roots have only one).
-func _add_models(node: Node3D, kind: int, buf: PackedFloat32Array, aabb: AABB) -> void:
+func _add_models(node: Node3D, kind: int, buf: PackedFloat32Array, aabb: AABB, b: Dictionary) -> void:
 	var high := MultiMeshInstance3D.new()
+	if kind == Kit.ROOT:
+		# Godot measures the range to the middle of the box: for the roots that is a box around them on the path, not
+		# the whole block, else they came up only a few metres ahead or not at all
+		var lo := Vector3(INF, INF, INF)
+		var hi := -lo
+		for i in buf.size() / FLOATS:
+			var o := Vector3(buf[i * FLOATS + 3], buf[i * FLOATS + 7], buf[i * FLOATS + 11])
+			lo = lo.min(o)
+			hi = hi.max(o)
+		aabb = AABB(lo - Vector3(3.5, 0.8, 3.5), hi - lo + Vector3(7.0, 1.6, 7.0))
+		high.set_meta("root", true)
+		high.set_meta("reach", Vector2(aabb.size.x, aabb.size.z).length() * 0.5)
 	high.multimesh = _multimesh(protos[kind]["high"], buf, aabb)
-	high.visibility_range_end_margin = 8.0
 	if kind >= Kit.ROCK_A:
 		high.set_meta("rock", true)
-	elif kind == Kit.ROOT:
-		high.set_meta("root", true)
 	node.add_child(high)
 	_set_lod(high)
-	if kind >= Kit.ROCK_A or kind == Kit.ROOT:
+	if kind == Kit.ROOT:
+		high.visibility_range_end_margin = 8.0
+		return
+	# rocks and the detailed models near the rider; rocks have no simple version and are gone in the distance
+	b["near"].append(high)
+	if kind >= Kit.ROCK_A:
 		return
 	var low := MultiMeshInstance3D.new()
 	low.set_meta("low", true)
 	low.multimesh = _multimesh(protos[kind]["low"], buf, aabb)
-	low.visibility_range_begin_margin = 8.0
 	node.add_child(low)
 	_set_lod(low)
+	b["far"].append(low)
 
 
 func _apply_water(res: Dictionary) -> void:
@@ -993,7 +1062,9 @@ static func _job_trees(key: Vector2i) -> Dictionary:
 				continue
 			hmin = minf(hmin, p.y)
 			hmax = maxf(hmax, p.y)
-			_put(bufs[t[0]], t[1], Vector3(p.x - x0, p.y, -(p.z - u0)), Color(1, 1, 1, 0))
+			# roots sink into the ground towards the end of their range instead of popping up (nature.gdshader)
+			var custom := Color(ROOT_RANGE - 15.0, ROOT_RANGE, -1.0, 0.0) if t[0] == Kit.ROOT else Color(1, 1, 1, 0)
+			_put(bufs[t[0]], t[1], Vector3(p.x - x0, p.y, -(p.z - u0)), custom)
 	return {"type": "trees", "key": key, "bufs": bufs, "hmin": hmin if hmin < INF else 0.0, "hmax": hmax if hmax > -INF else 0.0}
 
 
