@@ -326,9 +326,12 @@ func _apply_level(l: int) -> void:
 	vp.msaa_3d = p["msaa"]
 	sun.shadow_enabled = p["shadows"]
 	env.fog_density = p["fog"]
-	# the grass thins out between 70 % and 110 % of fade (grass.gdshader)
+	# the grass thins out between 70 % and 110 % of fade, the far clumps between 170 % and 220 % (grass.gdshader)
 	mats["grass"].set_shader_parameter("fade_start", p["fade"] * 0.7)
 	mats["grass"].set_shader_parameter("fade_end", p["fade"] * 1.1)
+	mats["grass"].set_shader_parameter("far_share", World.FAR_SHARE)
+	mats["grass"].set_shader_parameter("far_start", p["fade"] * 1.7)
+	mats["grass"].set_shader_parameter("far_end", p["fade"] * 2.2)
 	mats["terrain"].set_shader_parameter("grass_fade_start", p["fade"] * 0.7)
 	mats["terrain"].set_shader_parameter("grass_fade_end", p["fade"] * 1.1)
 	mats["pebble"].set_shader_parameter("reach_scale", p["gravel_range"] / World.GRAVEL_FAR)

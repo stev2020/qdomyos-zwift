@@ -1,8 +1,11 @@
 // Grass clumps: six crossing cards with a painted grass texture (12 triangles per clump).
 // INSTANCE_CUSTOM: x = atlas cell (0..7, see tools/make_textures.py), y = brightness, z = random phase, w = dryness.
 // In the distance each clump sinks into the ground at a distance of its own between fade_start and fade_end, so the
-// grass thins out over that band instead of ending at a line. Beyond it the ground is painted in the colours the
-// grass has from afar (terrain.gdshader).
+// grass thins out over that band instead of ending at a line. A share of the clumps goes on as far clumps: they grow
+// where the others sink in and sink in themselves between far_start and far_end, so the meadow keeps its tufts far into
+// the distance. World lists the clumps of a tile in the order of INSTANCE_CUSTOM.z, the far clumps first, and draws
+// only those in tiles that lie wholly beyond fade_end. Beyond them the ground is painted in the colours the grass has
+// from afar (terrain.gdshader).
 shader_type spatial;
 render_mode cull_disabled, world_vertex_coords, diffuse_lambert_wrap;
 
@@ -13,6 +16,10 @@ uniform sampler2D patch_noise : filter_linear_mipmap, repeat_enable;
 uniform float alpha_cut = 0.42;
 uniform float fade_start = 36.0;
 uniform float fade_end = 57.0;
+uniform float far_share = 0.25;
+uniform float far_start = 88.0;
+uniform float far_end = 114.0;
+uniform float far_grow = 1.5;
 uniform vec2 wind_dir = vec2(0.8, 0.6);
 uniform float wind_strength = 1.0;
 uniform vec3 dry_tint : source_color = vec3(1.0, 0.9, 0.62);
@@ -31,7 +38,14 @@ void vertex() {
 	UV = vec2(UV.x * 0.5 + col * 0.5, (UV.y * (240.0 / 256.0) + row) / 4.0);
 
 	float dist = distance(root, CAMERA_POSITION_WORLD);
-	float own_end = mix(fade_start + 3.0, fade_end, INSTANCE_CUSTOM.z);
+	// z gives the place in the list; a second random number for the clump comes from it
+	float z = INSTANCE_CUSTOM.z;
+	float own = fract(z * 53.0);
+	float own_end = mix(fade_start + 3.0, fade_end, own);
+	if (z < far_share) {
+		own_end = mix(far_start + 3.0, far_end, own);
+		VERTEX = root + (VERTEX - root) * mix(1.0, far_grow, smoothstep(fade_start, fade_end, dist));
+	}
 	float fade = 1.0 - smoothstep(own_end - 3.0, own_end, dist);
 
 	// gusts: patches of stronger wind that travel across the meadow

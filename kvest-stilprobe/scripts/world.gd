@@ -13,13 +13,15 @@ const CHUNK := 24.0              # the pebbles are drawn in pieces of 24 m of pa
 const PEBBLE_SHAPES := 3
 const ROOT_RANGE := 70.0         # roots across the path are drawn up to this distance
 const GRASS_TILE_REACH := 35.0   # from the middle of a tile to its farthest corner (Godot measures to the middle)
+const FAR_SHARE := 0.25          # the share of the clumps that goes on as far clumps (grass.gdshader)
 
 var origin_u := 0.0
 var view_ahead := 528.0
 var view_side := 264.0
 var grass_density := 1.0
-var grass_range := 120.0          # grass is built for tiles up to this distance
-var grass_end := 57.0             # the last clumps sink into the ground here (grass.gdshader)
+var grass_range := 149.0          # grass is built for tiles up to this distance
+var grass_end := 57.0             # the last clumps sink into the ground here, except the far clumps (grass.gdshader)
+var grass_far := 114.0            # the last far clumps sink into the ground here
 var tree_lod := 170.0
 var shadows := true
 var gravel_range := 46.0         # the biggest pebbles are drawn up to this distance, smaller ones less far; 0: none
@@ -46,6 +48,7 @@ var _quit := false
 var _busy := 0
 var _gen := 0                    # raised by reset(); results of older jobs are thrown away
 var _cam_u := 0.0                # where the rider was at the last update
+var _cam_x := 0.0
 
 
 func setup(materials: Dictionary) -> void:
@@ -120,6 +123,8 @@ func is_idle() -> bool:
 func set_quality(p: Dictionary) -> void:
 	grass_density = p["density"]
 	grass_end = p["fade"] * 1.1
+	grass_far = p["fade"] * 2.2
+	grass_range = grass_far + GRASS_TILE_REACH
 	view_ahead = p["ahead"]
 	view_side = p["side"]
 	tree_lod = p["tree_lod"]
@@ -128,9 +133,8 @@ func set_quality(p: Dictionary) -> void:
 	for key in tiles:
 		var t: Dictionary = tiles[key]
 		if t.has("mmi") and is_instance_valid(t["mmi"]):
-			var mm: MultiMesh = t["mmi"].multimesh
-			mm.visible_instance_count = int(mm.instance_count * grass_density)
-			t["mmi"].visibility_range_end = grass_end + GRASS_TILE_REACH
+			t["mmi"].visibility_range_end = grass_far + GRASS_TILE_REACH
+	_thin_grass()
 	for key in blocks:
 		var node: Node3D = blocks[key]["node"]
 		if not is_instance_valid(node):
@@ -167,6 +171,7 @@ func shift_origin(d: float) -> void:
 ## Keeps the land around the rider complete. max_apply: how many finished jobs to build this frame.
 func update(cam_u: float, cam_x: float, max_apply: int) -> void:
 	_cam_u = cam_u
+	_cam_x = cam_x
 	var ixc := floori(cam_x / T)
 	var side := ceili(view_side / T)
 	var iu_min := floori((cam_u - T) / T)
@@ -212,6 +217,30 @@ func update(cam_u: float, cam_x: float, max_apply: int) -> void:
 				_request({"type": "trees", "key": bkey, "prio": sqrt(bdx * bdx + du * du) + 10.0})
 	_apply(max_apply)
 	_show_pebbles()
+	_thin_grass()
+
+
+## In tiles that lie wholly beyond the end of the near grass only the far clumps are drawn: they come first in the list
+## of a tile (see _job_grass).
+func _thin_grass() -> void:
+	for key in tiles:
+		_thin_tile(key)
+
+
+func _thin_tile(key: Vector2i) -> void:
+	var mmi = tiles[key].get("mmi")
+	if mmi == null or not is_instance_valid(mmi):
+		return
+	var mm: MultiMesh = mmi.multimesh
+	# the distance to the nearest point of the tile
+	var dx := maxf(0.0, maxf(key.x * T - _cam_x, _cam_x - (key.x + 1) * T))
+	var du := maxf(0.0, maxf(key.y * T - _cam_u, _cam_u - (key.y + 1) * T))
+	var share := grass_density
+	if sqrt(dx * dx + du * du) > grass_end:
+		share = minf(share, FAR_SHARE)
+	var n := int(mm.instance_count * share)
+	if mm.visible_instance_count != n:
+		mm.visible_instance_count = n
 
 
 ## Of each piece of pebbles, only those within their reach are drawn (see _job_path): the pieces are sorted so that
@@ -358,12 +387,12 @@ func _apply_grass(res: Dictionary) -> void:
 	var node := _node_for(tiles, key, _tile_pos(key))
 	var mmi := MultiMeshInstance3D.new()
 	mmi.multimesh = _multimesh(grass_mesh, res["buf"], AABB(Vector3(-1, res["hmin"] - 1.0, -T - 1), Vector3(T + 2, res["hmax"] - res["hmin"] + 3.0, T + 2)))
-	mmi.multimesh.visible_instance_count = int(mmi.multimesh.instance_count * grass_density)
 	# tiles whose clumps have all sunk into the ground are not drawn at all
-	mmi.visibility_range_end = grass_end + GRASS_TILE_REACH
+	mmi.visibility_range_end = grass_far + GRASS_TILE_REACH
 	mmi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 	node.add_child(mmi)
 	tiles[key]["mmi"] = mmi
+	_thin_tile(key)
 
 
 func _apply_trees(res: Dictionary) -> void:
@@ -580,6 +609,9 @@ static func _job_grass(key: Vector2i) -> Dictionary:
 			hs[j * w + i] = Land.height(x0 + i * step, u, r)
 	var rng := RandomNumberGenerator.new()
 	rng.seed = hash(Vector3i(key.x, key.y, 3))
+	# a second one, so the clumps stay where they were before the far clumps came
+	var rng2 := RandomNumberGenerator.new()
+	rng2.seed = hash(Vector3i(key.x, key.y, 13))
 	var spacing := 0.6
 	var m := int(T / spacing)
 	var buf := PackedFloat32Array()
@@ -675,7 +707,11 @@ static func _job_grass(key: Vector2i) -> Dictionary:
 			hmax = maxf(hmax, h)
 			var ws := rng.randf_range(0.85, 1.25)
 			var basis := Basis(Vector3.UP, rng.randf() * TAU).scaled(Vector3(ws, hscale, ws))
-			_put(buf, basis, Vector3(x - x0, h - 0.02, -(uu - u0)), Color(variant, bright, rng.randf(), dry))
+			var phase := rng.randf()
+			# the meadow thins out towards the edge of its strip along the path, so the far clumps do not end at a line
+			if dp > 32.0 and rng2.randf() < smoothstep(32.0, 46.0, dp):
+				continue
+			_put(buf, basis, Vector3(x - x0, h - 0.02, -(uu - u0)), Color(variant, bright, phase, dry))
 	# the grass strip in the middle of quiet cart tracks: short, dense clumps in a narrow line
 	var along := 0.3
 	for gj in int(T / along):
@@ -703,7 +739,8 @@ static func _job_grass(key: Vector2i) -> Dictionary:
 		var ws := rng.randf_range(0.35, 0.5)
 		var basis := Basis(Vector3.UP, rng.randf() * TAU).scaled(Vector3(ws, rng.randf_range(0.35, 0.7), ws))
 		_put(buf, basis, Vector3(x - x0, h - 0.02, -(u - u0)), Color(variant, bright, rng.randf(), dry))
-	# shuffle, so that drawing only the first part of the list thins the meadow out evenly
+	# shuffle, so that drawing only the first part of the list thins the meadow out evenly. INSTANCE_CUSTOM.z then
+	# gives the place in the list: the first FAR_SHARE of the clumps are the far clumps (grass.gdshader)
 	var count := buf.size() / FLOATS
 	var out := PackedFloat32Array()
 	out.resize(buf.size())
@@ -714,6 +751,7 @@ static func _job_grass(key: Vector2i) -> Dictionary:
 		var dst := k * FLOATS
 		for f in FLOATS:
 			out[dst + f] = buf[src + f]
+		out[dst + 14] = (k + 0.5) / count
 	return {"type": "grass", "key": key, "buf": out, "hmin": hmin if count > 0 else 0.0, "hmax": hmax if count > 0 else 0.0}
 
 
