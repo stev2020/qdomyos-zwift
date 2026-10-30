@@ -23,6 +23,10 @@ uniform vec3 eye = vec3(0.0);
 uniform float view_ahead = 528.0;
 uniform float view_side = 264.0;
 uniform vec3 haze : source_color = vec3(0.74, 0.82, 0.88);
+// how far the leaves move away from the sun in its shadow pass (metres)
+uniform float leaf_push = 0.35;
+// the mip level of the leaves in the sun's shadow pass, about that of the coarse shadow map
+const float SHADOW_LOD = 5.0;
 // +1: these models come in, -1: they go, 0: they stay; lod_mix: how far the change has come (0 .. 1)
 instance uniform float lod_role = 0.0;
 instance uniform float lod_mix = 1.0;
@@ -43,6 +47,12 @@ void vertex() {
 			cos(TIME * 4.4 + VERTEX.y * 1.7)) * 0.028 * w * COLOR.a;
 	if (INSTANCE_CUSTOM.b < 0.0) {
 		VERTEX.y -= 0.45 * smoothstep(INSTANCE_CUSTOM.r, INSTANCE_CUSTOM.g, distance(root, eye));
+	}
+	// in the sun's shadow pass (the only orthographic one) the leaves move a little away from the sun: a crown shades
+	// itself only where its leaves lie well behind each other, so it keeps its sunlit side, while the sun's own offset
+	// stays small (main.gd). Along the rays of the sun this does not move the shadows on the ground.
+	if (PROJECTION_MATRIX[3][3] > 0.5 && COLOR.a > 0.5) {
+		VERTEX -= normalize(INV_VIEW_MATRIX[2].xyz) * leaf_push;
 	}
 	// the land ends view_ahead ahead (the path runs towards -z) and view_side to the sides
 	v_haze = max(smoothstep(view_ahead - 70.0, view_ahead - 5.0, eye.z - root.z),
@@ -67,7 +77,13 @@ void fragment() {
 		vec2 dx = dFdx(UV * sz);
 		vec2 dy = dFdy(UV * sz);
 		float lod = max(0.0, 0.5 * log2(max(dot(dx, dx), dot(dy, dy))));
-		if (t.a * (1.0 + lod * 0.25) < alpha_cut) {
+		float a = t.a * (1.0 + lod * 0.25);
+		// in the sun's shadow pass every shadow map sees the leaves at the same coarse level: a fine one let more light
+		// through the crowns than the coarse one further away, and their shadows on the ground changed at a line
+		if (PROJECTION_MATRIX[3][3] > 0.5) {
+			a = textureLod(leaf_tex, UV, SHADOW_LOD).a * (1.0 + SHADOW_LOD * 0.25);
+		}
+		if (a < alpha_cut) {
 			discard;
 		}
 		c *= t.rgb;

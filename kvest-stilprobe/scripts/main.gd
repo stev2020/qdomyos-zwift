@@ -275,13 +275,19 @@ func _make_environment() -> void:
 	add_child(we)
 	sun = DirectionalLight3D.new()
 	sun.shadow_enabled = true
+	# two shadow maps: a fine one up to 21 m and a coarse one up to 70 m. Where they meet, the shadows did not fit
+	# together in the low evening sun: a line across the shadows, always the same distance ahead (at 7 m before). The
+	# offset along the normal grows with the texels of the coarse map and moves its shadows by more than half a metre
+	# over the ground at that sun; a smaller offset and the change further away hide the seam. The ground casts no
+	# shadows, so it cannot shade itself in stripes.
 	sun.directional_shadow_mode = DirectionalLight3D.SHADOW_PARALLEL_2_SPLITS
+	sun.directional_shadow_split_1 = 0.3
 	sun.directional_shadow_max_distance = 70.0
 	sun.shadow_blur = 2.2
 	# summer shade is full of light from the sky: shadows are never black
 	sun.shadow_opacity = 0.78
 	sun.shadow_bias = 0.06
-	sun.shadow_normal_bias = 1.2
+	sun.shadow_normal_bias = 0.5
 	add_child(sun)
 
 
